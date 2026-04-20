@@ -1,0 +1,12 @@
+tests:
+  - name: codex_reads_inbox_writes_git_and_outbox
+    description: codex.exec consumes inbox artifact, mutates git workspace, and emits an outbox artifact
+    inputs: {}
+    want:
+      codex_status: "completed"
+      git_content: "from_inbox=fixture-token"
+    wantArtifacts:
+      - "__git_state_thin_pack__"
+      - "diff_from_parent.diff"
+      - "codex-generated.txt"
+    wantErr: false
