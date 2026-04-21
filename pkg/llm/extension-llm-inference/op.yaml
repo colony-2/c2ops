@@ -25,8 +25,7 @@ input_schema:
       type: array
       items:
         type: string
-    response_schema:
-      type: object
+    response_schema: {}
 output_schema:
   type: object
   properties:

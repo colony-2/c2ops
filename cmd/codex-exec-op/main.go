@@ -1,10 +1,19 @@
 package main
 
 import (
-	"github.com/colony-2/c2j/pkg/ops"
+	"context"
+	"fmt"
+
+	"github.com/colony-2/c2ops/internal/extensioncmd"
 	"github.com/colony-2/c2ops/pkg/codex"
 )
 
 func main() {
-	ops.CommandMain(codex.GetOp())
+	extensioncmd.Main(func(ctx context.Context, input codex.ExecOpInput) (extensioncmd.Result[codex.ExecOpOutput], error) {
+		output, err := codex.Run(ctx, input)
+		if err != nil {
+			return extensioncmd.Result[codex.ExecOpOutput]{}, fmt.Errorf("codex.exec: %w", err)
+		}
+		return extensioncmd.Result[codex.ExecOpOutput]{Output: output}, nil
+	})
 }

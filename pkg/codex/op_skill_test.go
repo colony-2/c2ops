@@ -83,7 +83,7 @@ func TestRunCodexActivityBuildsOutcomeFromStatusArtifact(t *testing.T) {
 		StatusContract:     StatusContractRef{Path: "implementation/latest-status.json"},
 	}
 
-	out, err := runCodexActivity(&fakeOpDependencies{}, context.Background(), input)
+	out, err := runCodexActivity(context.Background(), input)
 	require.NoError(t, err)
 	require.Equal(t, string(StatusIncomplete), out.Status)
 	require.Equal(t, "sess-123", out.SessionID)
@@ -158,7 +158,6 @@ func TestRunCodexActivitySupportsConfiguredSkillRefs(t *testing.T) {
 	}
 	defer func() { materializeSkillRefsFn = originalMaterializer }()
 
-	inv := &fakeOpDependencies{}
 	input := ExecOpInput{
 		Prompt:             "implement this",
 		Skill:              "artifact-skill",
@@ -171,7 +170,7 @@ func TestRunCodexActivitySupportsConfiguredSkillRefs(t *testing.T) {
 		CellRelativePath:   filepath.Join("cells", "alpha"),
 	}
 
-	out, err := runCodexActivity(inv, context.Background(), input)
+	out, err := runCodexActivity(context.Background(), input)
 	require.NoError(t, err)
 	require.Equal(t, string(StatusCompleted), out.Status)
 	require.Equal(t, "configured skills loaded", out.AssistantSummary)
@@ -216,7 +215,7 @@ func TestRunCodexActivityMissingStatusContractProducesBlockedCheckpoint(t *testi
 		StatusContract:     StatusContractRef{Path: "implementation/missing.json"},
 	}
 
-	out, err := runCodexActivity(&fakeOpDependencies{}, context.Background(), input)
+	out, err := runCodexActivity(context.Background(), input)
 	require.NoError(t, err)
 	require.Equal(t, string(StatusIncomplete), out.Status)
 	require.Equal(t, checkpointStatusBlocked, out.Outcome.Checkpoint.Status)
@@ -301,7 +300,6 @@ func TestRunCodexActivityMultiSkillSequenceWithNestedCheckpoint(t *testing.T) {
 		},
 	}
 
-	tempDir := t.TempDir()
 	callIndex := 0
 	executeLibrary = func(ctx context.Context, opts Options) (Result, string, string, string, error) {
 		require.Less(t, callIndex, len(steps))
@@ -317,8 +315,9 @@ func TestRunCodexActivityMultiSkillSequenceWithNestedCheckpoint(t *testing.T) {
 		require.NoError(t, os.MkdirAll(filepath.Dir(statusAbsPath), 0o755))
 		require.NoError(t, os.WriteFile(statusAbsPath, []byte(step.statusPayload), 0o644))
 
-		stdoutPath := filepath.Join(tempDir, fmt.Sprintf("stdout-%d.jsonl", callIndex+1))
-		stderrPath := filepath.Join(tempDir, fmt.Sprintf("stderr-%d.txt", callIndex+1))
+		artifactDir := t.TempDir()
+		stdoutPath := filepath.Join(artifactDir, fmt.Sprintf("stdout-%d.jsonl", callIndex+1))
+		stderrPath := filepath.Join(artifactDir, fmt.Sprintf("stderr-%d.txt", callIndex+1))
 		require.NoError(t, os.WriteFile(stdoutPath, []byte("test output"), 0o644))
 		require.NoError(t, os.WriteFile(stderrPath, []byte(""), 0o644))
 
@@ -328,14 +327,14 @@ func TestRunCodexActivityMultiSkillSequenceWithNestedCheckpoint(t *testing.T) {
 			SessionID:           fmt.Sprintf("sess-%d", callIndex),
 			AssistantSummary:    "base summary",
 			PendingDependencies: []Dependency{},
-		}, stdoutPath, stderrPath, tempDir, nil
+		}, stdoutPath, stderrPath, artifactDir, nil
 	}
 	defer func() { executeLibrary = Execute }()
 
 	sessionID := ""
 	var executedSkills []string
 	for _, step := range steps {
-		out, err := runCodexActivity(&fakeOpDependencies{}, context.Background(), ExecOpInput{
+		out, err := runCodexActivity(context.Background(), ExecOpInput{
 			Prompt:             "continue",
 			SessionID:          sessionID,
 			Skill:              step.skill,

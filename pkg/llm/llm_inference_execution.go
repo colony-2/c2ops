@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	f2 "github.com/colony-2/c2j/pkg/file"
 	llmadapters "github.com/colony-2/c2ops/pkg/adapters"
+	f2 "github.com/colony-2/c2ops/pkg/files"
 )
 
 // executeBasic handles basic LLM generation without files or tools

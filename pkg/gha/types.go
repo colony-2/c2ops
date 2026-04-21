@@ -2,8 +2,6 @@ package gha
 
 import (
 	"context"
-
-	coreops "github.com/colony-2/c2j/pkg/ops"
 )
 
 const (
@@ -17,21 +15,24 @@ const (
 )
 
 type RunInput struct {
-	Workflow        string            `json:"workflow" validate:"required"`
-	With            map[string]any    `json:"with,omitempty"`
-	Env             map[string]string `json:"env,omitempty"`
-	Secrets         map[string]string `json:"secrets,omitempty"`
-	Backend         string            `json:"backend,omitempty"`
-	RunnerImage     string            `json:"runner_image,omitempty"`
-	Timeout         string            `json:"timeout,omitempty"`
-	ContinueOnError bool              `json:"continue_on_error,omitempty"`
-	Remote          *RemoteInput      `json:"remote,omitempty"`
+	Workflow              string            `json:"workflow" validate:"required"`
+	With                  map[string]any    `json:"with,omitempty"`
+	Env                   map[string]string `json:"env,omitempty"`
+	Secrets               map[string]string `json:"secrets,omitempty"`
+	Backend               string            `json:"backend,omitempty"`
+	RunnerImage           string            `json:"runner_image,omitempty"`
+	ContainerArchitecture string            `json:"container_architecture,omitempty"`
+	Timeout               string            `json:"timeout,omitempty"`
+	ContinueOnError       bool              `json:"continue_on_error,omitempty"`
+	Remote                *RemoteInput      `json:"remote,omitempty"`
+	GitContext            GitContext        `json:"git_context,omitempty"`
 }
 
 type RunsInput struct {
 	Workflows       []RunsWorkflowInput `json:"workflows" validate:"required"`
 	Timeout         string              `json:"timeout,omitempty"`
 	ContinueOnError bool                `json:"continue_on_error,omitempty"`
+	GitContext      GitContext          `json:"git_context,omitempty"`
 }
 
 type RunsWorkflowInput struct {
@@ -82,6 +83,16 @@ type WorkflowStepOutput struct {
 	DurationSeconds int    `json:"duration_seconds"`
 }
 
+type GitContext struct {
+	BaseRepo         string `json:"base_repo,omitempty"`
+	BaseRef          string `json:"base_ref,omitempty"`
+	ResolvedBaseHash string `json:"resolved_base_hash,omitempty"`
+	PersistHash      string `json:"persist_hash,omitempty"`
+	ParentHash       string `json:"parent_hash,omitempty"`
+	InvokeHash       string `json:"invoke_hash,omitempty"`
+	WorktreePath     string `json:"worktree_path,omitempty"`
+}
+
 type resolvedWorkflow struct {
 	Selector       string
 	Path           string
@@ -96,15 +107,36 @@ type externalFileRef struct {
 	Expand bool
 }
 
+type ExternalArtifact struct {
+	URL    string `json:"url"`
+	Expand bool   `json:"expand,omitempty"`
+}
+
+type ArtifactRef struct {
+	Kind     string            `json:"kind"`
+	Name     string            `json:"name,omitempty"`
+	External *ExternalArtifact `json:"external,omitempty"`
+}
+
 type backendRequest struct {
 	Input      RunInput
 	Workflow   resolvedWorkflow
-	GitContext coreops.GitExecutionContext
+	GitContext GitContext
 }
 
 type backendResult struct {
 	Output       RunOutput
 	ArtifactRefs map[string]externalFileRef
+}
+
+type RunResult struct {
+	Output       RunOutput
+	ArtifactRefs map[string]ArtifactRef
+}
+
+type RunsResult struct {
+	Output       RunsOutput
+	ArtifactRefs map[string]ArtifactRef
 }
 
 type workflowBackend interface {

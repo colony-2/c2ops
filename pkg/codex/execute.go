@@ -475,7 +475,23 @@ func bootstrapCodexSessions(inboxSessionsDir string, outboxSessionsDir string) e
 }
 
 func restoreCodexHomeStateIfExists(sourceStateDir string, codexHomeDir string) error {
-	return copyDirContentsIfExists(sourceStateDir, codexHomeDir)
+	info, err := os.Stat(sourceStateDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("stat inbox codex home %q: %w", sourceStateDir, err)
+	}
+	if !info.IsDir() {
+		return nil
+	}
+	if filepath.Clean(sourceStateDir) == filepath.Clean(codexHomeDir) {
+		return nil
+	}
+	if err := os.RemoveAll(codexHomeDir); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("reset codex home %q: %w", codexHomeDir, err)
+	}
+	return copyDirContents(sourceStateDir, codexHomeDir)
 }
 
 func persistCodexHomeState(targetStateDir string, codexHomeDir string) error {
@@ -784,7 +800,7 @@ func shellQuote(value string) string {
 }
 
 func useDirectCodex() bool {
-	val := strings.TrimSpace(os.Getenv("VIBETHIS_CODEX_USE_DIRECT"))
+	val := strings.TrimSpace(os.Getenv("C2J_CODEX_USE_DIRECT"))
 	return val == "1" || strings.EqualFold(val, "true") || strings.EqualFold(val, "yes")
 }
 

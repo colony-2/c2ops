@@ -8,9 +8,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	coreops "github.com/colony-2/c2j/pkg/ops"
-	"github.com/colony-2/c2j/pkg/workflow"
 )
 
 var backendFactory = func(name string) (workflowBackend, error) {
@@ -24,49 +21,26 @@ var backendFactory = func(name string) (workflowBackend, error) {
 	}
 }
 
-func GetOp() coreops.RegisterableOp {
-	return coreops.NewActivityMappedOpV2[RunInput, RunOutput](
-		coreops.OpMetadata{
-			Type:           "gha.run",
-			Description:    "Executes a GitHub Actions workflow against an isolated snapshot of the current worktree",
-			Version:        "1.0.0",
-			DefaultTimeout: 30 * time.Minute,
-		},
-		run,
-	)
-}
-
-func GetRunsOp() coreops.RegisterableOp {
-	return coreops.NewActivityMappedOpV2[RunsInput, RunsOutput](
-		coreops.OpMetadata{
-			Type:           "gha.runs",
-			Description:    "Executes multiple GitHub Actions workflows against isolated copies of the current worktree",
-			Version:        "1.0.0",
-			DefaultTimeout: 45 * time.Minute,
-		},
-		runs,
-	)
-}
-
-func run(inv coreops.OpDependencies, ctx context.Context, input RunInput) (RunOutput, error) {
-	result, err := executeRun(ctx, input, currentGitContext(inv))
-	if addErr := addExternalArtifactRefs(inv, result.ArtifactRefs); addErr != nil {
-		return RunOutput{}, addErr
+func Run(ctx context.Context, input RunInput) (RunResult, error) {
+	result, err := executeRun(ctx, input, input.GitContext)
+	artifactRefs, artifactErr := buildArtifactRefs(result.ArtifactRefs)
+	if artifactErr != nil {
+		return RunResult{}, artifactErr
 	}
 	if err != nil {
-		return result.Output, err
+		return RunResult{Output: result.Output, ArtifactRefs: artifactRefs}, err
 	}
-	return result.Output, nil
+	return RunResult{Output: result.Output, ArtifactRefs: artifactRefs}, nil
 }
 
-func runs(inv coreops.OpDependencies, ctx context.Context, input RunsInput) (RunsOutput, error) {
+func RunBatch(ctx context.Context, input RunsInput) (RunsResult, error) {
 	if len(input.Workflows) == 0 {
-		return RunsOutput{}, workflow.NewNonRetryableApplicationError("workflows is required")
+		return RunsResult{}, fmt.Errorf("workflows is required")
 	}
 
-	gitCtx := currentGitContext(inv)
+	gitCtx := input.GitContext
 	if strings.TrimSpace(gitCtx.WorktreePath) == "" {
-		return RunsOutput{}, workflow.NewNonRetryableApplicationError("worktree path is required")
+		return RunsResult{}, fmt.Errorf("git_context.worktree_path is required")
 	}
 
 	results := make(map[string]RunOutput, len(input.Workflows))
@@ -130,28 +104,29 @@ func runs(inv coreops.OpDependencies, ctx context.Context, input RunsInput) (Run
 	wg.Wait()
 
 	output := buildRunsOutput(results, input.ContinueOnError)
-	if err := addExternalArtifactRefs(inv, artifactRefs); err != nil {
-		return RunsOutput{}, err
+	builtRefs, err := buildArtifactRefs(artifactRefs)
+	if err != nil {
+		return RunsResult{}, err
 	}
 	if firstErr != nil && !input.ContinueOnError {
-		return output, firstErr
+		return RunsResult{Output: output, ArtifactRefs: builtRefs}, firstErr
 	}
-	return output, nil
+	return RunsResult{Output: output, ArtifactRefs: builtRefs}, nil
 }
 
-func executeRun(ctx context.Context, input RunInput, gitCtx coreops.GitExecutionContext) (backendResult, error) {
+func executeRun(ctx context.Context, input RunInput, gitCtx GitContext) (backendResult, error) {
 	workflowSelector := strings.TrimSpace(input.Workflow)
 	if workflowSelector == "" {
-		return backendResult{}, workflow.NewNonRetryableApplicationError("workflow is required")
+		return backendResult{}, fmt.Errorf("workflow is required")
 	}
 
 	if strings.TrimSpace(gitCtx.WorktreePath) == "" {
-		return backendResult{}, workflow.NewNonRetryableApplicationError("worktree path is required")
+		return backendResult{}, fmt.Errorf("git_context.worktree_path is required")
 	}
 
 	resolved, err := resolveWorkflowSelector(workflowSelector, gitCtx)
 	if err != nil {
-		return backendResult{}, workflow.NewNonRetryableApplicationError("%s", err.Error())
+		return backendResult{}, err
 	}
 	if resolved.ResolvedCommit == "" {
 		resolved.ResolvedCommit = resolvedCommit(gitCtx)
@@ -159,7 +134,7 @@ func executeRun(ctx context.Context, input RunInput, gitCtx coreops.GitExecution
 
 	timeout, err := parseTimeout(input.Timeout)
 	if err != nil {
-		return backendResult{}, workflow.NewNonRetryableApplicationError("invalid timeout: %s", err.Error())
+		return backendResult{}, fmt.Errorf("invalid timeout: %s", err.Error())
 	}
 	if timeout > 0 {
 		var cancel context.CancelFunc
@@ -169,7 +144,7 @@ func executeRun(ctx context.Context, input RunInput, gitCtx coreops.GitExecution
 
 	backend, err := backendFactory(strings.TrimSpace(input.Backend))
 	if err != nil {
-		return backendResult{}, workflow.NewNonRetryableApplicationError("%s", err.Error())
+		return backendResult{}, err
 	}
 
 	result, err := backend.Run(ctx, backendRequest{
@@ -178,7 +153,7 @@ func executeRun(ctx context.Context, input RunInput, gitCtx coreops.GitExecution
 		GitContext: gitCtx,
 	})
 	if err != nil {
-		return backendResult{}, workflow.NewNonRetryableApplicationError("%s", err.Error())
+		return backendResult{}, err
 	}
 
 	if result.Output.Workflow.ResolvedSelector == "" {
@@ -193,18 +168,10 @@ func executeRun(ctx context.Context, input RunInput, gitCtx coreops.GitExecution
 		result.Output.ErrorMessage = fmt.Sprintf("workflow concluded with status %s", result.Output.Status)
 	}
 	if result.Output.Status != statusSuccess && !input.ContinueOnError {
-		return result, workflow.NewNonRetryableApplicationError("%s", result.Output.ErrorMessage)
+		return result, fmt.Errorf("%s", result.Output.ErrorMessage)
 	}
 
 	return result, nil
-}
-
-func currentGitContext(inv coreops.OpDependencies) coreops.GitExecutionContext {
-	gitCtx := inv.GitContext()
-	if gitCtx.WorktreePath == "" {
-		gitCtx.WorktreePath = inv.WorktreePath()
-	}
-	return gitCtx
 }
 
 func recordBatchRunError(mu *sync.Mutex, target *error, continueOnError bool, err error) {

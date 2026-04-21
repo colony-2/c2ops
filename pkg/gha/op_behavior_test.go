@@ -3,11 +3,9 @@ package gha
 import (
 	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 
-	coreops "github.com/colony-2/c2j/pkg/ops"
 	"github.com/stretchr/testify/require"
 )
 
@@ -34,12 +32,10 @@ func TestResolveWorkflowSelectorFileNameOnly(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Dir(repoWorkflow), 0o755))
 	require.NoError(t, os.WriteFile(repoWorkflow, []byte("name: repo\non:\n  workflow_dispatch:\n"), 0o644))
 
-	gitCtx := coreops.GitExecutionContext{
+	resolvedRepo, err := resolveWorkflowSelector("ci.yml", GitContext{
 		WorktreePath:     worktree,
 		ResolvedBaseHash: "deadbeef",
-	}
-
-	resolvedRepo, err := resolveWorkflowSelector("ci.yml", gitCtx)
+	})
 	require.NoError(t, err)
 	require.Equal(t, repoWorkflow, resolvedRepo.Path)
 	require.Equal(t, ".github/workflows/ci.yml", resolvedRepo.RepoPath)
@@ -53,7 +49,7 @@ func TestResolveWorkflowSelectorRejectsUnsupportedNames(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Dir(workflowPath), 0o755))
 	require.NoError(t, os.WriteFile(workflowPath, []byte("name: repo\non:\n  workflow_dispatch:\n"), 0o644))
 
-	gitCtx := coreops.GitExecutionContext{WorktreePath: worktree}
+	gitCtx := GitContext{WorktreePath: worktree}
 
 	for _, input := range []string{
 		"repo://.github/workflows/ci.yml",
@@ -74,12 +70,12 @@ func TestResolveWorkflowSelectorRequiresWorkflowDispatch(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Dir(workflowPath), 0o755))
 	require.NoError(t, os.WriteFile(workflowPath, []byte("name: repo\non:\n  push:\n"), 0o644))
 
-	_, err := resolveWorkflowSelector("ci.yml", coreops.GitExecutionContext{WorktreePath: worktree})
+	_, err := resolveWorkflowSelector("ci.yml", GitContext{WorktreePath: worktree})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "workflow_dispatch")
 }
 
-func TestRunRegistersExternalArtifactsAndPassesResolvedWorkflowToBackend(t *testing.T) {
+func TestRunBuildsArtifactRefsAndPassesResolvedWorkflowToBackend(t *testing.T) {
 	worktree := t.TempDir()
 	workflowPath := filepath.Join(worktree, ".github", "workflows", "ci.yml")
 	logPath := filepath.Join(worktree, "gha.log")
@@ -109,30 +105,26 @@ func TestRunRegistersExternalArtifactsAndPassesResolvedWorkflowToBackend(t *test
 		backendFactory = origFactory
 	})
 
-	deps := coreops.NewOpDependenciesBuilder().
-		WithGitContext(coreops.GitExecutionContext{
+	result, err := Run(context.Background(), RunInput{
+		Workflow: "ci.yml",
+		Backend:  backendLocal,
+		GitContext: GitContext{
 			BaseRepo:         "acme/widgets",
 			BaseRef:          "main",
 			ResolvedBaseHash: "deadbeef",
-			CellPath:         filepath.ToSlash(filepath.Join("cells", "alpha")),
 			WorktreePath:     worktree,
-		}).
-		Build()
-
-	output, err := run(deps, context.Background(), RunInput{
-		Workflow: "ci.yml",
-		Backend:  backendLocal,
+		},
 	})
 	require.NoError(t, err)
-	require.Equal(t, statusSuccess, output.Status)
-	require.Equal(t, "ci.yml", output.Workflow.ResolvedSelector)
-	require.Equal(t, "deadbeef", output.Workflow.ResolvedCommit)
-	require.NotEmpty(t, output.Workflow.ContentHash)
+	require.Equal(t, statusSuccess, result.Output.Status)
+	require.Equal(t, "ci.yml", result.Output.Workflow.ResolvedSelector)
+	require.Equal(t, "deadbeef", result.Output.Workflow.ResolvedCommit)
+	require.NotEmpty(t, result.Output.Workflow.ContentHash)
 	require.Equal(t, workflowPath, fake.request.Workflow.Path)
 	require.Equal(t, ".github/workflows/ci.yml", fake.request.Workflow.RepoPath)
 	require.Equal(t, "acme/widgets", fake.request.GitContext.BaseRepo)
 
-	refs := deps.GetExternalArtifacts()
+	refs := result.ArtifactRefs
 	require.Contains(t, refs, "gha-logs")
 	expectedURL, err := fileURL(logPath)
 	require.NoError(t, err)
@@ -163,33 +155,35 @@ func TestRunFailureAnnotatesOutputWhenContinueOnErrorIsFalse(t *testing.T) {
 		backendFactory = origFactory
 	})
 
-	deps := coreops.NewOpDependenciesBuilder().
-		WithGitContext(coreops.GitExecutionContext{
+	result, err := Run(context.Background(), RunInput{
+		Workflow: "ci.yml",
+		Backend:  backendLocal,
+		GitContext: GitContext{
 			BaseRef:          "main",
 			ResolvedBaseHash: "deadbeef",
 			WorktreePath:     worktree,
-		}).
-		Build()
-
-	output, err := run(deps, context.Background(), RunInput{
-		Workflow: "ci.yml",
-		Backend:  backendLocal,
+		},
 	})
 	require.Error(t, err)
-	require.Equal(t, statusFailure, output.Status)
-	require.Contains(t, output.ErrorMessage, "workflow concluded with status")
+	require.Equal(t, statusFailure, result.Output.Status)
+	require.Contains(t, result.Output.ErrorMessage, "workflow concluded with status")
 
-	output, err = run(deps, context.Background(), RunInput{
+	result, err = Run(context.Background(), RunInput{
 		Workflow:        "ci.yml",
 		Backend:         backendLocal,
 		ContinueOnError: true,
+		GitContext: GitContext{
+			BaseRef:          "main",
+			ResolvedBaseHash: "deadbeef",
+			WorktreePath:     worktree,
+		},
 	})
 	require.NoError(t, err)
-	require.Equal(t, statusFailure, output.Status)
-	require.Empty(t, output.ErrorMessage)
+	require.Equal(t, statusFailure, result.Output.Status)
+	require.Empty(t, result.Output.ErrorMessage)
 }
 
-func TestRunsFailureReturnsStructuredOutputWhenContinueOnErrorIsFalse(t *testing.T) {
+func TestRunBatchFailureReturnsStructuredOutputWhenContinueOnErrorIsFalse(t *testing.T) {
 	worktree := initGitRepoWithFiles(t, map[string]string{
 		".github/workflows/ci.yml": "name: ci\non:\n  workflow_dispatch:\n",
 	})
@@ -210,24 +204,21 @@ func TestRunsFailureReturnsStructuredOutputWhenContinueOnErrorIsFalse(t *testing
 		backendFactory = origFactory
 	})
 
-	deps := coreops.NewOpDependenciesBuilder().
-		WithGitContext(coreops.GitExecutionContext{
-			BaseRef:          "main",
-			ResolvedBaseHash: "deadbeef",
-			WorktreePath:     worktree,
-		}).
-		Build()
-
-	output, err := runs(deps, context.Background(), RunsInput{
+	result, err := RunBatch(context.Background(), RunsInput{
 		Workflows: []RunsWorkflowInput{
 			{ID: "ci", RunInput: RunInput{Workflow: "ci.yml", Backend: backendLocal}},
 		},
+		GitContext: GitContext{
+			BaseRef:          "main",
+			ResolvedBaseHash: "deadbeef",
+			WorktreePath:     worktree,
+		},
 	})
 	require.Error(t, err)
-	require.Equal(t, statusFailure, output.Status)
-	require.False(t, output.AllPassed)
-	require.Equal(t, statusFailure, output.Results["ci"].Status)
-	require.Equal(t, "lint failed", output.Results["ci"].ErrorMessage)
+	require.Equal(t, statusFailure, result.Output.Status)
+	require.False(t, result.Output.AllPassed)
+	require.Equal(t, statusFailure, result.Output.Results["ci"].Status)
+	require.Equal(t, "lint failed", result.Output.Results["ci"].ErrorMessage)
 }
 
 func TestRunSelectsGitHubBackend(t *testing.T) {
@@ -252,20 +243,17 @@ func TestRunSelectsGitHubBackend(t *testing.T) {
 		backendFactory = origFactory
 	})
 
-	deps := coreops.NewOpDependenciesBuilder().
-		WithGitContext(coreops.GitExecutionContext{
+	result, err := Run(context.Background(), RunInput{
+		Workflow: "ci.yml",
+		Backend:  backendGitHub,
+		GitContext: GitContext{
 			BaseRef:          "main",
 			ResolvedBaseHash: "deadbeef",
 			WorktreePath:     worktree,
-		}).
-		Build()
-
-	output, err := run(deps, context.Background(), RunInput{
-		Workflow: "ci.yml",
-		Backend:  backendGitHub,
+		},
 	})
 	require.NoError(t, err)
-	require.Equal(t, statusSuccess, output.Status)
+	require.Equal(t, statusSuccess, result.Output.Status)
 }
 
 func TestRunRejectsLegacyActBackendName(t *testing.T) {
@@ -274,24 +262,21 @@ func TestRunRejectsLegacyActBackendName(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Dir(workflowPath), 0o755))
 	require.NoError(t, os.WriteFile(workflowPath, []byte("name: ci\non:\n  workflow_dispatch:\n"), 0o644))
 
-	deps := coreops.NewOpDependenciesBuilder().
-		WithGitContext(coreops.GitExecutionContext{
+	result, err := Run(context.Background(), RunInput{
+		Workflow: "ci.yml",
+		Backend:  "act",
+		GitContext: GitContext{
 			BaseRef:          "main",
 			ResolvedBaseHash: "deadbeef",
 			WorktreePath:     worktree,
-		}).
-		Build()
-
-	output, err := run(deps, context.Background(), RunInput{
-		Workflow: "ci.yml",
-		Backend:  "act",
+		},
 	})
 	require.Error(t, err)
-	require.Empty(t, output.Status)
+	require.Empty(t, result.Output.Status)
 	require.Contains(t, err.Error(), `unsupported backend "act"`)
 }
 
-func TestRunsAggregatesResultsAndPrefixesArtifacts(t *testing.T) {
+func TestRunBatchAggregatesResultsAndPrefixesArtifacts(t *testing.T) {
 	worktree := initGitRepoWithFiles(t, map[string]string{
 		".github/workflows/ci.yml": "name: ci\non:\n  workflow_dispatch:\n",
 	})
@@ -318,33 +303,28 @@ func TestRunsAggregatesResultsAndPrefixesArtifacts(t *testing.T) {
 		backendFactory = origFactory
 	})
 
-	deps := coreops.NewOpDependenciesBuilder().
-		WithGitContext(coreops.GitExecutionContext{
-			BaseRef:          "main",
-			ResolvedBaseHash: "deadbeef",
-			WorktreePath:     worktree,
-		}).
-		Build()
-
-	output, err := runs(deps, context.Background(), RunsInput{
+	result, err := RunBatch(context.Background(), RunsInput{
 		Workflows: []RunsWorkflowInput{
 			{ID: "ci", RunInput: RunInput{Workflow: "ci.yml", Backend: backendLocal}},
 			{ID: "lint", RunInput: RunInput{Workflow: "ci.yml", Backend: backendLocal}},
 		},
 		ContinueOnError: true,
+		GitContext: GitContext{
+			BaseRef:          "main",
+			ResolvedBaseHash: "deadbeef",
+			WorktreePath:     worktree,
+		},
 	})
 	require.NoError(t, err)
-	require.Equal(t, statusSuccess, output.Status)
-	require.True(t, output.AllPassed)
-	require.Contains(t, output.Results, "ci")
-	require.Contains(t, output.Results, "lint")
-
-	refs := deps.GetExternalArtifacts()
-	require.Contains(t, refs, "ci/gha-logs")
-	require.Contains(t, refs, "lint/gha-logs")
+	require.Equal(t, statusSuccess, result.Output.Status)
+	require.True(t, result.Output.AllPassed)
+	require.Contains(t, result.Output.Results, "ci")
+	require.Contains(t, result.Output.Results, "lint")
+	require.Contains(t, result.ArtifactRefs, "ci/gha-logs")
+	require.Contains(t, result.ArtifactRefs, "lint/gha-logs")
 }
 
-func TestRunsContinueOnErrorCapturesPerWorkflowErrors(t *testing.T) {
+func TestRunBatchContinueOnErrorCapturesPerWorkflowErrors(t *testing.T) {
 	worktree := initGitRepoWithFiles(t, map[string]string{
 		".github/workflows/ci.yml": "name: ci\non:\n  workflow_dispatch:\n",
 	})
@@ -363,30 +343,27 @@ func TestRunsContinueOnErrorCapturesPerWorkflowErrors(t *testing.T) {
 		backendFactory = origFactory
 	})
 
-	deps := coreops.NewOpDependenciesBuilder().
-		WithGitContext(coreops.GitExecutionContext{
-			BaseRef:          "main",
-			ResolvedBaseHash: "deadbeef",
-			WorktreePath:     worktree,
-		}).
-		Build()
-
-	output, err := runs(deps, context.Background(), RunsInput{
+	result, err := RunBatch(context.Background(), RunsInput{
 		Workflows: []RunsWorkflowInput{
 			{ID: "good", RunInput: RunInput{Workflow: "ci.yml", Backend: backendLocal}},
 			{ID: "bad", RunInput: RunInput{Workflow: "missing.yml", Backend: backendLocal}},
 		},
 		ContinueOnError: true,
+		GitContext: GitContext{
+			BaseRef:          "main",
+			ResolvedBaseHash: "deadbeef",
+			WorktreePath:     worktree,
+		},
 	})
 	require.NoError(t, err)
-	require.Equal(t, statusFailure, output.Status)
-	require.False(t, output.AllPassed)
-	require.Equal(t, statusSuccess, output.Results["good"].Status)
-	require.Equal(t, statusFailure, output.Results["bad"].Status)
-	require.NotEmpty(t, output.Results["bad"].ErrorMessage)
+	require.Equal(t, statusFailure, result.Output.Status)
+	require.False(t, result.Output.AllPassed)
+	require.Equal(t, statusSuccess, result.Output.Results["good"].Status)
+	require.Equal(t, statusFailure, result.Output.Results["bad"].Status)
+	require.NotEmpty(t, result.Output.Results["bad"].ErrorMessage)
 }
 
-func TestRunsDiscardsWorkflowMutations(t *testing.T) {
+func TestRunBatchDiscardsWorkflowMutations(t *testing.T) {
 	worktree := initGitRepoWithFiles(t, map[string]string{
 		".github/workflows/ci.yml": "name: ci\non:\n  workflow_dispatch:\n",
 	})
@@ -404,23 +381,20 @@ func TestRunsDiscardsWorkflowMutations(t *testing.T) {
 		backendFactory = origFactory
 	})
 
-	deps := coreops.NewOpDependenciesBuilder().
-		WithGitContext(coreops.GitExecutionContext{
-			BaseRef:          "main",
-			ResolvedBaseHash: "deadbeef",
-			WorktreePath:     worktree,
-		}).
-		Build()
-
-	output, err := runs(deps, context.Background(), RunsInput{
+	result, err := RunBatch(context.Background(), RunsInput{
 		Workflows: []RunsWorkflowInput{
 			{ID: "mutating", RunInput: RunInput{Workflow: "ci.yml", Backend: backendLocal}},
 		},
 		ContinueOnError: true,
+		GitContext: GitContext{
+			BaseRef:          "main",
+			ResolvedBaseHash: "deadbeef",
+			WorktreePath:     worktree,
+		},
 	})
 	require.NoError(t, err)
-	require.Equal(t, statusSuccess, output.Status)
-	require.Equal(t, statusSuccess, output.Results["mutating"].Status)
+	require.Equal(t, statusSuccess, result.Output.Status)
+	require.Equal(t, statusSuccess, result.Output.Results["mutating"].Status)
 	_, statErr := os.Stat(mutatedPath)
 	require.ErrorIs(t, statErr, os.ErrNotExist)
 }
@@ -430,33 +404,4 @@ func TestBatchWorkflowKeyFallsBackWhenIDMissing(t *testing.T) {
 		RunInput: RunInput{Workflow: "ci.yml"},
 	}, 0)
 	require.Equal(t, "ci", key)
-}
-
-func initGitRepoWithFiles(t *testing.T, files map[string]string) string {
-	t.Helper()
-
-	repo := t.TempDir()
-	runGitTest(t, repo, "init")
-	runGitTest(t, repo, "config", "user.email", "test@example.com")
-	runGitTest(t, repo, "config", "user.name", "Test User")
-
-	for rel, body := range files {
-		full := filepath.Join(repo, rel)
-		require.NoError(t, os.MkdirAll(filepath.Dir(full), 0o755))
-		require.NoError(t, os.WriteFile(full, []byte(body), 0o644))
-	}
-
-	runGitTest(t, repo, "add", ".")
-	runGitTest(t, repo, "commit", "-m", "init")
-	return repo
-}
-
-func runGitTest(t *testing.T, dir string, args ...string) string {
-	t.Helper()
-	cmd := exec.Command("git", args...)
-	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
-	output, err := cmd.CombinedOutput()
-	require.NoError(t, err, "git %v failed: %s", args, string(output))
-	return string(output)
 }

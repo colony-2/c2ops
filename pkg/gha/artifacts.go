@@ -47,17 +47,24 @@ func externalArtifactURL(ref externalFileRef) (string, error) {
 	return fileURL(ref.Path)
 }
 
-func addExternalArtifactRefs(inv interface {
-	AddExternalArtifact(name string, url string, expand bool) error
-}, refs map[string]externalFileRef) error {
+func buildArtifactRefs(refs map[string]externalFileRef) (map[string]ArtifactRef, error) {
+	if len(refs) == 0 {
+		return nil, nil
+	}
+	out := make(map[string]ArtifactRef, len(refs))
 	for name, ref := range refs {
 		fileRefURL, err := externalArtifactURL(ref)
 		if err != nil {
-			return fmt.Errorf("build file url for %q: %w", name, err)
+			return nil, fmt.Errorf("build file url for %q: %w", name, err)
 		}
-		if err := inv.AddExternalArtifact(name, fileRefURL, ref.Expand); err != nil {
-			return err
+		out[name] = ArtifactRef{
+			Kind: "external",
+			Name: name,
+			External: &ExternalArtifact{
+				URL:    fileRefURL,
+				Expand: ref.Expand,
+			},
 		}
 	}
-	return nil
+	return out, nil
 }

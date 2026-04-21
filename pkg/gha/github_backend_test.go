@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	coreops "github.com/colony-2/c2j/pkg/ops"
 	"github.com/stretchr/testify/require"
 )
 
@@ -84,7 +83,7 @@ func TestResolveGitHubRemoteFromNamedRemote(t *testing.T) {
 
 	remote, err := resolveGitHubRemote(RunInput{
 		Remote: &RemoteInput{PushTo: "origin"},
-	}, coreops.GitExecutionContext{
+	}, GitContext{
 		WorktreePath: repo,
 	})
 	require.NoError(t, err)
@@ -161,7 +160,7 @@ func TestGitHubBackendRunRegistersArtifactURLs(t *testing.T) {
 			ContentHash:    "sha256:abc123",
 			ResolvedCommit: "deadbeef",
 		},
-		GitContext: coreops.GitExecutionContext{
+		GitContext: GitContext{
 			BaseRepo:         "col2test/ghatest",
 			BaseRef:          "main",
 			ResolvedBaseHash: "deadbeef",
@@ -229,7 +228,7 @@ func TestGitHubBackendLeavesLocalWorktreeUnchanged(t *testing.T) {
 			ContentHash:    "sha256:abc123",
 			ResolvedCommit: "deadbeef",
 		},
-		GitContext: coreops.GitExecutionContext{
+		GitContext: GitContext{
 			InvokeHash:   "invoke123",
 			WorktreePath: worktree,
 		},

@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	coreops "github.com/colony-2/c2j/pkg/ops"
 	"github.com/stretchr/testify/require"
 )
 
@@ -44,7 +43,7 @@ jobs:
 			ContentHash:    contentHash([]byte("name: ci")),
 			ResolvedCommit: "deadbeef",
 		},
-		GitContext: coreops.GitExecutionContext{
+		GitContext: GitContext{
 			BaseRepo:         "acme/widgets",
 			BaseRef:          "main",
 			ResolvedBaseHash: "deadbeef",
@@ -91,7 +90,7 @@ jobs:
 			ContentHash:    contentHash([]byte("name: ci")),
 			ResolvedCommit: "deadbeef",
 		},
-		GitContext: coreops.GitExecutionContext{
+		GitContext: GitContext{
 			BaseRepo:         "acme/widgets",
 			BaseRef:          "main",
 			ResolvedBaseHash: "deadbeef",
@@ -100,4 +99,10 @@ jobs:
 	})
 	require.NoError(t, err)
 	require.Equal(t, statusSuccess, result.Output.Status)
+}
+
+func TestDefaultActContainerArchitectureFor(t *testing.T) {
+	require.Equal(t, "", defaultActContainerArchitectureFor("linux", "amd64", ""))
+	require.Equal(t, "linux/amd64", defaultActContainerArchitectureFor("darwin", "arm64", ""))
+	require.Equal(t, "linux/arm64", defaultActContainerArchitectureFor("darwin", "arm64", "linux/arm64"))
 }

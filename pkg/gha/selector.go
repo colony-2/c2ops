@@ -8,13 +8,12 @@ import (
 	"path/filepath"
 	"strings"
 
-	coreops "github.com/colony-2/c2j/pkg/ops"
 	yamlv3 "gopkg.in/yaml.v3"
 )
 
 const workflowDir = ".github/workflows"
 
-func resolveWorkflowSelector(selector string, gitCtx coreops.GitExecutionContext) (resolvedWorkflow, error) {
+func resolveWorkflowSelector(selector string, gitCtx GitContext) (resolvedWorkflow, error) {
 	raw := strings.TrimSpace(selector)
 	if raw == "" {
 		return resolvedWorkflow{}, fmt.Errorf("workflow is required")

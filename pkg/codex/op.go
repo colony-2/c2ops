@@ -6,21 +6,13 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"runtime/debug"
 	"strings"
-	"sync"
-	"time"
-
-	"github.com/colony-2/c2j/pkg/ops"
-	"github.com/colony-2/c2j/pkg/workflow"
-	"github.com/colony-2/swf-go/pkg/swf"
-	"github.com/google/uuid"
 )
 
-// ExecOpInput defines the codex.exec activity inputs expected from recipe-worker.
+// ExecOpInput defines the codex.exec command input.
 type ExecOpInput struct {
 	Prompt             string            `json:"prompt" validate:"required"`
 	SessionID          string            `json:"sessionId,omitempty"`
@@ -97,31 +89,23 @@ type ExecOutcomeRouting struct {
 // executeLibrary is replaceable for tests.
 var executeLibrary = Execute
 
-// GetOp exposes the codex.exec activity as a RegisterableOp.
-func GetOp() ops.RegisterableOp {
-	return ops.NewActivityMappedOpV2[ExecOpInput, ExecOpOutput](ops.OpMetadata{
-		Type:             "codex.exec",
-		Description:      "Runs Codex CLI in non-interactive mode with structured output capture",
-		Version:          "1.0.0",
-		DefaultTimeout:   30 * time.Minute,
-		AcceptsArtifacts: true,
-	}, runCodexActivity)
+// Run executes codex.exec via explicit inputs.
+func Run(actx context.Context, input ExecOpInput) (ExecOpOutput, error) {
+	return runCodexActivity(actx, input)
 }
 
-func runCodexActivity(inv ops.OpDependencies, actx context.Context, input ExecOpInput) (ExecOpOutput, error) {
-
+func runCodexActivity(actx context.Context, input ExecOpInput) (ExecOpOutput, error) {
 	prompt := strings.TrimSpace(input.Prompt)
 	if prompt == "" {
-		return ExecOpOutput{}, workflow.NewNonRetryableApplicationError("prompt is required")
+		return ExecOpOutput{}, fmt.Errorf("prompt is required")
 	}
 
 	worktree := strings.TrimSpace(input.WorktreePath)
 	if worktree == "" {
-		return ExecOpOutput{}, workflow.NewNonRetryableApplicationError("worktree_path is required")
+		return ExecOpOutput{}, fmt.Errorf("worktree_path is required")
 	}
 	workdir := strings.TrimSpace(input.WorkdirPath)
 	if workdir == "" {
-		// Backward-compatible fallback for direct tests/callers that only pass worktree.
 		workdir = worktree
 	}
 	inbox := strings.TrimSpace(input.ArtifactInboxPath)
@@ -134,11 +118,11 @@ func runCodexActivity(inv ops.OpDependencies, actx context.Context, input ExecOp
 	}
 	cellRelPath := strings.TrimSpace(input.CellRelativePath)
 	if cellRelPath == "" {
-		return ExecOpOutput{}, workflow.NewNonRetryableApplicationError("cell_relative_path is required")
+		return ExecOpOutput{}, fmt.Errorf("cell_relative_path is required")
 	}
 	configuredSkillDirs, skillsInstalled, skillSourcesCleanup, err := prepareConfiguredSkillSources(actx, input, workdir)
 	if err != nil {
-		return ExecOpOutput{}, workflow.NewNonRetryableApplicationError("%s", err.Error())
+		return ExecOpOutput{}, err
 	}
 	if skillSourcesCleanup != nil {
 		defer func() {
@@ -147,7 +131,7 @@ func runCodexActivity(inv ops.OpDependencies, actx context.Context, input ExecOp
 	}
 	skillCfg, err := prepareSkillExecutionConfig(input)
 	if err != nil {
-		return ExecOpOutput{}, workflow.NewNonRetryableApplicationError("%s", err.Error())
+		return ExecOpOutput{}, err
 	}
 	promptForExec := renderSkillPrompt(prompt, skillCfg)
 
@@ -165,78 +149,10 @@ func runCodexActivity(inv ops.OpDependencies, actx context.Context, input ExecOp
 	}
 
 	result, stdoutPath, stderrPath, artifactDir, executeErr := executeLibrary(actx, opts)
-
-	executionID := uuid.NewString()
-	debugArtifactf("execution_id=%s stdout=%q stderr=%q artifact_dir=%q err=%v", executionID, stdoutPath, stderrPath, artifactDir, executeErr)
-
-	// Always create cleanup functions for artifacts
-	stdoutCleanup := func() error {
-		if stdoutPath != "" {
-			err := os.Remove(stdoutPath)
-			debugArtifactf("cleanup stdout path=%q err=%v\nstack=%s", stdoutPath, err, debug.Stack())
-			return err
-		}
-		return nil
-	}
-	stderrCleanup := func() error {
-		if stderrPath != "" {
-			err := os.Remove(stderrPath)
-			debugArtifactf("cleanup stderr path=%q err=%v\nstack=%s", stderrPath, err, debug.Stack())
-			return err
-		}
-		return nil
-	}
-
-	// Always register stdout/stderr artifacts if files were created, even on timeout/error
-	// This ensures we capture any output that was written before the timeout occurred
-	if stdoutPath != "" {
-		stdoutArtifact := swf.NewArtifact(
-			"stdout.jsonl",
-			func() (io.ReadCloser, int64, error) {
-				debugArtifactStat("stdout", stdoutPath)
-				f, err := os.Open(stdoutPath)
-				if err != nil {
-					return nil, 0, fmt.Errorf("open stdout: %w", err)
-				}
-				info, err := f.Stat()
-				if err != nil {
-					f.Close()
-					return nil, 0, fmt.Errorf("stat stdout: %w", err)
-				}
-				return f, info.Size(), nil
-			},
-			stdoutCleanup,
-		)
-		if err := inv.AddOutputArtifact(stdoutArtifact); err != nil {
-			os.RemoveAll(artifactDir) // Clean up on artifact error
-			return ExecOpOutput{}, fmt.Errorf("add stdout artifact: %w", err)
-		}
-		debugArtifactStat("stdout-before-return", stdoutPath)
-	}
-
-	if stderrPath != "" {
-		stderrArtifact := swf.NewArtifact(
-			"stderr.txt",
-			func() (io.ReadCloser, int64, error) {
-				debugArtifactStat("stderr", stderrPath)
-				f, err := os.Open(stderrPath)
-				if err != nil {
-					return nil, 0, fmt.Errorf("open stderr: %w", err)
-				}
-				info, err := f.Stat()
-				if err != nil {
-					f.Close()
-					return nil, 0, fmt.Errorf("stat stderr: %w", err)
-				}
-				return f, info.Size(), nil
-			},
-			stderrCleanup,
-		)
-		if err := inv.AddOutputArtifact(stderrArtifact); err != nil {
-			os.RemoveAll(artifactDir) // Clean up on artifact error
-			return ExecOpOutput{}, fmt.Errorf("add stderr artifact: %w", err)
-		}
-		debugArtifactStat("stderr-before-return", stderrPath)
+	debugArtifactf("stdout=%q stderr=%q artifact_dir=%q err=%v", stdoutPath, stderrPath, artifactDir, executeErr)
+	defer cleanupArtifacts(stdoutPath, stderrPath, artifactDir)
+	if err := writeOutputArtifacts(outbox, stdoutPath, stderrPath); err != nil {
+		return ExecOpOutput{}, err
 	}
 
 	outcome := buildExecOutcome(result, skillCfg, outbox)
@@ -260,8 +176,6 @@ func runCodexActivity(inv ops.OpDependencies, actx context.Context, input ExecOp
 		}
 	}
 
-	// Check for errors after artifacts are registered
-	// This ensures stdout/stderr are available even on timeout/error
 	if executeErr != nil {
 		return ExecOpOutput{}, fmt.Errorf("codex execution error: %w", executeErr)
 	}
@@ -273,42 +187,66 @@ func runCodexActivity(inv ops.OpDependencies, actx context.Context, input ExecOp
 		return ExecOpOutput{}, fmt.Errorf("codex error: %s", msg)
 	}
 	return output, nil
-	// Artifact dir cleaned up by artifact cleanup callbacks (after both artifacts consumed)
-}
-
-var artifactDebugOnce sync.Once
-var artifactDebugEnabled bool
-
-func artifactDebug() bool {
-	artifactDebugOnce.Do(func() {
-		val := strings.TrimSpace(os.Getenv("VIBETHIS_CODEX_ARTIFACT_DEBUG"))
-		if val == "1" || strings.EqualFold(val, "true") || strings.EqualFold(val, "yes") {
-			artifactDebugEnabled = true
-		}
-	})
-	return artifactDebugEnabled
 }
 
 func debugArtifactf(format string, args ...interface{}) {
-	if artifactDebug() {
-		log.Printf("codex.exec artifacts: "+format, args...)
-	}
 }
 
 func debugArtifactStat(label, path string) {
-	if !artifactDebug() {
-		return
+}
+
+func writeOutputArtifacts(outbox string, stdoutPath string, stderrPath string) error {
+	if strings.TrimSpace(outbox) == "" {
+		return nil
 	}
-	if path == "" {
-		log.Printf("codex.exec artifacts: %s path empty", label)
-		return
+
+	if err := writeOutputArtifact(outbox, "stdout.jsonl", stdoutPath); err != nil {
+		return err
 	}
-	info, err := os.Stat(path)
+	if err := writeOutputArtifact(outbox, "stderr.txt", stderrPath); err != nil {
+		return err
+	}
+	return nil
+}
+
+func writeOutputArtifact(outbox string, name string, srcPath string) error {
+	if strings.TrimSpace(srcPath) == "" {
+		return nil
+	}
+	dest := filepath.Join(outbox, name)
+	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+		return fmt.Errorf("create artifact directory for %s: %w", name, err)
+	}
+	debugArtifactStat(name+"-source", srcPath)
+	src, err := os.Open(srcPath)
 	if err != nil {
-		log.Printf("codex.exec artifacts: %s stat path=%q err=%v", label, path, err)
-		return
+		return fmt.Errorf("open artifact %s: %w", name, err)
 	}
-	log.Printf("codex.exec artifacts: %s stat path=%q size=%d", label, path, info.Size())
+	defer src.Close()
+	dst, err := os.Create(dest)
+	if err != nil {
+		return fmt.Errorf("create outbox artifact %s: %w", name, err)
+	}
+	defer dst.Close()
+	if _, err := io.Copy(dst, src); err != nil {
+		return fmt.Errorf("copy artifact %s: %w", name, err)
+	}
+	debugArtifactStat(name+"-dest", dest)
+	return nil
+}
+
+func cleanupArtifacts(stdoutPath string, stderrPath string, artifactDir string) {
+	for _, path := range []string{stdoutPath, stderrPath} {
+		if strings.TrimSpace(path) == "" {
+			continue
+		}
+		err := os.Remove(path)
+		debugArtifactf("cleanup path=%q err=%v\nstack=%s", path, err, debug.Stack())
+	}
+	if strings.TrimSpace(artifactDir) != "" {
+		err := os.RemoveAll(artifactDir)
+		debugArtifactf("cleanup artifact_dir=%q err=%v\nstack=%s", artifactDir, err, debug.Stack())
+	}
 }
 
 func copyDependencies(in []Dependency) []Dependency {

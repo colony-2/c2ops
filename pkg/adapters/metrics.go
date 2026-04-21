@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	f2 "github.com/colony-2/c2j/pkg/file"
+	f2 "github.com/colony-2/c2ops/pkg/files"
 )
 
 // MetricsCollector tracks adapter usage

@@ -37,14 +37,19 @@ input_schema:
       type: object
     workdir_path:
       type: string
+      default: "{{ context.environment.workdir }}"
     worktree_path:
       type: string
+      default: "{{ context.environment.worktree_path }}"
     artifact_inbox_path:
       type: string
+      default: "{{ context.environment.inbox }}"
     artifact_outbox_path:
       type: string
+      default: "{{ context.environment.outbox }}"
     cell_relative_path:
       type: string
+      default: "{{ context.workflow.cell_path }}"
 output_schema:
   type: object
   properties:

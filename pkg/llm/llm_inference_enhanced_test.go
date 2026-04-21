@@ -7,9 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	f2 "github.com/colony-2/c2j/pkg/file"
-	recipeops "github.com/colony-2/c2j/pkg/ops"
 	llmadapters "github.com/colony-2/c2ops/pkg/adapters"
+	f2 "github.com/colony-2/c2ops/pkg/files"
 	"github.com/go-playground/validator/v10"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -45,7 +44,7 @@ func TestEnhancedLLMInferenceActivity_BackwardCompatibility(t *testing.T) {
 			Provider: "openai",
 		}
 
-		output, err := activity.Execute(nil, context.Background(), input)
+		output, err := activity.Execute(context.Background(), input)
 		require.NoError(t, err)
 
 		// Check output
@@ -67,7 +66,7 @@ func TestEnhancedLLMInferenceActivity_BackwardCompatibility(t *testing.T) {
 			Provider: "openai",
 		}
 
-		output, err := activity.Execute(nil, context.Background(), input)
+		output, err := activity.Execute(context.Background(), input)
 		require.NoError(t, err)
 
 		// Check output
@@ -88,7 +87,7 @@ func TestEnhancedLLMInferenceActivity_BackwardCompatibility(t *testing.T) {
 		// Provide provider and model directly in input since config is removed
 		input.Provider = "openai"
 		input.Model = "gpt-3.5-turbo"
-		output, err := activity.Execute(nil, context.Background(), input)
+		output, err := activity.Execute(context.Background(), input)
 		require.NoError(t, err)
 
 		assert.NotEmpty(t, output.Response)
@@ -106,7 +105,7 @@ func TestEnhancedLLMInferenceActivity_ConstructsAdapterLocally(t *testing.T) {
 		Provider: "openai",
 	}
 
-	_, err := activity.Execute(nil, context.Background(), input)
+	_, err := activity.Execute(context.Background(), input)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "API key is missing")
 }
@@ -127,7 +126,7 @@ func TestLLMInferenceInputValidation_EmptyToolsAndNoTools(t *testing.T) {
 		raw := makeInput()
 
 		var decoded LLMInferenceInput
-		err := recipeops.DecodeWithJsonTags(raw, &decoded)
+		err := decodeWithJSONTags(raw, &decoded)
 		require.NoError(t, err)
 
 		v := validator.New()
@@ -146,7 +145,7 @@ func TestLLMInferenceInputValidation_EmptyToolsAndNoTools(t *testing.T) {
 		}
 
 		var decoded LLMInferenceInput
-		err := recipeops.DecodeWithJsonTags(raw, &decoded)
+		err := decodeWithJSONTags(raw, &decoded)
 		require.NoError(t, err)
 
 		v := validator.New()
@@ -160,7 +159,7 @@ func TestLLMInferenceInputValidation_EmptyToolsAndNoTools(t *testing.T) {
 		raw["enable_tool_execution"] = true
 
 		var decoded LLMInferenceInput
-		err := recipeops.DecodeWithJsonTags(raw, &decoded)
+		err := decodeWithJSONTags(raw, &decoded)
 		require.NoError(t, err)
 
 		v := validator.New()
@@ -187,7 +186,7 @@ func TestLLMInferenceInputValidation_EmptyToolsAndNoTools(t *testing.T) {
 		}
 
 		var decoded LLMInferenceInput
-		err := recipeops.DecodeWithJsonTags(raw, &decoded)
+		err := decodeWithJSONTags(raw, &decoded)
 		require.NoError(t, err)
 
 		require.True(t, json.Valid(decoded.ResponseSchema.Raw()))
@@ -197,6 +196,14 @@ func TestLLMInferenceInputValidation_EmptyToolsAndNoTools(t *testing.T) {
 		require.Len(t, schema, 1)
 		assert.Equal(t, "object", schema[0]["type"])
 	})
+}
+
+func decodeWithJSONTags(input map[string]interface{}, out interface{}) error {
+	data, err := json.Marshal(input)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(data, out)
 }
 
 func TestEnhancedLLMInferenceActivity_WithFiles(t *testing.T) {
@@ -250,7 +257,7 @@ func TestEnhancedLLMInferenceActivity_WithFiles(t *testing.T) {
 		}
 
 		input.MaxFileContextSize = 10 * 1024 * 1024
-		output, err := activity.Execute(nil, context.Background(), input)
+		output, err := activity.Execute(context.Background(), input)
 		require.NoError(t, err)
 
 		assert.NotEmpty(t, output.Response)
@@ -320,7 +327,7 @@ func TestEnhancedLLMInferenceActivity_WithTools(t *testing.T) {
 		input.EnableToolExecution = true
 		input.EnableSandbox = true
 		input.AllowedPaths = []string{tmpDir}
-		output, err := activity.Execute(nil, context.Background(), input)
+		output, err := activity.Execute(context.Background(), input)
 		require.NoError(t, err)
 
 		// Check response
@@ -394,7 +401,7 @@ func TestEnhancedLLMInferenceActivity_WithTools(t *testing.T) {
 		input.EnableSandbox = true
 		input.AllowedPaths = []string{tmpDir2}
 
-		output, err := activity2.Execute(nil, context.Background(), input)
+		output, err := activity2.Execute(context.Background(), input)
 		require.NoError(t, err)
 
 		// Check tool results - should have exactly 1
@@ -597,7 +604,7 @@ func TestStructuredResponseNormalizationAndValidation(t *testing.T) {
 		]`),
 	}
 
-	output, err := activity.Execute(nil, context.Background(), input)
+	output, err := activity.Execute(context.Background(), input)
 	require.NoError(t, err)
 
 	assert.Equal(t, `{"cell_is_appropriate":false}`, output.Response)
@@ -629,7 +636,7 @@ func TestStructuredResponseValidationFailureIncludesType(t *testing.T) {
 		}`),
 	}
 
-	_, err := activity.Execute(nil, context.Background(), input)
+	_, err := activity.Execute(context.Background(), input)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "response does not match response_schema")
 	assert.Contains(t, err.Error(), "expected object")

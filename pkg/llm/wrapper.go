@@ -3,10 +3,6 @@ package llm
 import (
 	"context"
 	"encoding/json"
-
-	"time"
-
-	"github.com/colony-2/c2j/pkg/ops"
 )
 
 // LLMConfig defines the configuration for LLM activities - ALL fields MUST have json tags
@@ -36,19 +32,8 @@ type LLMOutput struct {
 	Usage        map[string]interface{} `json:"usage"`         // Token usage statistics
 }
 
-func GetOp() ops.RegisterableOp {
-	return ops.NewActivityMappedOpV2[LLMInput, LLMOutput](
-		ops.OpMetadata{
-			Type:           "llm_inference",
-			Description:    "Executes LLM inference with various providers (OpenAI, Anthropic, Gemini)",
-			Version:        "1.0.0",
-			DefaultTimeout: 5 * time.Minute,
-		},
-		execute)
-}
-
-// Execute runs the activity with provided configuration and inputs
-func execute(_ ops.OpDependencies, ctx context.Context, input LLMInput) (LLMOutput, error) {
+// RunInference executes LLM inference with the provided configuration and inputs.
+func RunInference(ctx context.Context, input LLMInput) (LLMOutput, error) {
 	// Ensure registry is initialized
 	if globalRegistry == nil {
 		if err := InitializeRegistry(); err != nil {

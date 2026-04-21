@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	f2 "github.com/colony-2/c2j/pkg/file"
+	f2 "github.com/colony-2/c2ops/pkg/files"
 )
 
 // UnifiedAdapter combines file and tool capabilities

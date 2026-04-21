@@ -15,17 +15,77 @@ input_schema:
       type: string
     system_prompt:
       type: string
+    api_keys:
+      type: object
+      additionalProperties:
+        type: string
+    temperature:
+      type: number
+    max_tokens:
+      type: integer
+    top_p:
+      type: number
+    stop_sequences:
+      type: array
+      items:
+        type: string
+    enable_sandbox:
+      type: boolean
+    allowed_paths:
+      type: array
+      items:
+        type: string
+    restricted_paths:
+      type: array
+      items:
+        type: string
+    default_file_handling:
+      type: string
+    max_file_context_size:
+      type: integer
     files:
       type: array
       items:
         type: object
+        properties:
+          path:
+            type: string
+          content: {}
+          type:
+            type: string
+          mime_type:
+            type: string
     tools:
       type: array
       items:
         type: object
+        required: [name, description, parameters]
+        properties:
+          name:
+            type: string
+          description:
+            type: string
+          parameters: {}
     execute_tools:
       type: boolean
-    response_schema:
+    response_schema: {}
+    file_handling:
+      type: string
+    default_working_dir:
+      type: string
+      default: "{{ context.environment.worktree_path }}"
+    tool_working_dir:
+      type: string
+      default: "{{ context.environment.worktree_path }}"
+    enable_tool_execution:
+      type: boolean
+    max_tool_rounds:
+      type: integer
+    continue_on_tool_error:
+      type: boolean
+    tool_timeout:
+      type: string
+    metadata:
       type: object
 output_schema:
   type: object

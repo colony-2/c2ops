@@ -10,11 +10,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
 
-	coreops "github.com/colony-2/c2j/pkg/ops"
 	actcommon "github.com/nektos/act/pkg/common"
 	actmodel "github.com/nektos/act/pkg/model"
 	actrunner "github.com/nektos/act/pkg/runner"
@@ -88,21 +88,22 @@ func (b *actBackend) Run(ctx context.Context, req backendRequest) (backendResult
 	logger.SetLevel(logrus.TraceLevel)
 
 	runnerConfig := &actrunner.Config{
-		Actor:              "colony2",
-		Workdir:            isolatedWorktree,
-		EventName:          workflowDispatchEvent,
-		EventPath:          eventPath,
-		DefaultBranch:      githubRefName(localReq.GitContext),
-		Env:                buildActEnv(localReq, runID),
-		Inputs:             stringifyInputs(req.Input.With),
-		Secrets:            copyStringMap(req.Input.Secrets),
-		Token:              strings.TrimSpace(req.Input.Secrets["GITHUB_TOKEN"]),
-		Platforms:          defaultActPlatforms(req.Input.RunnerImage),
-		LogOutput:          false,
-		ArtifactServerPath: artifactRoot,
-		ArtifactServerAddr: "127.0.0.1",
-		ArtifactServerPort: artifactPort,
-		GitHubInstance:     "github.com",
+		Actor:                 "colony2",
+		Workdir:               isolatedWorktree,
+		EventName:             workflowDispatchEvent,
+		EventPath:             eventPath,
+		DefaultBranch:         githubRefName(localReq.GitContext),
+		Env:                   buildActEnv(localReq, runID),
+		Inputs:                stringifyInputs(req.Input.With),
+		Secrets:               copyStringMap(req.Input.Secrets),
+		Token:                 strings.TrimSpace(req.Input.Secrets["GITHUB_TOKEN"]),
+		Platforms:             defaultActPlatforms(req.Input.RunnerImage),
+		ContainerArchitecture: defaultActContainerArchitecture(req.Input.ContainerArchitecture),
+		LogOutput:             false,
+		ArtifactServerPath:    artifactRoot,
+		ArtifactServerAddr:    "127.0.0.1",
+		ArtifactServerPort:    artifactPort,
+		GitHubInstance:        "github.com",
 	}
 
 	r, err := actrunner.New(runnerConfig)
@@ -143,6 +144,7 @@ func (b *actBackend) Run(ctx context.Context, req backendRequest) (backendResult
 			Status:          status,
 			ExitCode:        exitCode,
 			DurationSeconds: durationSeconds,
+			ErrorMessage:    actRunErrorMessage(execErr, status),
 			Workflow: WorkflowOutput{
 				ResolvedSelector: req.Workflow.Selector,
 				ResolvedCommit:   req.Workflow.ResolvedCommit,
@@ -245,6 +247,28 @@ func defaultActPlatforms(override string) map[string]string {
 	}
 }
 
+func defaultActContainerArchitecture(override string) string {
+	return defaultActContainerArchitectureFor(runtime.GOOS, runtime.GOARCH, override)
+}
+
+func defaultActContainerArchitectureFor(goos string, goarch string, override string) string {
+	arch := strings.TrimSpace(override)
+	if arch != "" {
+		return arch
+	}
+	if goos == "darwin" && goarch == "arm64" {
+		return "linux/amd64"
+	}
+	return ""
+}
+
+func actRunErrorMessage(execErr error, status string) string {
+	if execErr == nil || status == statusSuccess {
+		return ""
+	}
+	return execErr.Error()
+}
+
 func buildActEnv(req backendRequest, runID string) map[string]string {
 	env := copyStringMap(req.Input.Env)
 	if env == nil {
@@ -337,7 +361,7 @@ func localWorkflowPath(workflowPath string, sourceWorktree string, isolatedWorkt
 	return filepath.Join(isolatedWorktree, rel), nil
 }
 
-func githubRef(gitCtx coreops.GitExecutionContext) string {
+func githubRef(gitCtx GitContext) string {
 	ref := strings.TrimSpace(gitCtx.BaseRef)
 	if ref == "" {
 		return ""
@@ -348,7 +372,7 @@ func githubRef(gitCtx coreops.GitExecutionContext) string {
 	return "refs/heads/" + ref
 }
 
-func githubRefName(gitCtx coreops.GitExecutionContext) string {
+func githubRefName(gitCtx GitContext) string {
 	ref := githubRef(gitCtx)
 	switch {
 	case strings.HasPrefix(ref, "refs/heads/"):
@@ -360,7 +384,7 @@ func githubRefName(gitCtx coreops.GitExecutionContext) string {
 	}
 }
 
-func githubRefType(gitCtx coreops.GitExecutionContext) string {
+func githubRefType(gitCtx GitContext) string {
 	ref := githubRef(gitCtx)
 	switch {
 	case strings.HasPrefix(ref, "refs/heads/"):
@@ -372,7 +396,7 @@ func githubRefType(gitCtx coreops.GitExecutionContext) string {
 	}
 }
 
-func resolvedCommit(gitCtx coreops.GitExecutionContext) string {
+func resolvedCommit(gitCtx GitContext) string {
 	if hash := strings.TrimSpace(gitCtx.PersistHash); hash != "" {
 		return hash
 	}

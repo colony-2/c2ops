@@ -7,9 +7,8 @@ import (
 	"strings"
 	"time"
 
-	f2 "github.com/colony-2/c2j/pkg/file"
-	"github.com/colony-2/c2j/pkg/ops"
 	llmadapters "github.com/colony-2/c2ops/pkg/adapters"
+	f2 "github.com/colony-2/c2ops/pkg/files"
 	"github.com/mitchellh/mapstructure"
 	jsonschemav6 "github.com/santhosh-tekuri/jsonschema/v6"
 )
@@ -87,6 +86,15 @@ func (m *JSONRawMessage) DecodeFromMap(input any) error {
 		*m = JSONRawMessage(encoded)
 		return nil
 	}
+}
+
+func (m *JSONRawMessage) UnmarshalJSON(data []byte) error {
+	if string(data) == "null" {
+		*m = nil
+		return nil
+	}
+	*m = JSONRawMessage(append([]byte(nil), data...))
+	return nil
 }
 
 // Raw converts to standard json.RawMessage
@@ -192,7 +200,6 @@ type ToolResult struct {
 	Duration   int64       `json:"duration_ms"`
 }
 
-// EnhancedLLMInferenceActivity implements RegisterableOp
 type EnhancedLLMInferenceActivity struct {
 	registry     llmadapters.Registry
 	toolExecutor *FileToolExecutor
@@ -221,33 +228,13 @@ func NewEnhancedLLMInferenceActivity() *EnhancedLLMInferenceActivity {
 	return &EnhancedLLMInferenceActivity{}
 }
 
-func GetEnhancedOp() ops.RegisterableOp {
-	e := &EnhancedLLMInferenceActivity{}
-	return ops.NewActivityMappedOpV2[LLMInferenceInput, LLMInferenceOutput](
-		ops.OpMetadata{
-			Type:           "llm_inference2",
-			Description:    "Executes LLM inference with various providers (OpenAI, Anthropic, Gemini)",
-			Version:        "1.0.0",
-			DefaultTimeout: 5 * time.Minute,
-		},
-		e.Execute)
+// RunEnhancedInference executes the enhanced LLM inference flow.
+func RunEnhancedInference(ctx context.Context, input LLMInferenceInput) (LLMInferenceOutput, error) {
+	return NewEnhancedLLMInferenceActivity().Execute(ctx, input)
 }
 
-// GetMetadata returns activity metadata
-func (a *EnhancedLLMInferenceActivity) GetMetadata() ops.OpMetadata {
-	return ops.OpMetadata{
-		Type:        "llm_inference", // Same type for backward compatibility
-		Description: "Enhanced LLM inference with file and tool support",
-		Version:     "2.0.0",
-	}
-}
-
-// Execute runs the enhanced LLM inference activity (input carries all config)
-func (a *EnhancedLLMInferenceActivity) Execute(
-	_ ops.OpDependencies,
-	ctx context.Context,
-	input LLMInferenceInput,
-) (LLMInferenceOutput, error) {
+// Execute runs the enhanced LLM inference flow (input carries all config).
+func (a *EnhancedLLMInferenceActivity) Execute(ctx context.Context, input LLMInferenceInput) (LLMInferenceOutput, error) {
 
 	startTime := time.Now()
 

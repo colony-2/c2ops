@@ -3,7 +3,7 @@ package llmadapters
 import (
 	"context"
 
-	"github.com/colony-2/c2j/pkg/file"
+	file "github.com/colony-2/c2ops/pkg/files"
 )
 
 // FileCapabilities describes what file types an adapter supports

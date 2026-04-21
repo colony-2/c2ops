@@ -10,8 +10,6 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-
-	coreops "github.com/colony-2/c2j/pkg/ops"
 )
 
 var githubClientFactory = func(host, token string) (githubActionsClient, error) {
@@ -154,7 +152,7 @@ func runGit(ctx context.Context, dir string, args ...string) (string, error) {
 	return string(output), nil
 }
 
-func resolveGitHubRemote(input RunInput, gitCtx coreops.GitExecutionContext) (githubRemoteRepo, error) {
+func resolveGitHubRemote(input RunInput, gitCtx GitContext) (githubRemoteRepo, error) {
 	pushURL := ""
 	if input.Remote != nil {
 		pushURL = strings.TrimSpace(input.Remote.PushTo)
@@ -295,7 +293,7 @@ func ensureGitHubWorkflowDispatchable(ctx context.Context, client githubActionsC
 	return nil
 }
 
-func buildGitHubBranchName(input RunInput, gitCtx coreops.GitExecutionContext, workflow resolvedWorkflow) string {
+func buildGitHubBranchName(input RunInput, gitCtx GitContext, workflow resolvedWorkflow) string {
 	prefix := "c2/gha"
 	if input.Remote != nil && strings.TrimSpace(input.Remote.RefPrefix) != "" {
 		prefix = strings.TrimSpace(input.Remote.RefPrefix)

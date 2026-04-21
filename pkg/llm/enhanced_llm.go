@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	f2 "github.com/colony-2/c2j/pkg/file"
 	llmadapters "github.com/colony-2/c2ops/pkg/adapters"
+	f2 "github.com/colony-2/c2ops/pkg/files"
 )
 
 // EnhancedLLMTask executes an LLM generation task with persona mode and file inclusion support

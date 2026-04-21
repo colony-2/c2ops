@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	coreops "github.com/colony-2/c2j/pkg/ops"
 	"github.com/stretchr/testify/require"
 )
 
@@ -63,7 +62,7 @@ func TestGitHubBackendRunLive(t *testing.T) {
 			ContentHash:    contentHash([]byte("live")),
 			ResolvedCommit: head,
 		},
-		GitContext: coreops.GitExecutionContext{
+		GitContext: GitContext{
 			BaseRepo:         "col2test/ghatest",
 			BaseRef:          "main",
 			ResolvedBaseHash: head,
