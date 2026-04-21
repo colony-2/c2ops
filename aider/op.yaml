@@ -1,0 +1,77 @@
+name: aider.exec
+description: Runs Aider through the selector-backed extension mechanism via uv
+working_directory: .
+command: ["uv", "run", "--script", "./main.py"]
+timeout: 30m
+env:
+  PYTHONUNBUFFERED: "1"
+input_schema:
+  type: object
+  required: [prompt]
+  properties:
+    prompt:
+      type: string
+    sessionId:
+      type: string
+    model:
+      type: string
+    env:
+      type: object
+      additionalProperties:
+        type: string
+    skill:
+      type: string
+    skills:
+      type: array
+      items:
+        type: string
+    skill_mode:
+      type: string
+    skill_selection_mode:
+      type: string
+    return_on:
+      type: array
+      items:
+        type: string
+    status_contract:
+      type: object
+    resume_context:
+      type: object
+    workdir_path:
+      type: string
+      default: "{{ context.environment.workdir }}"
+    worktree_path:
+      type: string
+      default: "{{ context.environment.worktree_path }}"
+    artifact_inbox_path:
+      type: string
+      default: "{{ context.environment.inbox }}"
+    artifact_outbox_path:
+      type: string
+      default: "{{ context.environment.outbox }}"
+    cell_relative_path:
+      type: string
+      default: "{{ context.workflow.cell_path }}"
+output_schema:
+  type: object
+  properties:
+    status:
+      type: string
+    sessionId:
+      type: string
+    assistantSummary:
+      type: string
+    incompleteReason:
+      type: string
+    incompleteCategory:
+      type: string
+    pendingDependencies:
+      type: array
+      items:
+        type: object
+    skills_installed:
+      type: array
+      items:
+        type: string
+    outcome:
+      type: object
