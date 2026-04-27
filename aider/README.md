@@ -1,4 +1,4 @@
-# `aider.exec`
+# `aider`
 
 Aider-backed op with a `codex.exec`-like input and output shape.
 

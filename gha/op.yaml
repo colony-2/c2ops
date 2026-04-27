@@ -1,53 +1,41 @@
-name: gha.runs
-description: Runs the gha.runs Go implementation through the extension mechanism
-working_directory: .
-command: ["go", "run", "./cmd/gha-runs-op"]
-timeout: 45m
+name: gha
+description: Runs the gha.run Go implementation through the extension mechanism
+working_directory: ..
+command: ["go", "run", "./cmd/gha-run-op"]
+timeout: 30m
 input_schema:
   type: object
-  required: [workflows]
+  required: [workflow]
   properties:
-    workflows:
-      type: array
-      items:
-        type: object
-        required: [workflow]
-        properties:
-          id:
-            type: string
-          workflow:
-            type: string
-          with:
-            type: object
-          env:
-            type: object
-            additionalProperties:
-              type: string
-          secrets:
-            type: object
-            additionalProperties:
-              type: string
-          backend:
-            type: string
-          runner_image:
-            type: string
-          container_architecture:
-            type: string
-          timeout:
-            type: string
-          continue_on_error:
-            type: boolean
-          remote:
-            type: object
-            properties:
-              push_to:
-                type: string
-              ref_prefix:
-                type: string
+    workflow:
+      type: string
+    with:
+      type: object
+    env:
+      type: object
+      additionalProperties:
+        type: string
+    secrets:
+      type: object
+      additionalProperties:
+        type: string
+    backend:
+      type: string
+    runner_image:
+      type: string
+    container_architecture:
+      type: string
     timeout:
       type: string
     continue_on_error:
       type: boolean
+    remote:
+      type: object
+      properties:
+        push_to:
+          type: string
+        ref_prefix:
+          type: string
     git_context:
       type: object
       default:
@@ -85,9 +73,13 @@ output_schema:
   properties:
     status:
       type: string
-    all_passed:
-      type: boolean
+    exit_code:
+      type: integer
+    duration_seconds:
+      type: integer
     error_message:
       type: string
-    results:
+    workflow:
+      type: object
+    jobs:
       type: object

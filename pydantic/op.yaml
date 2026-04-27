@@ -1,4 +1,4 @@
-name: llm_inference2_pydantic
+name: pydantic
 description: Runs llm_inference2-compatible requests through PydanticAI via uv
 working_directory: .
 command: ["uv", "run", "--script", "./main.py"]

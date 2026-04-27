@@ -1,4 +1,4 @@
-# `llm_inference2_pydantic`
+# `pydantic`
 
 PydanticAI-backed op with an interface similar to the existing `llm_inference2` op.
 

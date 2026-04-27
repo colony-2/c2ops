@@ -1,4 +1,4 @@
-# `llm_inference_litellm`
+# `litellm`
 
 LiteLLM-backed replacement-style op for the existing `llm_inference` interface.
 

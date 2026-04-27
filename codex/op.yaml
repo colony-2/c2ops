@@ -1,6 +1,6 @@
-name: codex.exec
+name: codex
 description: Runs Codex via the selector-backed extension mechanism
-working_directory: .
+working_directory: ..
 command: ["go", "run", "./cmd/codex-exec-op"]
 timeout: 30m
 input_schema:

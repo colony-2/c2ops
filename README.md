@@ -1,23 +1,17 @@
 # c2ops
 
-Collection of extension ops for c2j-style workflows.
+Collection of c2j extension ops.
 
-Each op follows the same basic contract:
+Every op in this repo reads one JSON object from stdin and writes one JSON object to stdout as `{"output": ...}`. For the op model itself, see [EXTENSION_OPS_GUIDE.md](./EXTENSION_OPS_GUIDE.md).
 
-- read one JSON input object from stdin
-- execute the op implementation
-- write one JSON output object to stdout as `{"output": ...}`
-
-For the underlying op model and selector behavior, see [EXTENSION_OPS_GUIDE.md](./EXTENSION_OPS_GUIDE.md).
-
-## Using an Op in a Recipe
+## Recipe Form
 
 Local selector:
 
 ```yaml
 sequence:
   - id: step
-    op: ./litellm
+    op: ./llm
     inputs:
       provider: openai
       model: gpt-4.1-mini
@@ -29,117 +23,99 @@ Git selector:
 ```yaml
 sequence:
   - id: step
-    op: git+https://github.com/colony-2/c2ops.git//litellm@main
+    op: git+https://github.com/colony-2/c2ops.git//llm@main
     inputs:
       provider: openai
       model: gpt-4.1-mini
       prompt: Say hello.
 ```
 
-## Op Catalog
+## Ops
 
-| Op name | What it is for | Local selector | Recipe URI | Typical inputs |
-| --- | --- | --- | --- | --- |
-| `llm_inference` | Legacy Go op for one-shot LLM calls with optional structured output. | `./pkg/llm/extension-llm-inference` | `git+https://github.com/colony-2/c2ops.git//pkg/llm/extension-llm-inference@main` | `provider`, `model`, `prompt`, `system_prompt`, `response_schema` |
-| `llm_inference2` | Legacy Go op for richer LLM flows with files, tools, sandbox options, and structured output. | `./pkg/llm/extension-llm-inference2` | `git+https://github.com/colony-2/c2ops.git//pkg/llm/extension-llm-inference2@main` | `default_provider`, `default_model`, `prompt`, `files`, `tools`, `execute_tools`, `response_schema` |
-| `gha.run` | Run one GitHub Actions workflow from an op. | `./pkg/gha/extension-gha-run` | `git+https://github.com/colony-2/c2ops.git//pkg/gha/extension-gha-run@main` | `workflow`, `with`, `env`, `secrets`, `backend`, `remote` |
-| `gha.runs` | Run multiple GitHub Actions workflows in one op invocation. | `./pkg/gha/extension-gha-runs` | `git+https://github.com/colony-2/c2ops.git//pkg/gha/extension-gha-runs@main` | `workflows`, `timeout`, `continue_on_error`, `git_context` |
-| `codex.exec` | Run Codex through the selector-backed op interface with resumable sessions and outbox artifacts. | `./pkg/codex/extension-codex-exec` | `git+https://github.com/colony-2/c2ops.git//pkg/codex/extension-codex-exec@main` | `prompt`, `sessionId`, `model`, `env`, `worktree_path`, `artifact_outbox_path` |
-| `llm_inference_litellm` | Python op that keeps the `llm_inference` shape but routes requests through LiteLLM. | `./litellm` | `git+https://github.com/colony-2/c2ops.git//litellm@main` | `provider`, `model`, `prompt`, `system_prompt`, `response_schema` |
-| `llm_inference2_pydantic` | Python op that keeps the `llm_inference2` shape but routes requests through PydanticAI. | `./pydantic` | `git+https://github.com/colony-2/c2ops.git//pydantic@main` | `default_provider`, `default_model`, `prompt`, `files`, `tools`, `execute_tools`, `response_schema` |
-| `aider.exec` | Python op that exposes Aider behind a `codex.exec`-like contract. | `./aider` | `git+https://github.com/colony-2/c2ops.git//aider@main` | `prompt`, `sessionId`, `model`, `env`, `worktree_path`, `artifact_outbox_path` |
+| Op | Short description | Local selector | Recipe URI |
+| --- | --- | --- | --- |
+| `llm` | Legacy Go-backed one-shot LLM op, compatible with the original `llm_inference` shape. | `./llm` | `git+https://github.com/colony-2/c2ops.git//llm@main` |
+| `llm2` | Legacy Go-backed richer LLM op with files, tools, and structured output, compatible with `llm_inference2`. | `./llm2` | `git+https://github.com/colony-2/c2ops.git//llm2@main` |
+| `codex` | Go-backed Codex op with resumable sessions and outbox artifacts. | `./codex` | `git+https://github.com/colony-2/c2ops.git//codex@main` |
+| `gha` | Go-backed op for running one GitHub Actions workflow. | `./gha` | `git+https://github.com/colony-2/c2ops.git//gha@main` |
+| `gha-many` | Go-backed op for running multiple GitHub Actions workflows in one invocation. | `./gha-many` | `git+https://github.com/colony-2/c2ops.git//gha-many@main` |
+| `pydantic` | Python-backed alternative to `llm2`, implemented with PydanticAI. | `./pydantic` | `git+https://github.com/colony-2/c2ops.git//pydantic@main` |
+| `aider` | Python-backed alternative to `codex`, implemented with Aider behind a `codex`-like contract. | `./aider` | `git+https://github.com/colony-2/c2ops.git//aider@main` |
+| `litellm` | Python-backed alternative to `llm`, implemented with LiteLLM. | `./litellm` | `git+https://github.com/colony-2/c2ops.git//litellm@main` |
 
-## Short Usage Notes
+## Short Usage
 
-### `llm_inference`
+### `llm`
 
-Use for simple prompt-in / response-out model calls.
+Use for simple prompt-in / response-out calls.
 
 ```yaml
 sequence:
   - id: ask
-    op: git+https://github.com/colony-2/c2ops.git//pkg/llm/extension-llm-inference@main
+    op: git+https://github.com/colony-2/c2ops.git//llm@main
     inputs:
       provider: openai
       model: gpt-4.1-mini
       prompt: Give me a one-sentence summary of this repo.
 ```
 
-### `llm_inference2`
+### `llm2`
 
-Use for richer LLM requests that need file context, tool definitions, or tool execution.
+Use for richer LLM flows that need files, tools, or structured output.
 
 ```yaml
 sequence:
   - id: plan
-    op: git+https://github.com/colony-2/c2ops.git//pkg/llm/extension-llm-inference2@main
+    op: git+https://github.com/colony-2/c2ops.git//llm2@main
     inputs:
       default_provider: openai
       default_model: gpt-4.1
       prompt: Review these files and propose a patch plan.
-      files:
-        - path: README.md
-          type: markdown
-          content: "${{ files.readme_b64 }}"
 ```
 
-### `gha.run`
-
-Use for one workflow dispatch.
-
-```yaml
-sequence:
-  - id: ci
-    op: git+https://github.com/colony-2/c2ops.git//pkg/gha/extension-gha-run@main
-    inputs:
-      workflow: .github/workflows/ci.yml
-```
-
-### `gha.runs`
-
-Use when you want to run several workflows and collect results together.
-
-```yaml
-sequence:
-  - id: ci_matrix
-    op: git+https://github.com/colony-2/c2ops.git//pkg/gha/extension-gha-runs@main
-    inputs:
-      workflows:
-        - workflow: .github/workflows/ci.yml
-        - workflow: .github/workflows/lint.yml
-```
-
-### `codex.exec`
+### `codex`
 
 Use for Codex-driven coding loops with resumable sessions.
 
 ```yaml
 sequence:
   - id: code_task
-    op: git+https://github.com/colony-2/c2ops.git//pkg/codex/extension-codex-exec@main
+    op: git+https://github.com/colony-2/c2ops.git//codex@main
     inputs:
       prompt: Fix the failing tests in this repository.
       worktree_path: "{{ context.environment.worktree_path }}"
       artifact_outbox_path: "{{ context.environment.outbox }}"
 ```
 
-### `llm_inference_litellm`
+### `gha`
 
-Use when you want the `llm_inference` interface on top of LiteLLM and its provider abstraction.
+Use for a single workflow run.
 
 ```yaml
 sequence:
-  - id: ask
-    op: git+https://github.com/colony-2/c2ops.git//litellm@main
+  - id: ci
+    op: git+https://github.com/colony-2/c2ops.git//gha@main
     inputs:
-      provider: openai
-      model: gpt-4.1-mini
-      prompt: Give me a one-sentence summary of this repo.
+      workflow: .github/workflows/ci.yml
 ```
 
-### `llm_inference2_pydantic`
+### `gha-many`
 
-Use when you want the `llm_inference2` interface on top of PydanticAI.
+Use when you want to run several workflows and collect the results together.
+
+```yaml
+sequence:
+  - id: ci_matrix
+    op: git+https://github.com/colony-2/c2ops.git//gha-many@main
+    inputs:
+      workflows:
+        - workflow: .github/workflows/ci.yml
+        - workflow: .github/workflows/lint.yml
+```
+
+### `pydantic`
+
+Use when you want an `llm2`-style interface on top of PydanticAI.
 
 ```yaml
 sequence:
@@ -151,9 +127,9 @@ sequence:
       prompt: Review these files and propose a patch plan.
 ```
 
-### `aider.exec`
+### `aider`
 
-Use when you want an Aider-backed coding op with `codex.exec`-style inputs and outputs.
+Use when you want an Aider-backed coding op with `codex`-style inputs and outputs.
 
 ```yaml
 sequence:
@@ -167,11 +143,32 @@ sequence:
       worktree_path: "{{ context.environment.worktree_path }}"
 ```
 
-## Implementation Notes
+### `litellm`
 
-- The legacy ops under `pkg/...` are Go-backed.
-- The `litellm`, `pydantic`, and `aider` selectors are Python-backed and run with `uv run --script`.
-- The Python ops have per-op guides in:
-  - [`litellm/README.md`](./litellm/README.md)
-  - [`pydantic/README.md`](./pydantic/README.md)
-  - [`aider/README.md`](./aider/README.md)
+Use when you want an `llm`-style interface on top of LiteLLM.
+
+```yaml
+sequence:
+  - id: ask
+    op: git+https://github.com/colony-2/c2ops.git//litellm@main
+    inputs:
+      provider: openai
+      model: gpt-4.1-mini
+      prompt: Give me a one-sentence summary of this repo.
+```
+
+## Per-Op Guides
+
+- [`llm/README.md`](./llm/README.md)
+- [`llm2/README.md`](./llm2/README.md)
+- [`codex/README.md`](./codex/README.md)
+- [`gha/README.md`](./gha/README.md)
+- [`gha-many/README.md`](./gha-many/README.md)
+- [`pydantic/README.md`](./pydantic/README.md)
+- [`aider/README.md`](./aider/README.md)
+- [`litellm/README.md`](./litellm/README.md)
+
+## Notes
+
+- `llm`, `llm2`, `codex`, `gha`, and `gha-many` are Go-backed ops.
+- `pydantic`, `aider`, and `litellm` are Python-backed ops that run through `uv run --script`.

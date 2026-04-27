@@ -10,7 +10,7 @@ sequence:
       run: "printf 'fixture-token' > input.txt"
 
   - id: codex_apply
-    op: ./pkg/codex/extension-codex-exec
+    op: ./codex
     artifacts:
       input.txt: '${{ sequence.write_seed_artifact.artifacts["input.txt"] }}'
     inputs:
