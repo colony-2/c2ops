@@ -1,7 +1,7 @@
 name: gha-many
 description: Runs the gha.runs Go implementation through the extension mechanism
-working_directory: ..
-command: ["go", "run", "./cmd/gha-runs-op"]
+working_directory: .
+command: ["go", "run", "."]
 timeout: 45m
 input_schema:
   type: object

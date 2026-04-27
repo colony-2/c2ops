@@ -19,7 +19,7 @@ op: git+https://github.com/colony-2/c2ops.git//codex@main
 ## What It Does
 
 - Reads one JSON payload from stdin
-- Runs the Go implementation in `cmd/codex-exec-op`
+- Runs the standalone Go project in this directory with `go run .`
 - Returns a `codex.exec`-style result in the extension-op `{"output": ...}` envelope
 
 ## Inputs

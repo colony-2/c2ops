@@ -170,5 +170,5 @@ sequence:
 
 ## Notes
 
-- `llm`, `llm2`, `codex`, `gha`, and `gha-many` are Go-backed ops.
+- `llm`, `llm2`, `codex`, `gha`, and `gha-many` are Go-backed ops, each housed as a standalone Go project inside its own top-level op directory.
 - `pydantic`, `aider`, and `litellm` are Python-backed ops that run through `uv run --script`.

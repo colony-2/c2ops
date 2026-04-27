@@ -1,7 +1,7 @@
 name: llm
 description: Runs the legacy llm_inference Go implementation through the extension mechanism
-working_directory: ..
-command: ["go", "run", "./cmd/llm-inference-op"]
+working_directory: .
+command: ["go", "run", "."]
 timeout: 5m
 input_schema:
   type: object

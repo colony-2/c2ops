@@ -19,7 +19,7 @@ op: git+https://github.com/colony-2/c2ops.git//gha-many@main
 ## What It Does
 
 - Reads one JSON payload from stdin
-- Runs the Go implementation in `cmd/gha-runs-op`
+- Runs the standalone Go project in this directory with `go run .`
 - Returns aggregated workflow results in the extension-op `{"output": ...}` envelope
 
 ## Inputs

@@ -19,7 +19,7 @@ op: git+https://github.com/colony-2/c2ops.git//llm@main
 ## What It Does
 
 - Reads one JSON payload from stdin
-- Runs the Go implementation in `cmd/llm-inference-op`
+- Runs the standalone Go project in this directory with `go run .`
 - Returns JSON on stdout in the extension-op `{"output": ...}` envelope
 
 ## Inputs
