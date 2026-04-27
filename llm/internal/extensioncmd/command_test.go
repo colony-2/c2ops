@@ -1,0 +1,110 @@
+package extensioncmd
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
+
+type testInput struct {
+	Message string `json:"message"`
+}
+
+type testOutput struct {
+	Reply string `json:"reply,omitempty"`
+}
+
+func TestRunWritesSuccessEnvelope(t *testing.T) {
+	stdout, stderr, code := runWithCapturedStdio(t, []byte(`{"message":"hello"}`), func() int {
+		return Run(func(ctx context.Context, input testInput) (Result[testOutput], error) {
+			require.Equal(t, "hello", input.Message)
+			return Result[testOutput]{
+				Output: testOutput{Reply: "world"},
+			}, nil
+		})
+	})
+
+	require.Equal(t, 0, code)
+	require.Empty(t, stderr)
+
+	var env struct {
+		Output testOutput `json:"output"`
+	}
+	require.NoError(t, json.Unmarshal(stdout, &env))
+	require.Equal(t, "world", env.Output.Reply)
+}
+
+func TestRunWritesErrorEnvelopeWhenResultPresent(t *testing.T) {
+	stdout, stderr, code := runWithCapturedStdio(t, []byte(`{}`), func() int {
+		return Run(func(ctx context.Context, input map[string]any) (Result[testOutput], error) {
+			return Result[testOutput]{
+				Output: testOutput{Reply: "partial"},
+				ArtifactRefs: map[string]ArtifactRef{
+					"logs": NewExternalArtifactRef("logs", "https://example.com/logs", true),
+				},
+			}, errors.New("boom")
+		})
+	})
+
+	require.Equal(t, 1, code)
+	require.Contains(t, stderr, "boom")
+
+	var env struct {
+		Output       testOutput             `json:"output"`
+		ArtifactRefs map[string]ArtifactRef `json:"artifact_refs"`
+	}
+	require.NoError(t, json.Unmarshal(stdout, &env))
+	require.Equal(t, "partial", env.Output.Reply)
+	require.Contains(t, env.ArtifactRefs, "logs")
+	require.Equal(t, "https://example.com/logs", env.ArtifactRefs["logs"].External.URL)
+}
+
+func runWithCapturedStdio(t *testing.T, stdin []byte, fn func() int) ([]byte, string, int) {
+	t.Helper()
+
+	tmpDir := t.TempDir()
+	stdinPath := filepath.Join(tmpDir, "stdin.json")
+	require.NoError(t, os.WriteFile(stdinPath, stdin, 0o644))
+
+	stdinFile, err := os.Open(stdinPath)
+	require.NoError(t, err)
+	defer stdinFile.Close()
+
+	stdoutReader, stdoutWriter, err := os.Pipe()
+	require.NoError(t, err)
+	defer stdoutReader.Close()
+
+	stderrReader, stderrWriter, err := os.Pipe()
+	require.NoError(t, err)
+	defer stderrReader.Close()
+
+	oldStdin := os.Stdin
+	oldStdout := os.Stdout
+	oldStderr := os.Stderr
+	os.Stdin = stdinFile
+	os.Stdout = stdoutWriter
+	os.Stderr = stderrWriter
+	defer func() {
+		os.Stdin = oldStdin
+		os.Stdout = oldStdout
+		os.Stderr = oldStderr
+	}()
+
+	code := fn()
+
+	require.NoError(t, stdoutWriter.Close())
+	require.NoError(t, stderrWriter.Close())
+
+	stdout, err := io.ReadAll(stdoutReader)
+	require.NoError(t, err)
+	stderr, err := io.ReadAll(stderrReader)
+	require.NoError(t, err)
+
+	return stdout, string(stderr), code
+}
