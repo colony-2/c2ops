@@ -1,6 +1,5 @@
 name: llm2
 description: Runs the enhanced llm_inference2 Go implementation through the extension mechanism
-working_directory: .
 command: ["go", "run", "."]
 timeout: 5m
 input_schema:

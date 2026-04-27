@@ -1,6 +1,5 @@
 name: aider
 description: Runs Aider through the selector-backed extension mechanism via uv
-working_directory: .
 command: ["uv", "run", "--script", "./main.py"]
 timeout: 30m
 env:

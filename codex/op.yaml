@@ -1,6 +1,5 @@
 name: codex
 description: Runs Codex via the selector-backed extension mechanism
-working_directory: .
 command: ["go", "run", "."]
 timeout: 30m
 input_schema:

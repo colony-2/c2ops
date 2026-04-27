@@ -1,6 +1,5 @@
 name: litellm
 description: Runs llm_inference-compatible requests through LiteLLM via uv
-working_directory: .
 command: ["uv", "run", "--script", "./main.py"]
 timeout: 5m
 env:

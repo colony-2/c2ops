@@ -1,6 +1,5 @@
 name: pydantic
 description: Runs llm_inference2-compatible requests through PydanticAI via uv
-working_directory: .
 command: ["uv", "run", "--script", "./main.py"]
 timeout: 5m
 env:

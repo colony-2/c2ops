@@ -1,6 +1,5 @@
 name: gha
 description: Runs the gha.run Go implementation through the extension mechanism
-working_directory: .
 command: ["go", "run", "."]
 timeout: 30m
 input_schema:
