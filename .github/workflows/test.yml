@@ -39,12 +39,17 @@ jobs:
           enable-cache: true
           cache-dependency-glob: |
             */main.py
-
       - name: Warm uv script environments
         env:
           UV_NO_MANAGED_PYTHON: "1"
         run: make install-test-deps
-
+      - name: Configure Git and Go for Private Modules
+        run: |
+          # 1. Tell Go not to use the public proxy/checksum DB for your org
+          go env -w GOPRIVATE=github.com/colony-2/*
+          
+          # 2. Force Git to use your PAT for HTTPS requests to GitHub
+          git config --global url."https://x-access-token:${{ secrets.READ_ALL_C2_REPOS }}@github.com/".insteadOf "https://github.com/"
       - name: Run tests
         env:
           C2OPS_USE_SYSTEM_UV: "1"
