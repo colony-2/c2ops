@@ -22,6 +22,7 @@ import (
 )
 
 const uvVersion = "0.11.7"
+const useSystemUVEnv = "C2OPS_USE_SYSTEM_UV"
 
 type opManifest struct {
 	WorkingDirectory string            `yaml:"working_directory"`
@@ -39,6 +40,7 @@ type uvToolchain struct {
 	homeDir   string
 	cacheDir  string
 	configDir string
+	isolated  bool
 }
 
 type openAIRequest struct {
@@ -246,6 +248,12 @@ func runManifestOp(t *testing.T, input any, extraEnv map[string]string) (opEnvel
 func ensureUVToolchain(t *testing.T) uvToolchain {
 	t.Helper()
 
+	if shouldUseSystemUV() {
+		uvPath, err := exec.LookPath("uv")
+		require.NoError(t, err, "%s is set but uv is not on PATH", useSystemUVEnv)
+		return uvToolchain{uvPath: uvPath}
+	}
+
 	bootstrap.once.Do(func() {
 		root, err := os.MkdirTemp("", "aider-op-test-*")
 		if err != nil {
@@ -258,6 +266,7 @@ func ensureUVToolchain(t *testing.T) uvToolchain {
 			homeDir:   filepath.Join(root, "home"),
 			cacheDir:  filepath.Join(root, "cache"),
 			configDir: filepath.Join(root, "config"),
+			isolated:  true,
 		}
 		bootstrap.err = os.MkdirAll(toolchain.homeDir, 0o755)
 		if bootstrap.err != nil {
@@ -332,12 +341,14 @@ func manifestEnv(toolchain uvToolchain, manifestValues map[string]string, extraE
 
 	pathValue := envMap["PATH"]
 	envMap["PATH"] = filepath.Dir(toolchain.uvPath) + string(os.PathListSeparator) + pathValue
-	envMap["HOME"] = toolchain.homeDir
-	envMap["XDG_CACHE_HOME"] = toolchain.cacheDir
-	envMap["XDG_CONFIG_HOME"] = toolchain.configDir
-	envMap["UV_CACHE_DIR"] = filepath.Join(toolchain.cacheDir, "uv")
 	envMap["UV_NO_PROGRESS"] = "1"
 	envMap["PYTHONDONTWRITEBYTECODE"] = "1"
+	if toolchain.isolated {
+		envMap["HOME"] = toolchain.homeDir
+		envMap["XDG_CACHE_HOME"] = toolchain.cacheDir
+		envMap["XDG_CONFIG_HOME"] = toolchain.configDir
+		envMap["UV_CACHE_DIR"] = filepath.Join(toolchain.cacheDir, "uv")
+	}
 
 	for key, value := range manifestValues {
 		envMap[key] = value
@@ -351,6 +362,11 @@ func manifestEnv(toolchain uvToolchain, manifestValues map[string]string, extraE
 		env = append(env, fmt.Sprintf("%s=%s", key, value))
 	}
 	return env
+}
+
+func shouldUseSystemUV() bool {
+	value := strings.TrimSpace(strings.ToLower(os.Getenv(useSystemUVEnv)))
+	return value == "1" || value == "true" || value == "yes" || value == "on"
 }
 
 func loadManifest(t *testing.T, path string) opManifest {

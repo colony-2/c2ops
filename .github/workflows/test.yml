@@ -32,5 +32,22 @@ jobs:
         with:
           python-version: "3.13"
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "0.11.7"
+          enable-cache: true
+          cache-dependency-glob: |
+            */main.py
+
+      - name: Warm uv script environments
+        env:
+          UV_NO_MANAGED_PYTHON: "1"
+        run: make install-test-deps
+
       - name: Run tests
+        env:
+          C2OPS_USE_SYSTEM_UV: "1"
+          UV_NO_MANAGED_PYTHON: "1"
+          UV_OFFLINE: "1"
         run: make test
