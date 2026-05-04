@@ -3,6 +3,7 @@
 # requires-python = ">=3.12"
 # dependencies = [
 #   "aider-chat==0.86.2",
+#   "audioop-lts==0.2.2; python_version >= '3.13'",
 # ]
 # ///
 
