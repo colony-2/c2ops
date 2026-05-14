@@ -33,6 +33,10 @@ op: git+https://github.com/colony-2/c2ops.git//codex@main
 - `artifact_inbox_path`, `artifact_outbox_path`
 - `cell_relative_path`
 
+## Sandbox
+
+Sandboxing is controlled by the reserved extension-op `sandbox` recipe input. The Codex op itself invokes the Codex CLI directly and does not create an additional Shai/Docker sandbox.
+
 ## Recipe
 
 ```yaml

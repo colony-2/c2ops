@@ -121,7 +121,6 @@ printf '%s\n' '{"type":"item.completed","item":{"item_type":"assistant_message",
 	require.NoError(t, os.WriteFile(stubPath, []byte(stub), 0o755))
 
 	t.Setenv("PATH", stubDir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	t.Setenv("C2J_CODEX_USE_DIRECT", "1")
 	for _, key := range []string{"GOMODCACHE", "GOPATH", "GOCACHE", "HOME"} {
 		value := strings.TrimSpace(os.Getenv(key))
 		if value == "" {
@@ -145,8 +144,7 @@ func fixtureOpEnv(t *testing.T) map[string]string {
 	t.Helper()
 
 	env := map[string]string{
-		"PATH":                 os.Getenv("PATH"),
-		"C2J_CODEX_USE_DIRECT": "1",
+		"PATH": os.Getenv("PATH"),
 	}
 	for _, key := range []string{"GOMODCACHE", "GOPATH", "GOCACHE", "HOME"} {
 		value := strings.TrimSpace(os.Getenv(key))

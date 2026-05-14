@@ -11,11 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-
-	"github.com/colony-2/shai/pkg/shai"
 )
-
-const hostCodexHomeMountTarget = "/run/codex-host-home"
 
 var codexCredentialFileNames = []string{
 	"auth.json",
@@ -32,34 +28,25 @@ func Execute(ctx context.Context, opts Options) (Result, string, string, string,
 		return Result{}, "", "", "", err
 	}
 	activeOpts := opts
-	if useDirectCodex() {
-		activeCodexHome, err := resolveDirectCodexHome(opts)
-		if err != nil {
-			return Result{}, "", "", "", err
-		}
-		activeOpts.CodexHome = activeCodexHome
-		if err := os.MkdirAll(activeOpts.CodexHome, 0o755); err != nil {
-			return Result{}, "", "", "", fmt.Errorf("create active codex home path: %w", err)
-		}
+	activeCodexHome, err := resolveDirectCodexHome(opts)
+	if err != nil {
+		return Result{}, "", "", "", err
+	}
+	activeOpts.CodexHome = activeCodexHome
+	if err := os.MkdirAll(activeOpts.CodexHome, 0o755); err != nil {
+		return Result{}, "", "", "", fmt.Errorf("create active codex home path: %w", err)
 	}
 
 	artifactDir, err := os.MkdirTemp("", "codex-artifacts-*")
 	if err != nil {
 		return Result{}, "", "", "", fmt.Errorf("create artifacts dir: %w", err)
 	}
-	var schemaPath string
-	var schemaCleanup func()
-	if useDirectCodex() {
-		var schemaErr error
-		schemaPath, schemaCleanup, schemaErr = writeSchemaTempFile(opts.StructuredSchema)
-		if schemaErr != nil {
-			_ = os.RemoveAll(artifactDir)
-			return Result{}, "", "", "", schemaErr
-		}
-		defer schemaCleanup()
-	} else {
-		schemaPath = containerSchemaPath(opts)
+	schemaPath, schemaCleanup, err := writeSchemaTempFile(activeOpts.StructuredSchema)
+	if err != nil {
+		_ = os.RemoveAll(artifactDir)
+		return Result{}, "", "", "", err
 	}
+	defer schemaCleanup()
 
 	stdoutPath := opts.stdoutPath(artifactDir)
 	stdoutFile, err := os.Create(stdoutPath)
@@ -80,7 +67,7 @@ func Execute(ctx context.Context, opts Options) (Result, string, string, string,
 
 	collector := newOutputCollector(stdoutFile, stderrFile)
 
-	runErr := runCodexExec(ctx, activeOpts, schemaPath, activeOpts.StructuredSchema, collector)
+	runErr := runCodexExec(ctx, activeOpts, schemaPath, collector)
 	if sanitizeErr := sanitizeCodexHomeOutput(activeOpts); sanitizeErr != nil {
 		if runErr == nil {
 			runErr = fmt.Errorf("sanitize codex home output: %w", sanitizeErr)
@@ -111,7 +98,7 @@ func Execute(ctx context.Context, opts Options) (Result, string, string, string,
 		return Result{}, "", "", "", parseErr
 	}
 
-	result := buildResultFromParse(opts, parseRes)
+	result := buildResultFromParse(parseRes)
 
 	if runErr != nil {
 		result.Status = StatusError
@@ -172,7 +159,7 @@ func resolveDirectCodexHome(opts Options) (string, error) {
 	return resolvedPath, nil
 }
 
-func runCodexExec(ctx context.Context, opts Options, schemaPath string, schemaPayload []byte, collector *outputCollector) error {
+func runCodexExec(ctx context.Context, opts Options, schemaPath string, collector *outputCollector) error {
 	if err := restoreCodexHomeStateIfExists(opts.codexHomeStateInboxPath(), opts.CodexHome); err != nil {
 		return fmt.Errorf("restore codex home state: %w", err)
 	}
@@ -187,127 +174,25 @@ func runCodexExec(ctx context.Context, opts Options, schemaPath string, schemaPa
 			}
 		}
 	}
-	if useDirectCodex() {
-		if err := prepareDirectCodexHome(opts); err != nil {
-			return fmt.Errorf("prepare codex home: %w", err)
-		}
-		cmdArgs := buildCommand(opts, schemaPath)
-		cmd := exec.CommandContext(ctx, cmdArgs[0], cmdArgs[1:]...)
-		nullStdin, err := os.Open(os.DevNull)
-		if err != nil {
-			return fmt.Errorf("open null stdin: %w", err)
-		}
-		defer nullStdin.Close()
-		cmd.Env = os.Environ()
-		for k, v := range buildEnv(opts) {
-			cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
-		}
-		cmd.Dir = opts.WorktreeRoot
-		cmd.Stdin = nullStdin
-		cmd.Stdout = collector.stdoutWriter()
-		cmd.Stderr = collector.stderrWriter()
-		return cmd.Run()
+	if err := prepareDirectCodexHome(opts); err != nil {
+		return fmt.Errorf("prepare codex home: %w", err)
 	}
-
-	cellRelFromWorkdir, err := opts.relativeToWorkdir(filepath.Join(opts.WorktreeRoot, opts.CellRelativePath))
+	cmdArgs := buildCommand(opts, schemaPath)
+	cmd := exec.CommandContext(ctx, cmdArgs[0], cmdArgs[1:]...)
+	nullStdin, err := os.Open(os.DevNull)
 	if err != nil {
-		return fmt.Errorf("resolve cell mount path: %w", err)
+		return fmt.Errorf("open null stdin: %w", err)
 	}
-	codexHomeRelFromWorkdir, err := opts.relativeToWorkdir(opts.CodexHome)
-	if err != nil {
-		return fmt.Errorf("resolve codex home workdir path: %w", err)
+	defer nullStdin.Close()
+	cmd.Env = os.Environ()
+	for k, v := range buildEnv(opts) {
+		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
 	}
-	inboxRelFromWorkdir, err := opts.relativeToWorkdir(opts.ArtifactInbox)
-	if err != nil {
-		return fmt.Errorf("resolve inbox mount path: %w", err)
-	}
-	outboxRelFromWorkdir, err := opts.relativeToWorkdir(opts.ArtifactOutbox)
-	if err != nil {
-		return fmt.Errorf("resolve outbox mount path: %w", err)
-	}
-	inboxTarget, err := opts.containerPath(opts.ArtifactInbox)
-	if err != nil {
-		return fmt.Errorf("resolve inbox container path: %w", err)
-	}
-	outboxTarget, err := opts.containerPath(opts.ArtifactOutbox)
-	if err != nil {
-		return fmt.Errorf("resolve outbox container path: %w", err)
-	}
-	codexHomeTarget, err := opts.containerPath(opts.CodexHome)
-	if err != nil {
-		return fmt.Errorf("resolve codex home container path: %w", err)
-	}
-	codexSessionsInboxTarget, err := opts.containerPath(opts.codexSessionsInboxPath())
-	if err != nil {
-		return fmt.Errorf("resolve codex sessions inbox path: %w", err)
-	}
-	codexSessionsOutboxTarget, err := opts.containerPath(opts.codexSessionsOutboxPath())
-	if err != nil {
-		return fmt.Errorf("resolve codex sessions outbox path: %w", err)
-	}
-	skillSourceDirs := opts.skillSourceDirs()
-	skillDirTargets := make([]string, 0, len(skillSourceDirs))
-	for _, dir := range skillSourceDirs {
-		target, targetErr := opts.containerPath(dir)
-		if targetErr != nil {
-			return fmt.Errorf("resolve skill dir container path: %w", targetErr)
-		}
-		skillDirTargets = append(skillDirTargets, target)
-	}
-
-	command := buildCommand(opts, schemaPath)
-	env := buildEnv(opts)
-	env["CODEX_HOME"] = codexHomeTarget
-
-	mounts := []shai.Mount{
-		{
-			Source: inboxRelFromWorkdir,
-			Target: inboxTarget,
-			Mode:   "ro",
-		},
-		{
-			Source: outboxRelFromWorkdir,
-			Target: outboxTarget,
-			Mode:   "rw",
-		},
-	}
-	if hostCodexHomeMountable(opts.HostCodexHome) {
-		mounts = append(mounts, shai.Mount{
-			Source: opts.HostCodexHome,
-			Target: hostCodexHomeMountTarget,
-			Mode:   "ro",
-		})
-	}
-	rootCommands := []string{
-		buildSchemaRootCommand(schemaPath, schemaPayload),
-		buildCodexHomeRootCommand(codexHomeTarget, codexSessionsInboxTarget, codexSessionsOutboxTarget, hostCodexHomeMountTarget),
-		buildConfiguredSkillsRootCommand(codexHomeTarget, skillDirTargets),
-	}
-
-	cfg := &shai.SandboxConfig{
-		WorkingDir:     opts.WorkDirRoot,
-		ReadWritePaths: []string{cellRelFromWorkdir, codexHomeRelFromWorkdir},
-		PrependResourceSet: &shai.ResourceSet{
-			Mounts:       mounts,
-			RootCommands: rootCommands,
-		},
-		PostSetupExec: &shai.SandboxExec{
-			Command: command,
-			Env:     env,
-			UseTTY:  false,
-		},
-		Stdout:           collector.stdoutWriter(),
-		Stderr:           collector.stderrWriter(),
-		ShowScriptOutput: false,
-	}
-
-	runner, err := opts.RunnerFactory(cfg)
-	if err != nil {
-		return fmt.Errorf("create runner: %w", err)
-	}
-	defer runner.Close()
-
-	return runner.Run(ctx)
+	cmd.Dir = opts.WorktreeRoot
+	cmd.Stdin = nullStdin
+	cmd.Stdout = collector.stdoutWriter()
+	cmd.Stderr = collector.stderrWriter()
+	return cmd.Run()
 }
 
 func writeSchemaTempFile(schema []byte) (string, func(), error) {
@@ -330,12 +215,6 @@ func writeSchemaTempFile(schema []byte) (string, func(), error) {
 	return file.Name(), cleanup, nil
 }
 
-func containerSchemaPath(opts Options) string {
-	ts := opts.Clock.Now().UTC().UnixNano()
-	name := fmt.Sprintf("codex-schema-%d.json", ts)
-	return filepath.ToSlash(filepath.Join("/tmp", name))
-}
-
 func ensureExecutionPaths(opts Options) error {
 	cellPath := filepath.Join(opts.WorktreeRoot, opts.CellRelativePath)
 	if err := os.MkdirAll(cellPath, 0o755); err != nil {
@@ -353,18 +232,6 @@ func ensureExecutionPaths(opts Options) error {
 	return nil
 }
 
-func buildSchemaRootCommand(schemaPath string, schemaPayload []byte) string {
-	delimiter := chooseHeredocDelimiter(schemaPayload)
-	var builder strings.Builder
-	fmt.Fprintf(&builder, "cat <<'%s' > %s\n", delimiter, shellQuote(schemaPath))
-	builder.Write(schemaPayload)
-	if len(schemaPayload) == 0 || schemaPayload[len(schemaPayload)-1] != '\n' {
-		builder.WriteByte('\n')
-	}
-	fmt.Fprintf(&builder, "%s", delimiter)
-	return builder.String()
-}
-
 func sanitizeCodexHomeOutput(opts Options) error {
 	return removeSensitiveCodexFiles(opts.CodexHome)
 }
@@ -377,49 +244,6 @@ func removeSensitiveCodexFiles(codexHomeDir string) error {
 		}
 	}
 	return nil
-}
-
-func buildCodexHomeRootCommand(codexHomeTarget string, inboxSessionsTarget string, outboxSessionsTarget string, hostCodexHomeTarget string) string {
-	var builder strings.Builder
-	fmt.Fprintf(&builder, "mkdir -p %s\n", shellQuote(codexHomeTarget))
-	fmt.Fprintf(&builder, "mkdir -p %s\n", shellQuote(outboxSessionsTarget))
-	fmt.Fprintf(&builder, "find %s -mindepth 1 -maxdepth 1 -exec rm -rf -- {} + 2>/dev/null || true\n", shellQuote(outboxSessionsTarget))
-	fmt.Fprintf(&builder, "if [ -d %s ]; then cp -a %s/. %s/; fi\n",
-		shellQuote(inboxSessionsTarget),
-		shellQuote(inboxSessionsTarget),
-		shellQuote(outboxSessionsTarget),
-	)
-	fmt.Fprintf(&builder, "mkdir -p %s\n", shellQuote(filepath.ToSlash(filepath.Join(codexHomeTarget, ".agents"))))
-	fmt.Fprintf(&builder, "rm -rf %s\n", shellQuote(filepath.ToSlash(filepath.Join(codexHomeTarget, "sessions"))))
-	fmt.Fprintf(&builder, "ln -s %s %s\n",
-		shellQuote(outboxSessionsTarget),
-		shellQuote(filepath.ToSlash(filepath.Join(codexHomeTarget, "sessions"))),
-	)
-	fmt.Fprintf(&builder, "if [ -d %s ]; then\n", shellQuote(hostCodexHomeTarget))
-	for _, name := range codexCredentialFileNames {
-		sourcePath := filepath.ToSlash(filepath.Join(hostCodexHomeTarget, name))
-		targetPath := filepath.ToSlash(filepath.Join(codexHomeTarget, name))
-		fmt.Fprintf(&builder, "  if [ -f %s ] && [ ! -f %s ]; then cp %s %s; fi\n",
-			shellQuote(sourcePath),
-			shellQuote(targetPath),
-			shellQuote(sourcePath),
-			shellQuote(targetPath),
-		)
-	}
-	builder.WriteString("fi")
-	return builder.String()
-}
-
-func hostCodexHomeMountable(path string) bool {
-	path = strings.TrimSpace(path)
-	if path == "" {
-		return false
-	}
-	info, err := os.Stat(path)
-	if err != nil {
-		return false
-	}
-	return info.IsDir()
 }
 
 func prepareDirectCodexHome(opts Options) error {
@@ -451,25 +275,6 @@ func installSkillSourcesIfExists(opts Options) error {
 func ensureCodexHomeExists(codexHomeDir string) error {
 	if err := os.MkdirAll(codexHomeDir, 0o755); err != nil {
 		return fmt.Errorf("create codex home %q: %w", codexHomeDir, err)
-	}
-	return nil
-}
-
-func bootstrapCodexSessions(inboxSessionsDir string, outboxSessionsDir string) error {
-	if err := os.MkdirAll(outboxSessionsDir, 0o755); err != nil {
-		return fmt.Errorf("create codex sessions outbox %q: %w", outboxSessionsDir, err)
-	}
-	entries, err := os.ReadDir(outboxSessionsDir)
-	if err != nil {
-		return fmt.Errorf("read codex sessions outbox %q: %w", outboxSessionsDir, err)
-	}
-	for _, entry := range entries {
-		if err := os.RemoveAll(filepath.Join(outboxSessionsDir, entry.Name())); err != nil {
-			return fmt.Errorf("reset codex sessions entry %q: %w", entry.Name(), err)
-		}
-	}
-	if err := copyDirContentsIfExists(inboxSessionsDir, outboxSessionsDir); err != nil {
-		return fmt.Errorf("seed codex sessions from inbox: %w", err)
 	}
 	return nil
 }
@@ -631,36 +436,6 @@ func extractRolloutPathCandidate(raw string, sessionID string) string {
 	return candidate
 }
 
-func linkCodexHomeSessions(codexHomeDir string, outboxSessionsDir string) error {
-	agentsDir := filepath.Join(codexHomeDir, ".agents")
-	if err := os.MkdirAll(agentsDir, 0o755); err != nil {
-		return fmt.Errorf("create codex agents dir %q: %w", agentsDir, err)
-	}
-	sessionsLink := filepath.Join(codexHomeDir, "sessions")
-	if err := os.RemoveAll(sessionsLink); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("remove codex sessions link %q: %w", sessionsLink, err)
-	}
-	if err := os.Symlink(outboxSessionsDir, sessionsLink); err != nil {
-		return fmt.Errorf("link codex sessions %q -> %q: %w", sessionsLink, outboxSessionsDir, err)
-	}
-	return nil
-}
-
-func buildConfiguredSkillsRootCommand(codexHomeTarget string, skillDirTargets []string) string {
-	var builder strings.Builder
-	codexHomeSkillsTarget := filepath.ToSlash(filepath.Join(codexHomeTarget, ".agents", "skills"))
-	fmt.Fprintf(&builder, "rm -rf %s\n", shellQuote(codexHomeSkillsTarget))
-	fmt.Fprintf(&builder, "mkdir -p %s\n", shellQuote(codexHomeSkillsTarget))
-	for _, dirTarget := range skillDirTargets {
-		fmt.Fprintf(&builder, "if [ -d %s ]; then cp -a %s/. %s/; fi\n",
-			shellQuote(dirTarget),
-			shellQuote(dirTarget),
-			shellQuote(codexHomeSkillsTarget),
-		)
-	}
-	return builder.String()
-}
-
 func copyDirContentsIfExists(sourceDir string, targetDir string) error {
 	if filepath.Clean(sourceDir) == filepath.Clean(targetDir) {
 		return nil
@@ -783,28 +558,7 @@ func copyRegularFile(sourcePath string, targetPath string, mode os.FileMode) err
 	return nil
 }
 
-func chooseHeredocDelimiter(schemaPayload []byte) string {
-	base := "CODEX_SCHEMA_EOF"
-	delimiter := base
-	for i := 0; strings.Contains(string(schemaPayload), delimiter); i++ {
-		delimiter = fmt.Sprintf("%s_%d", base, i+1)
-	}
-	return delimiter
-}
-
-func shellQuote(value string) string {
-	if value == "" {
-		return "''"
-	}
-	return "'" + strings.ReplaceAll(value, "'", `'"'"'`) + "'"
-}
-
-func useDirectCodex() bool {
-	val := strings.TrimSpace(os.Getenv("C2J_CODEX_USE_DIRECT"))
-	return val == "1" || strings.EqualFold(val, "true") || strings.EqualFold(val, "yes")
-}
-
-func buildResultFromParse(opts Options, outcome parseOutcome) Result {
+func buildResultFromParse(outcome parseOutcome) Result {
 	res := Result{}
 
 	if outcome.payload == nil {

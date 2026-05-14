@@ -1,29 +1,8 @@
 package codex
 
 import (
-	"context"
 	"io"
-
-	"github.com/colony-2/shai/pkg/shai"
 )
-
-type runnerAdapter struct {
-	inner shai.Sandbox
-}
-
-func (r runnerAdapter) Run(ctx context.Context) error {
-	return r.inner.Run(ctx)
-}
-
-func (r runnerAdapter) Close() error { return r.inner.Close() }
-
-func defaultRunnerFactory(cfg *shai.SandboxConfig) (Runner, error) {
-	runner, err := shai.NewSandbox(*cfg)
-	if err != nil {
-		return nil, err
-	}
-	return runnerAdapter{inner: runner}, nil
-}
 
 type outputCollector struct {
 	stdout io.Writer
@@ -54,12 +33,12 @@ func (c *outputCollector) OnStderr(data []byte) {
 	}
 }
 
-// stdoutWriter adapts OnStdout to an io.Writer for shai's non-TTY mode.
+// stdoutWriter adapts OnStdout to an io.Writer.
 func (c *outputCollector) stdoutWriter() io.Writer {
 	return writerAdapter(func(p []byte) { c.OnStdout(p) })
 }
 
-// stderrWriter adapts OnStderr to an io.Writer for shai's non-TTY mode.
+// stderrWriter adapts OnStderr to an io.Writer.
 func (c *outputCollector) stderrWriter() io.Writer {
 	return writerAdapter(func(p []byte) { c.OnStderr(p) })
 }

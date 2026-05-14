@@ -1,12 +1,5 @@
 package codex
 
-import (
-	"context"
-	"time"
-
-	"github.com/colony-2/shai/pkg/shai"
-)
-
 // Status describes the overall Codex execution outcome.
 type Status string
 
@@ -33,24 +26,6 @@ type Result struct {
 	ErrorMessage        string       `json:"errorMessage,omitempty"`
 }
 
-// Clock abstracts time retrieval for deterministic testing.
-type Clock interface {
-	Now() time.Time
-}
-
-type realClock struct{}
-
-func (realClock) Now() time.Time { return time.Now().UTC() }
-
-// Runner represents the minimal surface needed from a Shai runner.
-type Runner interface {
-	Run(ctx context.Context) error
-	Close() error
-}
-
-// RunnerFactory constructs runners from the generated EphemeralConfig.
-type RunnerFactory func(config *shai.SandboxConfig) (Runner, error)
-
 // Options control Execute behaviour.
 type Options struct {
 	Prompt    string
@@ -67,7 +42,5 @@ type Options struct {
 	HostCodexHome       string
 	ConfiguredSkillDirs []string
 
-	Clock            Clock
-	RunnerFactory    RunnerFactory
 	StructuredSchema []byte
 }

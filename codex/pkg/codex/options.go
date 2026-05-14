@@ -16,7 +16,6 @@ var (
 const (
 	codexHomeDirName              = ".codex"
 	codexHomeStateArtifactDirName = "codex-home-state"
-	codexSessionsArtifactDirName  = "codex-sessions"
 )
 
 func (o *Options) validate() error {
@@ -52,12 +51,6 @@ func (o *Options) validate() error {
 	o.HostCodexHome = resolveHostCodexHomePath(o.HostCodexHome)
 	if o.ExtraEnv == nil {
 		o.ExtraEnv = map[string]string{}
-	}
-	if o.Clock == nil {
-		o.Clock = realClock{}
-	}
-	if o.RunnerFactory == nil {
-		o.RunnerFactory = defaultRunnerFactory
 	}
 	if len(o.StructuredSchema) == 0 {
 		o.StructuredSchema = structuredOutputSchema
@@ -100,14 +93,6 @@ func (o *Options) validate() error {
 		o.ConfiguredSkillDirs = normalized
 	}
 	return nil
-}
-
-func (o Options) codexSessionsInboxPath() string {
-	return filepath.Join(o.ArtifactInbox, codexSessionsArtifactDirName)
-}
-
-func (o Options) codexSessionsOutboxPath() string {
-	return filepath.Join(o.ArtifactOutbox, codexSessionsArtifactDirName)
 }
 
 func (o Options) codexHomeStateInboxPath() string {
@@ -155,32 +140,6 @@ func (o Options) stdoutPath(dir string) string {
 
 func (o Options) stderrPath(dir string) string {
 	return filepath.Join(dir, "stderr.txt")
-}
-
-func (o Options) containerPath(hostPath string) (string, error) {
-	rel, err := filepath.Rel(o.WorkDirRoot, hostPath)
-	if err != nil {
-		return "", fmt.Errorf("compute container path: %w", err)
-	}
-	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("path %s escapes workdir", hostPath)
-	}
-	return filepath.ToSlash(filepath.Join("/src", rel)), nil
-}
-
-func (o Options) relativeToWorkdir(hostPath string) (string, error) {
-	rel, err := filepath.Rel(o.WorkDirRoot, hostPath)
-	if err != nil {
-		return "", fmt.Errorf("compute workdir relative path: %w", err)
-	}
-	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("path %s escapes workdir", hostPath)
-	}
-	return rel, nil
-}
-
-func (o Options) stdoutRelativePath(ts string, id string) string {
-	return filepath.ToSlash(filepath.Join("codex", ts, id+".jsonl"))
 }
 
 func (o Options) copyEnv() map[string]string {
