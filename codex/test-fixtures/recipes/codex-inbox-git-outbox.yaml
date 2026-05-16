@@ -6,7 +6,7 @@ sequence:
   - id: write_seed_artifact
     op: command_execution
     inputs:
-      working_directory: "{{ context.environment.outbox }}"
+      working_directory: "{{ context.environment.op.outbox }}"
       run: "printf 'fixture-token' > input.txt"
 
   - id: codex_apply
@@ -14,10 +14,10 @@ sequence:
     artifacts:
       input.txt: '${{ sequence.write_seed_artifact.artifacts["input.txt"] }}'
     inputs:
-      workdir_path: "{{ context.environment.workdir }}"
-      worktree_path: "{{ context.environment.worktree_path }}"
-      artifact_inbox_path: "{{ context.environment.inbox }}"
-      artifact_outbox_path: "{{ context.environment.outbox }}"
+      workdir_path: "{{ context.environment.op.workdir }}"
+      worktree_path: "{{ context.environment.op.worktree_path }}"
+      artifact_inbox_path: "{{ context.environment.op.inbox }}"
+      artifact_outbox_path: "{{ context.environment.op.outbox }}"
       cell_relative_path: >-
         ${{
           (has(context.workflow.cell_path) && context.workflow.cell_path != "")

@@ -25,10 +25,10 @@ type ExecOpInput struct {
 	ReturnOn           []string          `json:"return_on,omitempty"`
 	StatusContract     StatusContractRef `json:"status_contract,omitempty"`
 	ResumeContext      map[string]any    `json:"resume_context,omitempty"`
-	WorkdirPath        string            `json:"workdir_path,omitempty" default:"{{ context.environment.workdir }}"`
-	WorktreePath       string            `json:"worktree_path" default:"{{ context.environment.worktree_path }}" validate:"required"`
-	ArtifactInboxPath  string            `json:"artifact_inbox_path,omitempty" default:"{{ context.environment.inbox }}"`
-	ArtifactOutboxPath string            `json:"artifact_outbox_path,omitempty" default:"{{ context.environment.outbox }}"`
+	WorkdirPath        string            `json:"workdir_path,omitempty" default:"{{ context.environment.op.workdir }}"`
+	WorktreePath       string            `json:"worktree_path" default:"{{ context.environment.op.worktree_path }}" validate:"required"`
+	ArtifactInboxPath  string            `json:"artifact_inbox_path,omitempty" default:"{{ context.environment.op.inbox }}"`
+	ArtifactOutboxPath string            `json:"artifact_outbox_path,omitempty" default:"{{ context.environment.op.outbox }}"`
 	CellRelativePath   string            `json:"cell_relative_path" default:"{{ context.workflow.cell_path }}" validate:"required"`
 }
 

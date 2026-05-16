@@ -351,11 +351,6 @@ func runGit(dir string, args ...string) error {
 
 func defaultTestContext(baseRepo string, baseHash string) (contextual.JobContext, contextual.GitCommitContext) {
 	job := contextual.JobContext{
-		Actor: contextual.ActorContext{
-			TicketID:   "TEST-TICKET",
-			ActorName:  "test-actor",
-			ActorEmail: "test-actor@colony2",
-		},
 		Workflow: contextual.WorkflowContext{
 			CellName: "cells/test-cell",
 			CellPath: "cells/test-cell",

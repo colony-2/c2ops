@@ -36,16 +36,16 @@ input_schema:
       type: object
     workdir_path:
       type: string
-      default: "{{ context.environment.workdir }}"
+      default: "{{ context.environment.op.workdir }}"
     worktree_path:
       type: string
-      default: "{{ context.environment.worktree_path }}"
+      default: "{{ context.environment.op.worktree_path }}"
     artifact_inbox_path:
       type: string
-      default: "{{ context.environment.inbox }}"
+      default: "{{ context.environment.op.inbox }}"
     artifact_outbox_path:
       type: string
-      default: "{{ context.environment.outbox }}"
+      default: "{{ context.environment.op.outbox }}"
     cell_relative_path:
       type: string
       default: "{{ context.workflow.cell_path }}"

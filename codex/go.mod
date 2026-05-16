@@ -3,8 +3,8 @@ module github.com/colony-2/c2ops/codex
 go 1.26
 
 require (
-	github.com/colony-2/c2j v0.0.0-20260422234219-0e0564326916
-	github.com/colony-2/swf-go v0.0.0-20260413043057-cd8d41023399
+	github.com/colony-2/c2j v0.0.12
+	github.com/colony-2/swf-go v0.0.0-20260515175917-c109abf33d3d
 	github.com/google/uuid v1.6.0
 	github.com/stretchr/testify v1.11.1
 	gopkg.in/yaml.v3 v3.0.1
