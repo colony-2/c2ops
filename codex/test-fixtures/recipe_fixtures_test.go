@@ -356,10 +356,9 @@ func defaultTestContext(baseRepo string, baseHash string) (contextual.JobContext
 			BaseRepo:         baseRepo,
 			BaseRef:          baseHash,
 			ResolvedBaseHash: baseHash,
+			GitAuthor:        "Test User <test@example.com>",
 		},
 	}
-	setLegacyWorkflowFieldIfPresent(&job.Workflow, "CellName", ".")
-	setLegacyWorkflowFieldIfPresent(&job.Workflow, "CellPath", ".")
 
 	gitCtx := contextual.GitCommitContext{
 		ParentRef: baseHash,
@@ -371,6 +370,7 @@ func generateTestContext(baseRepo string, baseHash string, jobOverride *contextu
 	jobCtx, gitCtx := defaultTestContext(baseRepo, baseHash)
 	if jobOverride != nil {
 		mergeNonZeroStructFields(&jobCtx.Workflow, jobOverride.Workflow)
+		mergeNonZeroStructFields(&jobCtx.GitBase, jobOverride.GitBase)
 	}
 	if gitOverride != nil {
 		if gitOverride.ParentRef != "" {
@@ -378,13 +378,6 @@ func generateTestContext(baseRepo string, baseHash string, jobOverride *contextu
 		}
 	}
 	return jobCtx, gitCtx
-}
-
-func setLegacyWorkflowFieldIfPresent(workflow *contextual.WorkflowContext, name string, value string) {
-	field := reflect.ValueOf(workflow).Elem().FieldByName(name)
-	if field.IsValid() && field.CanSet() && field.Kind() == reflect.String {
-		field.SetString(value)
-	}
 }
 
 func mergeNonZeroStructFields(dst any, src any) {
