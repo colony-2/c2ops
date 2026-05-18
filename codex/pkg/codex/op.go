@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime/debug"
 	"strings"
+	"time"
 )
 
 // ExecOpInput defines the codex.exec command input.
@@ -18,13 +19,11 @@ type ExecOpInput struct {
 	SessionID          string            `json:"sessionId,omitempty"`
 	Model              string            `json:"model,omitempty"`
 	Env                map[string]string `json:"env,omitempty"`
-	Skill              string            `json:"skill,omitempty"`
 	Skills             []string          `json:"skills,omitempty"`
-	SkillMode          string            `json:"skill_mode,omitempty"`
-	SkillSelectionMode string            `json:"skill_selection_mode,omitempty"`
 	ReturnOn           []string          `json:"return_on,omitempty"`
 	StatusContract     StatusContractRef `json:"status_contract,omitempty"`
 	ResumeContext      map[string]any    `json:"resume_context,omitempty"`
+	IdleTimeout        string            `json:"idle_timeout,omitempty" default:"5m"`
 	WorkdirPath        string            `json:"workdir_path,omitempty" default:"{{ context.environment.op.workdir }}"`
 	WorktreePath       string            `json:"worktree_path" default:"{{ context.environment.op.worktree_path }}" validate:"required"`
 	ArtifactInboxPath  string            `json:"artifact_inbox_path,omitempty" default:"{{ context.environment.op.inbox }}"`
@@ -61,8 +60,6 @@ type ExecOutcomeSummary struct {
 }
 
 type ExecOutcomeSkill struct {
-	Executed      string `json:"executed,omitempty"`
-	SelectionMode string `json:"selectionMode,omitempty"`
 	NextCandidate string `json:"nextCandidate,omitempty"`
 }
 
@@ -134,12 +131,17 @@ func runCodexActivity(actx context.Context, input ExecOpInput) (ExecOpOutput, er
 		return ExecOpOutput{}, err
 	}
 	promptForExec := renderSkillPrompt(prompt, skillCfg)
+	idleTimeout, err := parseDurationInput("idle_timeout", input.IdleTimeout, 5*time.Minute)
+	if err != nil {
+		return ExecOpOutput{}, err
+	}
 
 	opts := Options{
 		Prompt:              promptForExec,
 		SessionID:           strings.TrimSpace(input.SessionID),
 		Model:               strings.TrimSpace(input.Model),
 		ExtraEnv:            input.Env,
+		IdleTimeout:         idleTimeout,
 		WorkDirRoot:         workdir,
 		WorktreeRoot:        worktree,
 		ArtifactInbox:       inbox,
@@ -193,6 +195,21 @@ func debugArtifactf(format string, args ...interface{}) {
 }
 
 func debugArtifactStat(label, path string) {
+}
+
+func parseDurationInput(label string, raw string, defaultValue time.Duration) (time.Duration, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return defaultValue, nil
+	}
+	value, err := time.ParseDuration(raw)
+	if err != nil {
+		return 0, fmt.Errorf("%s must be a Go duration string: %w", label, err)
+	}
+	if value < 0 {
+		return 0, fmt.Errorf("%s must not be negative", label)
+	}
+	return value, nil
 }
 
 func writeOutputArtifacts(outbox string, stdoutPath string, stderrPath string) error {

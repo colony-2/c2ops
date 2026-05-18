@@ -16,16 +16,10 @@ input_schema:
       type: object
       additionalProperties:
         type: string
-    skill:
-      type: string
     skills:
       type: array
       items:
         type: string
-    skill_mode:
-      type: string
-    skill_selection_mode:
-      type: string
     return_on:
       type: array
       items:
@@ -34,6 +28,9 @@ input_schema:
       type: object
     resume_context:
       type: object
+    idle_timeout:
+      type: string
+      default: 5m
     workdir_path:
       type: string
       default: "{{ context.environment.op.workdir }}"

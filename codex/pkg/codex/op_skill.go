@@ -9,17 +9,13 @@ import (
 )
 
 const (
-	skillModeEnforce            = "enforce"
-	skillSelectionModeAdaptive  = "adaptive"
-	skillSelectionModeOrdered   = "ordered"
-	checkpointStatusBlocked     = "blocked"
-	checkpointStatusCompleted   = "completed"
-	checkpointStatusReady       = "checkpoint_ready"
-	checkpointScopeTopLevel     = "top_level"
-	checkpointScopeNested       = "nested"
-	routingReturnToCheckpoint   = "return_to_recipe_checkpoint"
-	routingCompleteSkillSegment = "complete_skill_segment"
-	routingComplete             = "complete"
+	checkpointStatusBlocked   = "blocked"
+	checkpointStatusCompleted = "completed"
+	checkpointStatusReady     = "checkpoint_ready"
+	checkpointScopeTopLevel   = "top_level"
+	checkpointScopeNested     = "nested"
+	routingReturnToCheckpoint = "return_to_recipe_checkpoint"
+	routingComplete           = "complete"
 )
 
 var defaultReturnOnStatuses = []string{
@@ -34,9 +30,6 @@ var defaultReturnOnStatuses = []string{
 }
 
 type skillExecutionConfig struct {
-	SelectedSkill      string
-	SkillMode          string
-	SelectionMode      string
 	ReturnOn           []string
 	StatusContractPath string
 }
@@ -75,39 +68,12 @@ type statusContractCheckpointFile struct {
 func prepareSkillExecutionConfig(
 	input ExecOpInput,
 ) (skillExecutionConfig, error) {
-	selectedSkill, err := resolveSelectedSkill(input.Skill)
-	if err != nil {
-		return skillExecutionConfig{}, err
-	}
-
-	skillMode := normalizeStatus(input.SkillMode)
-	if skillMode == "" && selectedSkill != "" {
-		skillMode = skillModeEnforce
-	}
-	if skillMode != "" && skillMode != skillModeEnforce {
-		return skillExecutionConfig{}, fmt.Errorf("skill_mode must be %q when provided", skillModeEnforce)
-	}
-	if skillMode == skillModeEnforce && selectedSkill == "" {
-		return skillExecutionConfig{}, fmt.Errorf("skill_mode=enforce requires a skill")
-	}
-
-	selectionMode := normalizeStatus(input.SkillSelectionMode)
-	if selectionMode == "" {
-		selectionMode = skillSelectionModeAdaptive
-	}
-	if selectionMode != skillSelectionModeAdaptive && selectionMode != skillSelectionModeOrdered {
-		return skillExecutionConfig{}, fmt.Errorf("skill_selection_mode must be %q or %q", skillSelectionModeAdaptive, skillSelectionModeOrdered)
-	}
-
 	returnOn := normalizeStatuses(input.ReturnOn)
 	if len(returnOn) == 0 {
 		returnOn = append([]string{}, defaultReturnOnStatuses...)
 	}
 
 	cfg := skillExecutionConfig{
-		SelectedSkill:      selectedSkill,
-		SkillMode:          skillMode,
-		SelectionMode:      selectionMode,
 		ReturnOn:           returnOn,
 		StatusContractPath: strings.TrimSpace(input.StatusContract.Path),
 	}
@@ -115,24 +81,14 @@ func prepareSkillExecutionConfig(
 	return cfg, nil
 }
 
-func resolveSelectedSkill(skill string) (string, error) {
-	return strings.TrimSpace(skill), nil
-}
-
 func renderSkillPrompt(prompt string, cfg skillExecutionConfig) string {
-	if strings.TrimSpace(cfg.SelectedSkill) == "" {
+	if strings.TrimSpace(cfg.StatusContractPath) == "" {
 		return prompt
 	}
 
 	var builder strings.Builder
 	builder.WriteString("Execution contract:\n")
-	builder.WriteString("- skill_mode=enforce.\n")
-	builder.WriteString(fmt.Sprintf("- execute exactly one top-level skill segment: %s.\n", cfg.SelectedSkill))
-	builder.WriteString(fmt.Sprintf("- selection_mode=%s.\n", cfg.SelectionMode))
-	builder.WriteString("- nested skill checkpoints are checkpoints: return immediately when one occurs.\n")
-	if cfg.StatusContractPath != "" {
-		builder.WriteString(fmt.Sprintf("- write authoritative status JSON to outbox artifact path: %s.\n", cfg.StatusContractPath))
-	}
+	builder.WriteString(fmt.Sprintf("- write authoritative status JSON to outbox artifact path: %s.\n", cfg.StatusContractPath))
 	if len(cfg.ReturnOn) > 0 {
 		builder.WriteString(fmt.Sprintf("- if checkpoint status is one of [%s], stop this invocation and return.\n", strings.Join(cfg.ReturnOn, ", ")))
 	}
@@ -147,10 +103,7 @@ func buildExecOutcome(result Result, cfg skillExecutionConfig, outboxPath string
 			Human:  safeString(result.AssistantSummary),
 			Reason: safeString(result.IncompleteReason),
 		},
-		Skill: ExecOutcomeSkill{
-			Executed:      cfg.SelectedSkill,
-			SelectionMode: cfg.SelectionMode,
-		},
+		Skill: ExecOutcomeSkill{},
 		Checkpoint: ExecOutcomeCheckpoint{
 			Status:         deriveCheckpointStatus(result),
 			Scope:          checkpointScopeTopLevel,
@@ -164,15 +117,6 @@ func buildExecOutcome(result Result, cfg skillExecutionConfig, outboxPath string
 
 	if strings.TrimSpace(outcome.Summary.Reason) == "" {
 		outcome.Summary.Reason = safeString(result.IncompleteCategory)
-	}
-
-	if cfg.SelectedSkill == "" {
-		outcome.Skill.SelectionMode = ""
-	} else {
-		outcome.Checkpoint.Stack = append(outcome.Checkpoint.Stack, ExecOutcomeCheckpointFrame{
-			Skill: cfg.SelectedSkill,
-			Scope: checkpointScopeTopLevel,
-		})
 	}
 
 	if strings.TrimSpace(cfg.StatusContractPath) != "" {
@@ -223,20 +167,17 @@ func buildExecOutcome(result Result, cfg skillExecutionConfig, outboxPath string
 			outcome.Checkpoint.ReturnReason = outcome.Checkpoint.Status
 		}
 	}
-	outcome.Routing.NextAction = determineRoutingAction(outcome.Checkpoint, cfg.SelectedSkill)
+	outcome.Routing.NextAction = determineRoutingAction(outcome.Checkpoint)
 
 	return outcome
 }
 
-func determineRoutingAction(checkpoint ExecOutcomeCheckpoint, selectedSkill string) string {
+func determineRoutingAction(checkpoint ExecOutcomeCheckpoint) string {
 	if checkpoint.Scope == checkpointScopeNested {
 		return routingReturnToCheckpoint
 	}
 	if checkpoint.ReturnTriggered {
 		return routingReturnToCheckpoint
-	}
-	if strings.TrimSpace(selectedSkill) != "" {
-		return routingCompleteSkillSegment
 	}
 	return routingComplete
 }

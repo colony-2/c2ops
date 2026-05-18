@@ -28,10 +28,15 @@ op: git+https://github.com/colony-2/c2ops.git//codex@main
 - `sessionId`
 - `model`
 - `env`
-- `skill`, `skills`
+- `skills`
+- `idle_timeout`
 - `workdir_path`, `worktree_path`
 - `artifact_inbox_path`, `artifact_outbox_path`
 - `cell_relative_path`
+
+`skills` accepts git skill source refs. The op fetches those skills and installs them into the Codex home for the invocation, so Codex can discover them and decide when to use them.
+
+`idle_timeout` is a Go duration string and defaults to `5m`. If Codex produces no stdout/stderr activity for that duration, the op terminates the Codex process group and returns a timeout error instead of waiting for the outer extension timeout.
 
 ## Sandbox
 

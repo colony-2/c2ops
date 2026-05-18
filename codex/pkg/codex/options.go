@@ -103,8 +103,8 @@ func (o Options) codexHomeStateOutboxPath() string {
 	return filepath.Join(o.ArtifactOutbox, codexHomeStateArtifactDirName)
 }
 
-func (o Options) codexAgentsSkillsPath() string {
-	return filepath.Join(o.CodexHome, ".agents", "skills")
+func (o Options) codexHomeSkillsPath() string {
+	return filepath.Join(o.CodexHome, "skills")
 }
 
 func (o Options) worktreeAgentsSkillsPath() string {

@@ -11,6 +11,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
+	"syscall"
+	"time"
 )
 
 var codexCredentialFileNames = []string{
@@ -178,7 +181,8 @@ func runCodexExec(ctx context.Context, opts Options, schemaPath string, collecto
 		return fmt.Errorf("prepare codex home: %w", err)
 	}
 	cmdArgs := buildCommand(opts, schemaPath)
-	cmd := exec.CommandContext(ctx, cmdArgs[0], cmdArgs[1:]...)
+	cmd := exec.Command(cmdArgs[0], cmdArgs[1:]...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	nullStdin, err := os.Open(os.DevNull)
 	if err != nil {
 		return fmt.Errorf("open null stdin: %w", err)
@@ -192,7 +196,67 @@ func runCodexExec(ctx context.Context, opts Options, schemaPath string, collecto
 	cmd.Stdin = nullStdin
 	cmd.Stdout = collector.stdoutWriter()
 	cmd.Stderr = collector.stderrWriter()
-	return cmd.Run()
+	return runCommandWithWatchdog(ctx, cmd, opts.IdleTimeout, collector)
+}
+
+func runCommandWithWatchdog(ctx context.Context, cmd *exec.Cmd, idleTimeout time.Duration, collector *outputCollector) error {
+	var lastActivity atomic.Int64
+	recordActivity := func() {
+		lastActivity.Store(time.Now().UnixNano())
+	}
+	recordActivity()
+	collector.onActivity = recordActivity
+
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+
+	waitCh := make(chan error, 1)
+	go func() {
+		waitCh <- cmd.Wait()
+	}()
+
+	var idleTimer *time.Timer
+	var idleC <-chan time.Time
+	if idleTimeout > 0 {
+		idleTimer = time.NewTimer(idleTimeout)
+		defer idleTimer.Stop()
+		idleC = idleTimer.C
+	}
+
+	for {
+		select {
+		case err := <-waitCh:
+			return err
+		case <-ctx.Done():
+			terminateProcessGroup(cmd)
+			<-waitCh
+			return fmt.Errorf("codex execution canceled: %w", ctx.Err())
+		case <-idleC:
+			elapsed := time.Since(time.Unix(0, lastActivity.Load()))
+			if elapsed >= idleTimeout {
+				terminateProcessGroup(cmd)
+				<-waitCh
+				return fmt.Errorf("codex execution idle timeout after %s without stdout/stderr activity", idleTimeout)
+			}
+			idleTimer.Reset(idleTimeout - elapsed)
+		}
+	}
+}
+
+func terminateProcessGroup(cmd *exec.Cmd) {
+	if cmd == nil || cmd.Process == nil {
+		return
+	}
+	pid := cmd.Process.Pid
+	if pid <= 0 {
+		return
+	}
+	if err := syscall.Kill(-pid, syscall.SIGTERM); err == nil {
+		time.Sleep(100 * time.Millisecond)
+	}
+	_ = syscall.Kill(-pid, syscall.SIGKILL)
+	_ = cmd.Process.Kill()
 }
 
 func writeSchemaTempFile(schema []byte) (string, func(), error) {
@@ -260,7 +324,7 @@ func prepareDirectCodexHome(opts Options) error {
 }
 
 func installSkillSourcesIfExists(opts Options) error {
-	targetDir := opts.codexAgentsSkillsPath()
+	targetDir := opts.codexHomeSkillsPath()
 	if err := os.RemoveAll(targetDir); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("reset codex skills %q: %w", targetDir, err)
 	}

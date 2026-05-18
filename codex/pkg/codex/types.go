@@ -1,5 +1,7 @@
 package codex
 
+import "time"
+
 // Status describes the overall Codex execution outcome.
 type Status string
 
@@ -32,6 +34,8 @@ type Options struct {
 	SessionID string
 	Model     string
 	ExtraEnv  map[string]string
+
+	IdleTimeout time.Duration
 
 	WorkDirRoot         string
 	WorktreeRoot        string
