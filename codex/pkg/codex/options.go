@@ -55,16 +55,6 @@ func (o *Options) validate() error {
 	if len(o.StructuredSchema) == 0 {
 		o.StructuredSchema = structuredOutputSchema
 	}
-	o.CellRelativePath = strings.TrimSpace(o.CellRelativePath)
-	if o.CellRelativePath == "" {
-		o.CellRelativePath = "."
-	}
-	o.CellRelativePath = filepath.Clean(o.CellRelativePath)
-	if o.CellRelativePath == "." {
-		o.CellRelativePath = "."
-	} else if filepath.IsAbs(o.CellRelativePath) || o.CellRelativePath == ".." || strings.HasPrefix(o.CellRelativePath, ".."+string(filepath.Separator)) {
-		return fmt.Errorf("codex: cell relative path %q escapes worktree", o.CellRelativePath)
-	}
 	if err := ensureDescendantPath(o.WorkDirRoot, o.WorktreeRoot, "worktree root"); err != nil {
 		return err
 	}

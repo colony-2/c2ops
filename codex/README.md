@@ -32,7 +32,6 @@ op: git+https://github.com/colony-2/c2ops.git//codex@main
 - `idle_timeout`
 - `workdir_path`, `worktree_path`
 - `artifact_inbox_path`, `artifact_outbox_path`
-- `cell_relative_path`
 
 `skills` accepts git skill source refs. The op fetches those skills and installs them into the Codex home for the invocation, so Codex can discover them and decide when to use them.
 
@@ -50,8 +49,8 @@ sequence:
     op: git+https://github.com/colony-2/c2ops.git//codex@main
     inputs:
       prompt: Fix the failing tests in this repository.
-      worktree_path: "{{ context.environment.worktree_path }}"
-      artifact_outbox_path: "{{ context.environment.outbox }}"
+      worktree_path: "{{ context.environment.op.worktree_path }}"
+      artifact_outbox_path: "{{ context.environment.op.outbox }}"
 ```
 
 ## Outputs

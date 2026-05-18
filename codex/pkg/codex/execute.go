@@ -280,9 +280,8 @@ func writeSchemaTempFile(schema []byte) (string, func(), error) {
 }
 
 func ensureExecutionPaths(opts Options) error {
-	cellPath := filepath.Join(opts.WorktreeRoot, opts.CellRelativePath)
-	if err := os.MkdirAll(cellPath, 0o755); err != nil {
-		return fmt.Errorf("create cell path: %w", err)
+	if err := os.MkdirAll(opts.WorktreeRoot, 0o755); err != nil {
+		return fmt.Errorf("create worktree path: %w", err)
 	}
 	if err := os.MkdirAll(opts.ArtifactInbox, 0o755); err != nil {
 		return fmt.Errorf("create inbox path: %w", err)

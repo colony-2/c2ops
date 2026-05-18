@@ -200,12 +200,11 @@ func testExecuteOptions(t *testing.T) Options {
 	}
 
 	return Options{
-		Prompt:           "test prompt",
-		WorkDirRoot:      workdir,
-		WorktreeRoot:     worktree,
-		ArtifactInbox:    inbox,
-		ArtifactOutbox:   outbox,
-		CellRelativePath: ".",
+		Prompt:         "test prompt",
+		WorkDirRoot:    workdir,
+		WorktreeRoot:   worktree,
+		ArtifactInbox:  inbox,
+		ArtifactOutbox: outbox,
 	}
 }
 

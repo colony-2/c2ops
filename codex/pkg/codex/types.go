@@ -39,7 +39,6 @@ type Options struct {
 
 	WorkDirRoot         string
 	WorktreeRoot        string
-	CellRelativePath    string
 	ArtifactInbox       string
 	ArtifactOutbox      string
 	CodexHome           string

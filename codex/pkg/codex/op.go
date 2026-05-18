@@ -28,7 +28,6 @@ type ExecOpInput struct {
 	WorktreePath       string            `json:"worktree_path" default:"{{ context.environment.op.worktree_path }}" validate:"required"`
 	ArtifactInboxPath  string            `json:"artifact_inbox_path,omitempty" default:"{{ context.environment.op.inbox }}"`
 	ArtifactOutboxPath string            `json:"artifact_outbox_path,omitempty" default:"{{ context.environment.op.outbox }}"`
-	CellRelativePath   string            `json:"cell_relative_path" default:"{{ context.workflow.cell_path }}" validate:"required"`
 }
 
 // ExecOpOutput mirrors the structured response surfaced by the codex library.
@@ -113,10 +112,6 @@ func runCodexActivity(actx context.Context, input ExecOpInput) (ExecOpOutput, er
 	if outbox == "" {
 		outbox = filepath.Join(workdir, "outbox")
 	}
-	cellRelPath := strings.TrimSpace(input.CellRelativePath)
-	if cellRelPath == "" {
-		return ExecOpOutput{}, fmt.Errorf("cell_relative_path is required")
-	}
 	configuredSkillDirs, skillsInstalled, skillSourcesCleanup, err := prepareConfiguredSkillSources(actx, input, workdir)
 	if err != nil {
 		return ExecOpOutput{}, err
@@ -146,7 +141,6 @@ func runCodexActivity(actx context.Context, input ExecOpInput) (ExecOpOutput, er
 		WorktreeRoot:        worktree,
 		ArtifactInbox:       inbox,
 		ArtifactOutbox:      outbox,
-		CellRelativePath:    cellRelPath,
 		ConfiguredSkillDirs: configuredSkillDirs,
 	}
 

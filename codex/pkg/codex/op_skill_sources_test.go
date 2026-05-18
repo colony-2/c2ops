@@ -69,7 +69,6 @@ Create .c2/available-skill/result.json when useful.
 		WorktreePath:       worktree,
 		ArtifactInboxPath:  inbox,
 		ArtifactOutboxPath: outbox,
-		CellRelativePath:   ".",
 	})
 	if err != nil {
 		t.Fatalf("Run returned error: %v", err)

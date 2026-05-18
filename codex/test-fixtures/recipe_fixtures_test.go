@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"sync"
@@ -351,16 +352,14 @@ func runGit(dir string, args ...string) error {
 
 func defaultTestContext(baseRepo string, baseHash string) (contextual.JobContext, contextual.GitCommitContext) {
 	job := contextual.JobContext{
-		Workflow: contextual.WorkflowContext{
-			CellName: "cells/test-cell",
-			CellPath: "cells/test-cell",
-		},
 		GitBase: contextual.GitBaseContext{
 			BaseRepo:         baseRepo,
 			BaseRef:          baseHash,
 			ResolvedBaseHash: baseHash,
 		},
 	}
+	setLegacyWorkflowFieldIfPresent(&job.Workflow, "CellName", ".")
+	setLegacyWorkflowFieldIfPresent(&job.Workflow, "CellPath", ".")
 
 	gitCtx := contextual.GitCommitContext{
 		ParentRef: baseHash,
@@ -371,12 +370,7 @@ func defaultTestContext(baseRepo string, baseHash string) (contextual.JobContext
 func generateTestContext(baseRepo string, baseHash string, jobOverride *contextual.JobContext, gitOverride *contextual.GitCommitContext) (contextual.JobContext, contextual.GitCommitContext) {
 	jobCtx, gitCtx := defaultTestContext(baseRepo, baseHash)
 	if jobOverride != nil {
-		if jobOverride.Workflow.CellName != "" {
-			jobCtx.Workflow.CellName = jobOverride.Workflow.CellName
-		}
-		if jobOverride.Workflow.CellPath != "" {
-			jobCtx.Workflow.CellPath = jobOverride.Workflow.CellPath
-		}
+		mergeNonZeroStructFields(&jobCtx.Workflow, jobOverride.Workflow)
 	}
 	if gitOverride != nil {
 		if gitOverride.ParentRef != "" {
@@ -384,6 +378,36 @@ func generateTestContext(baseRepo string, baseHash string, jobOverride *contextu
 		}
 	}
 	return jobCtx, gitCtx
+}
+
+func setLegacyWorkflowFieldIfPresent(workflow *contextual.WorkflowContext, name string, value string) {
+	field := reflect.ValueOf(workflow).Elem().FieldByName(name)
+	if field.IsValid() && field.CanSet() && field.Kind() == reflect.String {
+		field.SetString(value)
+	}
+}
+
+func mergeNonZeroStructFields(dst any, src any) {
+	dstValue := reflect.ValueOf(dst)
+	if dstValue.Kind() != reflect.Pointer || dstValue.IsNil() {
+		return
+	}
+	dstElem := dstValue.Elem()
+	srcValue := reflect.ValueOf(src)
+	if dstElem.Kind() != reflect.Struct || srcValue.Kind() != reflect.Struct {
+		return
+	}
+
+	for i := 0; i < srcValue.NumField(); i++ {
+		srcField := srcValue.Field(i)
+		if !srcField.CanInterface() || srcField.IsZero() {
+			continue
+		}
+		dstField := dstElem.FieldByName(srcValue.Type().Field(i).Name)
+		if dstField.IsValid() && dstField.CanSet() && srcField.Type().AssignableTo(dstField.Type()) {
+			dstField.Set(srcField)
+		}
+	}
 }
 
 func buildFixtureRecipeSelector(repositorySource string, recipeRelPath string, ref string) (string, error) {

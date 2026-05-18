@@ -43,9 +43,6 @@ input_schema:
     artifact_outbox_path:
       type: string
       default: "{{ context.environment.op.outbox }}"
-    cell_relative_path:
-      type: string
-      default: "{{ context.workflow.cell_path }}"
 output_schema:
   type: object
   properties:
