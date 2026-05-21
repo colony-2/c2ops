@@ -82,6 +82,13 @@ type ExecOutcomeRouting struct {
 	NextAction string `json:"nextAction,omitempty"`
 }
 
+type execRunPaths struct {
+	Workdir  string
+	Worktree string
+	Inbox    string
+	Outbox   string
+}
+
 // executeLibrary is replaceable for tests.
 var executeLibrary = Execute
 
@@ -96,9 +103,26 @@ func runCodexActivity(actx context.Context, input ExecOpInput) (ExecOpOutput, er
 		return ExecOpOutput{}, fmt.Errorf("prompt is required")
 	}
 
+	paths, err := normalizeExecRunPaths(input)
+	if err != nil {
+		return ExecOpOutput{}, err
+	}
+	configuredSkillDirs, skillsInstalled, skillSourcesCleanup, err := prepareConfiguredSkillSources(actx, input, paths.Workdir)
+	if err != nil {
+		return ExecOpOutput{}, err
+	}
+	if skillSourcesCleanup != nil {
+		defer func() {
+			_ = skillSourcesCleanup()
+		}()
+	}
+	return runCodexActivityPrepared(actx, input, prompt, paths, configuredSkillDirs, skillsInstalled)
+}
+
+func normalizeExecRunPaths(input ExecOpInput) (execRunPaths, error) {
 	worktree := strings.TrimSpace(input.WorktreePath)
 	if worktree == "" {
-		return ExecOpOutput{}, fmt.Errorf("worktree_path is required")
+		return execRunPaths{}, fmt.Errorf("worktree_path is required")
 	}
 	workdir := strings.TrimSpace(input.WorkdirPath)
 	if workdir == "" {
@@ -112,15 +136,22 @@ func runCodexActivity(actx context.Context, input ExecOpInput) (ExecOpOutput, er
 	if outbox == "" {
 		outbox = filepath.Join(workdir, "outbox")
 	}
-	configuredSkillDirs, skillsInstalled, skillSourcesCleanup, err := prepareConfiguredSkillSources(actx, input, workdir)
-	if err != nil {
-		return ExecOpOutput{}, err
-	}
-	if skillSourcesCleanup != nil {
-		defer func() {
-			_ = skillSourcesCleanup()
-		}()
-	}
+	return execRunPaths{
+		Workdir:  workdir,
+		Worktree: worktree,
+		Inbox:    inbox,
+		Outbox:   outbox,
+	}, nil
+}
+
+func runCodexActivityPrepared(
+	actx context.Context,
+	input ExecOpInput,
+	prompt string,
+	paths execRunPaths,
+	configuredSkillDirs []string,
+	skillsInstalled []string,
+) (ExecOpOutput, error) {
 	skillCfg, err := prepareSkillExecutionConfig(input)
 	if err != nil {
 		return ExecOpOutput{}, err
@@ -137,21 +168,21 @@ func runCodexActivity(actx context.Context, input ExecOpInput) (ExecOpOutput, er
 		Model:               strings.TrimSpace(input.Model),
 		ExtraEnv:            input.Env,
 		IdleTimeout:         idleTimeout,
-		WorkDirRoot:         workdir,
-		WorktreeRoot:        worktree,
-		ArtifactInbox:       inbox,
-		ArtifactOutbox:      outbox,
+		WorkDirRoot:         paths.Workdir,
+		WorktreeRoot:        paths.Worktree,
+		ArtifactInbox:       paths.Inbox,
+		ArtifactOutbox:      paths.Outbox,
 		ConfiguredSkillDirs: configuredSkillDirs,
 	}
 
 	result, stdoutPath, stderrPath, artifactDir, executeErr := executeLibrary(actx, opts)
 	debugArtifactf("stdout=%q stderr=%q artifact_dir=%q err=%v", stdoutPath, stderrPath, artifactDir, executeErr)
 	defer cleanupArtifacts(stdoutPath, stderrPath, artifactDir)
-	if err := writeOutputArtifacts(outbox, stdoutPath, stderrPath); err != nil {
+	if err := writeOutputArtifacts(paths.Outbox, stdoutPath, stderrPath); err != nil {
 		return ExecOpOutput{}, err
 	}
 
-	outcome := buildExecOutcome(result, skillCfg, outbox)
+	outcome := buildExecOutcome(result, skillCfg, paths.Outbox)
 	finalStatus := deriveExecOutputStatus(result.Status, outcome)
 	output := ExecOpOutput{
 		Status:              string(finalStatus),

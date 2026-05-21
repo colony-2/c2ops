@@ -37,6 +37,7 @@ sequence:
 | `llm` | Legacy Go-backed one-shot LLM op, compatible with the original `llm_inference` shape. | `./llm` | `git+https://github.com/colony-2/c2ops.git//llm@main` |
 | `llm2` | Legacy Go-backed richer LLM op with files, tools, and structured output, compatible with `llm_inference2`. | `./llm2` | `git+https://github.com/colony-2/c2ops.git//llm2@main` |
 | `codex` | Go-backed Codex op with resumable sessions and outbox artifacts. | `./codex` | `git+https://github.com/colony-2/c2ops.git//codex@main` |
+| `skill.run` | Codex-backed op that runs one requested skill and validates its structured output artifact. | `./codex/run_skill` | `git+https://github.com/colony-2/c2ops.git//codex/run_skill@main` |
 | `gha` | Go-backed op for running one GitHub Actions workflow. | `./gha` | `git+https://github.com/colony-2/c2ops.git//gha@main` |
 | `gha-many` | Go-backed op for running multiple GitHub Actions workflows in one invocation. | `./gha-many` | `git+https://github.com/colony-2/c2ops.git//gha-many@main` |
 | `pydantic` | Python-backed alternative to `llm2`, implemented with PydanticAI. | `./pydantic` | `git+https://github.com/colony-2/c2ops.git//pydantic@main` |
@@ -85,6 +86,24 @@ sequence:
       prompt: Fix the failing tests in this repository.
       worktree_path: "{{ context.environment.worktree_path }}"
       artifact_outbox_path: "{{ context.environment.outbox }}"
+```
+
+### `skill.run`
+
+Use when a recipe should run one specific Codex skill and validate a JSON output
+artifact.
+
+```yaml
+sequence:
+  - id: intake
+    op: git+https://github.com/colony-2/c2ops.git//codex/run_skill@main
+    inputs:
+      skill: c2-ticket-intake
+      output:
+        path: ticket/result.json
+        schema:
+          type: object
+          required: [summary]
 ```
 
 ### `gha`

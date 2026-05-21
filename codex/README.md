@@ -63,3 +63,17 @@ sequence:
 - `pendingDependencies`
 - `skills_installed`
 - `outcome`
+
+## `run_skill`
+
+This module also exposes a nested selector-backed op for running one requested
+skill:
+
+```yaml
+op: git+https://github.com/colony-2/c2ops.git//codex/run_skill@main
+```
+
+`run_skill` uses the same Codex execution path as this op, but generates the
+skill invocation prompt from structured inputs and validates the declared JSON
+output artifact after Codex exits. Its required input is `skill`; `prompt` is
+optional supplemental text.
