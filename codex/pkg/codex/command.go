@@ -9,7 +9,7 @@ func buildCommand(opts Options, schemaContainerPath string) []string {
 	cmd := []string{
 		"codex",
 		"exec",
-		"--experimental-json",
+		"--json",
 		"--dangerously-bypass-approvals-and-sandbox",
 		"--skip-git-repo-check",
 		"--output-schema",
