@@ -4,6 +4,7 @@ command: ["uv", "run", "--script", "./main.py"]
 timeout: 5m
 env:
   PYTHONUNBUFFERED: "1"
+  PYDANTIC_AI_NO_BANNER: "1"
 input_schema:
   type: object
   required: [default_provider, default_model]

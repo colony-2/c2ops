@@ -43,6 +43,8 @@ sequence:
 | `pydantic` | Python-backed alternative to `llm2`, implemented with PydanticAI. | `./pydantic` | `git+https://github.com/colony-2/c2ops.git//pydantic@main` |
 | `aider` | Python-backed alternative to `codex`, implemented with Aider behind a `codex`-like contract. | `./aider` | `git+https://github.com/colony-2/c2ops.git//aider@main` |
 | `litellm` | Python-backed alternative to `llm`, implemented with LiteLLM. | `./litellm` | `git+https://github.com/colony-2/c2ops.git//litellm@main` |
+| `kimi` | Kimi Code CLI with resumable sessions and execution artifacts. | `./kimi` | `git+https://github.com/colony-2/c2ops.git//kimi@main` |
+| `jev` | TypeSafe System One evaluation with typed questions and probabilities. | `./jev` | `git+https://github.com/colony-2/c2ops.git//jev@main` |
 
 ## Short Usage
 
@@ -186,8 +188,14 @@ sequence:
 - [`pydantic/README.md`](./pydantic/README.md)
 - [`aider/README.md`](./aider/README.md)
 - [`litellm/README.md`](./litellm/README.md)
+- [`kimi/README.md`](./kimi/README.md)
+- [`jev/README.md`](./jev/README.md)
+
+Dependency versions, compatibility notes, and validation are recorded in
+[`DEPENDENCIES.md`](./DEPENDENCIES.md).
 
 ## Notes
 
 - `llm`, `llm2`, `codex`, `gha`, and `gha-many` are Go-backed ops, each housed as a standalone Go project inside its own top-level op directory.
-- `pydantic`, `aider`, and `litellm` are Python-backed ops that run through `uv run --script`.
+- `pydantic`, `aider`, `litellm`, and `jev` are Python-backed ops that run through `uv run --script`.
+- `kimi` uses `npm exec` to supply a pinned Kimi Code CLI to its Python wrapper.

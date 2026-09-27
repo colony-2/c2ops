@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	f2 "github.com/colony-2/c2ops/llm2/pkg/files"
-	"github.com/openai/openai-go"
+	"github.com/openai/openai-go/v3"
 )
 
 // Ensure OpenAIAdapter implements FileAdapter

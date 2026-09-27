@@ -2,7 +2,7 @@
 # /// script
 # requires-python = ">=3.12"
 # dependencies = [
-#   "pydantic-ai==1.84.1",
+#   "pydantic-ai==2.51.0",
 # ]
 # ///
 
@@ -15,10 +15,10 @@ import time
 from pathlib import Path
 from typing import Any
 
-from pydantic_ai import Agent, DeferredToolRequests
+from pydantic_ai import Agent, DeferredToolRequests, ToolReturn
 from pydantic_ai.output import StructuredDict
 from pydantic_ai.toolsets import ExternalToolset
-from pydantic_ai.tools import DeferredToolResults, ToolDefinition, ToolReturn
+from pydantic_ai.tools import DeferredToolResults, ToolDefinition
 
 
 TEXT_FILE_TYPES = {"txt", "code", "config", "markdown"}
@@ -68,8 +68,14 @@ def normalize_jsonish(value: Any) -> Any:
 def model_name(provider: str, model: str) -> str:
     provider = (provider or "").strip()
     model = (model or "").strip()
+    # PydanticAI 2 defaults `openai:` to Responses. Preserve this op's
+    # Chat Completions contract, including OpenAI-compatible endpoints.
+    if model.startswith("openai:"):
+        return "openai-chat:" + model.removeprefix("openai:")
     if ":" in model:
         return model
+    if provider == "openai":
+        return f"openai-chat:{model}"
     if provider == "gemini":
         return f"google-gla:{model}"
     return f"{provider}:{model}"
@@ -435,7 +441,7 @@ def main() -> int:
             deferred_tool_results=deferred_results,
             metadata=payload.get("metadata"),
         )
-        usage = usage_dict(result.usage())
+        usage = usage_dict(result.usage)
         for key, value in usage.items():
             usage_totals[key] += value
         if result.response.model_name:

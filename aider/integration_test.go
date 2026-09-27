@@ -21,7 +21,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const uvVersion = "0.11.7"
+const uvVersion = "0.12.19"
 const useSystemUVEnv = "C2OPS_USE_SYSTEM_UV"
 
 type opManifest struct {

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	gogithub "github.com/google/go-github/v84/github"
+	gogithub "github.com/google/go-github/v92/github"
 )
 
 type githubDispatchResult struct {
@@ -66,16 +66,16 @@ type githubActionsClient interface {
 
 func newGitHubActionsClient(host, token string) (githubActionsClient, error) {
 	httpClient := &http.Client{Transport: &http.Transport{Proxy: http.ProxyFromEnvironment}}
-	client := gogithub.NewClient(httpClient)
+	opts := []gogithub.ClientOptionsFunc{gogithub.WithHTTPClient(httpClient)}
 	if strings.TrimSpace(token) != "" {
-		client = client.WithAuthToken(strings.TrimSpace(token))
+		opts = append(opts, gogithub.WithAuthToken(strings.TrimSpace(token)))
 	}
 	if normalized := strings.TrimSpace(host); normalized != "" && !strings.EqualFold(normalized, "github.com") {
-		enterpriseClient, err := client.WithEnterpriseURLs("https://"+normalized, "https://"+normalized)
-		if err != nil {
-			return nil, err
-		}
-		client = enterpriseClient
+		opts = append(opts, gogithub.WithEnterpriseURLs("https://"+normalized, "https://"+normalized))
+	}
+	client, err := gogithub.NewClient(opts...)
+	if err != nil {
+		return nil, err
 	}
 	return &goGitHubActionsClient{client: client}, nil
 }

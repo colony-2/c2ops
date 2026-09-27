@@ -7,8 +7,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/openai/openai-go"
-	"github.com/openai/openai-go/option"
+	"github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/option"
 	"golang.org/x/time/rate"
 )
 
@@ -180,21 +180,18 @@ func (a *OpenAIAdapter) GenerateWithTools(ctx context.Context, prompt string, to
 	messages = append(messages, openai.UserMessage(prompt))
 
 	// Convert tools to OpenAI format
-	openaiTools := make([]openai.ChatCompletionToolParam, len(tools))
+	openaiTools := make([]openai.ChatCompletionToolUnionParam, len(tools))
 	for i, tool := range tools {
 		var params interface{}
 		if err := json.Unmarshal(tool.Parameters, &params); err != nil {
 			return Response{}, fmt.Errorf("failed to parse tool parameters: %w", err)
 		}
 
-		openaiTools[i] = openai.ChatCompletionToolParam{
-			Type: "function",
-			Function: openai.FunctionDefinitionParam{
-				Name:        tool.Name,
-				Description: openai.String(tool.Description),
-				Parameters:  openai.FunctionParameters(params.(map[string]interface{})),
-			},
-		}
+		openaiTools[i] = openai.ChatCompletionFunctionTool(openai.FunctionDefinitionParam{
+			Name:        tool.Name,
+			Description: openai.String(tool.Description),
+			Parameters:  openai.FunctionParameters(params.(map[string]interface{})),
+		})
 	}
 
 	// Build request parameters

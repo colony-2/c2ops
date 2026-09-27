@@ -1,0 +1,68 @@
+name: jev
+description: Evaluates state with TypeSafe Jev's typed System One questions
+command: ["uv", "run", "--script", "./main.py"]
+timeout: 5m
+env:
+  PYTHONUNBUFFERED: "1"
+input_schema:
+  type: object
+  required: [state, questions]
+  properties:
+    state:
+      type: [string, object, array]
+    questions:
+      type: object
+      minProperties: 1
+      additionalProperties:
+        type: object
+        required: [type, instructions]
+        properties:
+          type:
+            type: string
+            enum: [noul, choice, score]
+          instructions:
+            type: [string, object, array]
+          criteria:
+            type: [object, array]
+    model:
+      type: string
+      default: jev-latest
+    api_key:
+      type: string
+    base_url:
+      type: string
+      description: API origin override (SDK adds /v1/systemone)
+    timeout_seconds:
+      type: number
+      exclusiveMinimum: 0
+      maximum: 240
+      default: 60
+output_schema:
+  type: object
+  required: [model, answers, usage]
+  properties:
+    model:
+      type: string
+    answers:
+      type: object
+      additionalProperties:
+        type: object
+        required: [type]
+        properties:
+          type:
+            type: string
+            enum: [noul, choice, score]
+          noul:
+            type: number
+          choice:
+            type: string
+          score:
+            type: number
+          confidence:
+            type: number
+          probabilities:
+            type: object
+          legend:
+            type: object
+    usage:
+      type: object
