@@ -14,8 +14,8 @@ var (
 )
 
 const (
-	codexHomeDirName              = ".codex"
-	codexHomeStateArtifactDirName = "codex-home-state"
+	codexHomeDirName   = ".codex"
+	legacyHomeArtifact = "codex-home-state"
 )
 
 func (o *Options) validate() error {
@@ -45,7 +45,7 @@ func (o *Options) validate() error {
 	o.ArtifactOutbox = filepath.Clean(o.ArtifactOutbox)
 	o.CodexHome = strings.TrimSpace(o.CodexHome)
 	if o.CodexHome == "" {
-		o.CodexHome = filepath.Join(o.WorkDirRoot, codexHomeDirName)
+		return fmt.Errorf("codex: an explicit private CodexHome is required")
 	}
 	o.CodexHome = filepath.Clean(o.CodexHome)
 	o.HostCodexHome = resolveHostCodexHomePath(o.HostCodexHome)
@@ -83,14 +83,6 @@ func (o *Options) validate() error {
 		o.ConfiguredSkillDirs = normalized
 	}
 	return nil
-}
-
-func (o Options) codexHomeStateInboxPath() string {
-	return filepath.Join(o.ArtifactInbox, codexHomeStateArtifactDirName)
-}
-
-func (o Options) codexHomeStateOutboxPath() string {
-	return filepath.Join(o.ArtifactOutbox, codexHomeStateArtifactDirName)
 }
 
 func (o Options) codexHomeSkillsPath() string {

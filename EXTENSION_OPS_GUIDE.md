@@ -195,16 +195,26 @@ Notes:
 - extension ops understand the `output` / `artifact_refs` envelope
 - if `output_schema` is present, the final output object is validated against it
 
+## Object checkpoints
+
+Object-capable c2j runtimes also accept an `objects` map in the stdout envelope
+and `$object` markers in `output`. Annotated inputs receive hydrated descriptors;
+the framework supplies `C2J_OBJECT_OUTBOX` for exported state. See the complete
+[object protocol](./GUIDE-Op-Object-Checkpoints.md) and
+[Codex migration guide](./codex/MIGRATION_OBJECT_SESSIONS.md).
+
 ## Environment
 
-Extension ops do not receive implicit runtime metadata environment variables.
+Apart from framework-owned protocol variables such as `C2J_OBJECT_OUTBOX`,
+extension ops do not receive implicit runtime metadata environment variables.
 
 Current behavior:
 
 - the declared input payload is delivered on stdin as JSON
 - host execution does not inherit the ambient parent process environment
 - `sandbox.type: shai` follows the same contract
-- manifest `env` is the only environment passed to the extension process
+- manifest `env` supplies application environment; an object-capable runner also
+  injects its reserved `C2J_OBJECT_OUTBOX` path
 
 So the process boundary is explicit:
 

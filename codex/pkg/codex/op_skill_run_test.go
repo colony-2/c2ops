@@ -20,6 +20,7 @@ func TestRunSkillGeneratesPromptAndValidatesOutputArtifact(t *testing.T) {
 	createLocalSkill(t, root.worktree, "ticket-intake")
 
 	executeLibrary = func(ctx context.Context, opts Options) (Result, string, string, string, error) {
+		seedTestSession(t, opts.CodexHome, "session-1")
 		if !strings.Contains(opts.Prompt, "Run the Codex skill `ticket-intake`") {
 			t.Fatalf("prompt did not request skill:\n%s", opts.Prompt)
 		}
@@ -124,6 +125,7 @@ func TestRunSkillRequiresRequestedSkillBeforeExecutingCodex(t *testing.T) {
 	root := testSkillRunRoot(t)
 	called := false
 	executeLibrary = func(ctx context.Context, opts Options) (Result, string, string, string, error) {
+		seedTestSession(t, opts.CodexHome, "session-1")
 		called = true
 		return Result{}, "", "", "", nil
 	}
@@ -154,6 +156,7 @@ func TestRunSkillOutputSchemaFailureReturnsIncomplete(t *testing.T) {
 	repairEnabled := false
 
 	executeLibrary = func(ctx context.Context, opts Options) (Result, string, string, string, error) {
+		seedTestSession(t, opts.CodexHome, "session-1")
 		writeTestJSON(t, filepath.Join(opts.ArtifactOutbox, "ticket", "result.json"), map[string]any{
 			"unexpected": true,
 		})
@@ -204,11 +207,15 @@ func TestRunSkillRepairsInvalidOutputWithSameSession(t *testing.T) {
 	root := testSkillRunRoot(t)
 	createLocalSkill(t, root.worktree, "ticket-intake")
 	calls := 0
+	var executionHome string
 
 	executeLibrary = func(ctx context.Context, opts Options) (Result, string, string, string, error) {
+		seedTestSession(t, opts.CodexHome, "session-1")
 		calls++
 		switch calls {
 		case 1:
+			executionHome = opts.CodexHome
+			writeTestJSON(t, filepath.Join(opts.CodexHome, "sessions", "repair-progress.json"), "first turn")
 			writeTestJSON(t, filepath.Join(opts.ArtifactOutbox, "ticket", "result.json"), map[string]any{
 				"unexpected": true,
 			})
@@ -218,6 +225,10 @@ func TestRunSkillRepairsInvalidOutputWithSameSession(t *testing.T) {
 				AssistantSummary: "first pass",
 			}, "", "", "", nil
 		case 2:
+			if opts.CodexHome != executionHome {
+				t.Fatal("repair changed execution home")
+			}
+			assertFileContent(t, filepath.Join(opts.CodexHome, "sessions", "repair-progress.json"), `"first turn"`)
 			if opts.SessionID != "session-1" {
 				t.Fatalf("expected repair to resume session-1, got %q", opts.SessionID)
 			}
@@ -258,6 +269,9 @@ func TestRunSkillRepairsInvalidOutputWithSameSession(t *testing.T) {
 	if !output.OutputSchemaValid {
 		t.Fatalf("expected repaired output to be valid, got errors %v", output.OutputSchemaErrors)
 	}
+	if output.Session == nil || len(output.Objects) != 1 {
+		t.Fatal("expected exactly one final session draft")
+	}
 	if output.OutputRepairAttempts != 1 {
 		t.Fatalf("expected one repair attempt, got %d", output.OutputRepairAttempts)
 	}
@@ -272,6 +286,8 @@ type skillRunRoot struct {
 
 func testSkillRunRoot(t *testing.T) skillRunRoot {
 	t.Helper()
+	installFakeCodex(t, "#!/usr/bin/env bash\nset -euo pipefail\n")
+	t.Setenv("C2J_OBJECT_OUTBOX", t.TempDir())
 
 	root := t.TempDir()
 	paths := skillRunRoot{
@@ -327,6 +343,7 @@ func TestRunSkillOnErrorFailReturnsPartialOutputAndError(t *testing.T) {
 	repairEnabled := false
 
 	executeLibrary = func(ctx context.Context, opts Options) (Result, string, string, string, error) {
+		seedTestSession(t, opts.CodexHome, "session-1")
 		writeTestJSON(t, filepath.Join(opts.ArtifactOutbox, "ticket", "result.json"), map[string]any{
 			"unexpected": true,
 		})
@@ -358,6 +375,9 @@ func TestRunSkillOnErrorFailReturnsPartialOutputAndError(t *testing.T) {
 	if output.Status != string(StatusError) {
 		t.Fatalf("expected error status, got %q", output.Status)
 	}
+	if output.Session != nil || len(output.Objects) != 0 {
+		t.Fatal("failed validation published a session")
+	}
 	if output.SessionID != "session-1" {
 		t.Fatalf("expected partial output session id, got %q", output.SessionID)
 	}
@@ -373,6 +393,7 @@ func TestRunSkillAcceptsAssistantSummaryOutputCompatibility(t *testing.T) {
 	createLocalSkill(t, root.worktree, "ticket-intake")
 
 	executeLibrary = func(ctx context.Context, opts Options) (Result, string, string, string, error) {
+		seedTestSession(t, opts.CodexHome, "session-1")
 		return Result{
 			Status:           StatusCompleted,
 			SessionID:        "session-1",

@@ -14,6 +14,6 @@ func main() {
 		if err != nil {
 			return extensioncmd.Result[codex.ExecOpOutput]{}, fmt.Errorf("codex.exec: %w", err)
 		}
-		return extensioncmd.Result[codex.ExecOpOutput]{Output: output}, nil
+		return extensioncmd.Result[codex.ExecOpOutput]{Output: output, Objects: output.Objects}, nil
 	})
 }

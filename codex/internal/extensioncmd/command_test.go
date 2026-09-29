@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/colony-2/c2ops/codex/pkg/checkpoint"
 	"github.com/stretchr/testify/require"
 )
 
@@ -25,7 +26,8 @@ func TestRunWritesSuccessEnvelope(t *testing.T) {
 		return Run(func(ctx context.Context, input testInput) (Result[testOutput], error) {
 			require.Equal(t, "hello", input.Message)
 			return Result[testOutput]{
-				Output: testOutput{Reply: "world"},
+				Output:  testOutput{Reply: "world"},
+				Objects: map[string]checkpoint.Draft{"session": {Type: "test.session/v1", Metadata: map[string]string{"id": "one"}, Files: map[string]string{"home": "/outbox/home"}}},
 			}, nil
 		})
 	})
@@ -34,17 +36,20 @@ func TestRunWritesSuccessEnvelope(t *testing.T) {
 	require.Empty(t, stderr)
 
 	var env struct {
-		Output testOutput `json:"output"`
+		Output  testOutput                  `json:"output"`
+		Objects map[string]checkpoint.Draft `json:"objects"`
 	}
 	require.NoError(t, json.Unmarshal(stdout, &env))
 	require.Equal(t, "world", env.Output.Reply)
+	require.Equal(t, "test.session/v1", env.Objects["session"].Type)
 }
 
 func TestRunWritesErrorEnvelopeWhenResultPresent(t *testing.T) {
 	stdout, stderr, code := runWithCapturedStdio(t, []byte(`{}`), func() int {
 		return Run(func(ctx context.Context, input map[string]any) (Result[testOutput], error) {
 			return Result[testOutput]{
-				Output: testOutput{Reply: "partial"},
+				Output:  testOutput{Reply: "partial"},
+				Objects: map[string]checkpoint.Draft{"session": {Type: "test.session/v1"}},
 				ArtifactRefs: map[string]ArtifactRef{
 					"logs": NewExternalArtifactRef("logs", "https://example.com/logs", true),
 				},
@@ -54,6 +59,7 @@ func TestRunWritesErrorEnvelopeWhenResultPresent(t *testing.T) {
 
 	require.Equal(t, 1, code)
 	require.Contains(t, stderr, "boom")
+	require.NotContains(t, string(stdout), `"objects"`)
 
 	var env struct {
 		Output       testOutput             `json:"output"`

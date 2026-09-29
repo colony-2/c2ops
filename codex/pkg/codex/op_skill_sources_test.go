@@ -9,6 +9,8 @@ import (
 )
 
 func TestRunMakesListedSkillsAvailableWithoutPromptEnforcement(t *testing.T) {
+	installFakeCodex(t, "#!/usr/bin/env bash\nset -euo pipefail\n")
+	t.Setenv("C2J_OBJECT_OUTBOX", t.TempDir())
 	originalMaterializer := materializeSkillRefsFn
 	originalExecute := executeLibrary
 	defer func() {
@@ -42,6 +44,7 @@ Create .c2/available-skill/result.json when useful.
 
 	prompt := "Use whatever skills are useful for this request."
 	executeLibrary = func(ctx context.Context, opts Options) (Result, string, string, string, error) {
+		seedTestSession(t, opts.CodexHome, "session-with-available-skill")
 		if opts.Prompt != prompt {
 			t.Fatalf("expected prompt to remain %q, got %q", prompt, opts.Prompt)
 		}

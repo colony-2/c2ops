@@ -1,0 +1,34 @@
+id: codex-object-branches
+version: "1"
+sequence:
+  - id: start
+    op: ./codex
+    inputs:
+      prompt: |
+        bash -lc 'set -e; test "$(cat "$CODEX_HOME/sessions/fixture-session.jsonl")" = original'
+  - id: branch_b
+    op: ./codex/run_skill
+    inputs:
+      skill: checkpoint-test
+      output:
+        path: result.json
+        schema: {type: object}
+      session: "${{ sequence.start.outputs.session }}"
+      prompt: |
+        bash -lc 'set -e; test "$(cat "$CODEX_HOME/sessions/fixture-session.jsonl")" = original; printf branch-b > "$CODEX_HOME/sessions/fixture-session.jsonl"; printf "{}" > "{{ context.environment.op.outbox }}/result.json"'
+  - id: branch_c
+    op: ./codex
+    inputs:
+      session: "${{ sequence.start.outputs.session }}"
+      prompt: |
+        bash -lc 'set -e; test "$(cat "$CODEX_HOME/sessions/fixture-session.jsonl")" = original; printf branch-c > "$CODEX_HOME/sessions/fixture-session.jsonl"'
+  - id: continue_b
+    op: ./codex
+    inputs:
+      session: "${{ sequence.branch_b.outputs.session }}"
+      prompt: |
+        bash -lc 'set -e; test "$(cat "$CODEX_HOME/sessions/fixture-session.jsonl")" = branch-b'
+outputs:
+  status: "${{ sequence.continue_b.outputs.status }}"
+  session: "${{ sequence.continue_b.outputs.session }}"
+  public_artifacts: "${{ sequence.continue_b.artifacts }}"

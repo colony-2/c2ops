@@ -1,9 +1,11 @@
 package codex
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -11,35 +13,40 @@ import (
 	"runtime/debug"
 	"strings"
 	"time"
+
+	"github.com/colony-2/c2ops/codex/pkg/checkpoint"
 )
 
 // ExecOpInput defines the codex.exec command input.
 type ExecOpInput struct {
 	Prompt             string            `json:"prompt" validate:"required"`
-	SessionID          string            `json:"sessionId,omitempty"`
+	Session            *SessionInput     `json:"session,omitempty"`
 	Model              string            `json:"model,omitempty"`
 	Env                map[string]string `json:"env,omitempty"`
 	Skills             []string          `json:"skills,omitempty"`
 	ReturnOn           []string          `json:"return_on,omitempty"`
 	StatusContract     StatusContractRef `json:"status_contract,omitempty"`
-	ResumeContext      map[string]any    `json:"resume_context,omitempty"`
 	IdleTimeout        string            `json:"idle_timeout,omitempty" default:"5m"`
 	WorkdirPath        string            `json:"workdir_path,omitempty" default:"{{ context.environment.op.workdir }}"`
 	WorktreePath       string            `json:"worktree_path" default:"{{ context.environment.op.worktree_path }}" validate:"required"`
 	ArtifactInboxPath  string            `json:"artifact_inbox_path,omitempty" default:"{{ context.environment.op.inbox }}"`
 	ArtifactOutboxPath string            `json:"artifact_outbox_path,omitempty" default:"{{ context.environment.op.outbox }}"`
+
+	execution *sessionExecution
 }
 
 // ExecOpOutput mirrors the structured response surfaced by the codex library.
 type ExecOpOutput struct {
-	Status              string       `json:"status"`
-	SessionID           string       `json:"sessionId"`
-	Outcome             ExecOutcome  `json:"outcome"`
-	AssistantSummary    string       `json:"assistantSummary"`
-	IncompleteReason    string       `json:"incompleteReason"`
-	IncompleteCategory  string       `json:"incompleteCategory"`
-	PendingDependencies []Dependency `json:"pendingDependencies"`
-	SkillsInstalled     []string     `json:"skills_installed,omitempty"`
+	Session             *checkpoint.Marker          `json:"session,omitempty"`
+	Objects             map[string]checkpoint.Draft `json:"-"`
+	Status              string                      `json:"status"`
+	SessionID           string                      `json:"sessionId"`
+	Outcome             ExecOutcome                 `json:"outcome"`
+	AssistantSummary    string                      `json:"assistantSummary"`
+	IncompleteReason    string                      `json:"incompleteReason"`
+	IncompleteCategory  string                      `json:"incompleteCategory"`
+	PendingDependencies []Dependency                `json:"pendingDependencies"`
+	SkillsInstalled     []string                    `json:"skills_installed,omitempty"`
 }
 
 type StatusContractRef struct {
@@ -94,7 +101,22 @@ var executeLibrary = Execute
 
 // Run executes codex.exec via explicit inputs.
 func Run(actx context.Context, input ExecOpInput) (ExecOpOutput, error) {
-	return runCodexActivity(actx, input)
+	paths, err := normalizeExecRunPaths(input)
+	if err != nil {
+		return ExecOpOutput{}, err
+	}
+	state, err := prepareSession(actx, input.Session, paths, input.Env)
+	if err != nil {
+		return ExecOpOutput{}, err
+	}
+	defer state.close()
+	input.execution = state
+	output, err := runCodexActivity(actx, input)
+	if err != nil {
+		return output, err
+	}
+	output.Session, output.Objects, err = state.publish()
+	return output, err
 }
 
 func runCodexActivity(actx context.Context, input ExecOpInput) (ExecOpOutput, error) {
@@ -164,7 +186,8 @@ func runCodexActivityPrepared(
 
 	opts := Options{
 		Prompt:              promptForExec,
-		SessionID:           strings.TrimSpace(input.SessionID),
+		CodexHome:           input.execution.home,
+		SessionID:           input.execution.id,
 		Model:               strings.TrimSpace(input.Model),
 		ExtraEnv:            input.Env,
 		IdleTimeout:         idleTimeout,
@@ -213,6 +236,13 @@ func runCodexActivityPrepared(
 		}
 		return ExecOpOutput{}, fmt.Errorf("codex error: %s", msg)
 	}
+	if result.SessionID == "" {
+		return output, fmt.Errorf("Codex returned no session ID")
+	}
+	if input.execution.id != "" && input.execution.id != result.SessionID {
+		return output, fmt.Errorf("Codex resumed a different session")
+	}
+	input.execution.id = result.SessionID
 	return output, nil
 }
 
@@ -319,4 +349,14 @@ func safeString(s string) string {
 func digestPrompt(prompt string) string {
 	sum := sha256.Sum256([]byte(prompt))
 	return hex.EncodeToString(sum[:8])
+}
+
+func (input *ExecOpInput) UnmarshalJSON(data []byte) error {
+	if err := rejectLegacySessionFields(data); err != nil {
+		return err
+	}
+	type plain ExecOpInput
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	return dec.Decode((*plain)(input))
 }

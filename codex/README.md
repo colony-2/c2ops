@@ -1,6 +1,10 @@
 # `codex`
 
-Go-backed Codex op with resumable sessions and outbox artifacts.
+Go-backed Codex op with immutable object sessions and outbox artifacts.
+
+**Breaking change:** resume with `session`, not `sessionId` or a
+`codex-home-state` artifact. Read [the migration guide](./MIGRATION_OBJECT_SESSIONS.md)
+for required runtime versions, recipe changes, and session forwarding.
 
 ## Selector
 
@@ -20,12 +24,12 @@ op: git+https://github.com/colony-2/c2ops.git//codex@main
 
 - Reads one JSON payload from stdin
 - Runs the standalone Go project in this directory with `go run .`
-- Returns a `codex.exec`-style result in the extension-op `{"output": ...}` envelope
+- Returns a `codex.exec`-style result in the extension-op `{"output": ..., "objects": ...}` envelope
 
 ## Inputs
 
 - `prompt`
-- `sessionId`
+- `session` (optional `c2ops.codex.session/v1` reference)
 - `model`
 - `env`
 - `skills`
@@ -55,8 +59,9 @@ sequence:
 
 ## Outputs
 
+- `session` (durable `c2ops.codex.session/v1` reference)
 - `status`
-- `sessionId`
+- `sessionId` (diagnostic only; never pass it as a resume input)
 - `assistantSummary`
 - `incompleteReason`
 - `incompleteCategory`
@@ -77,3 +82,13 @@ op: git+https://github.com/colony-2/c2ops.git//codex/run_skill@main
 skill invocation prompt from structured inputs and validates the declared JSON
 output artifact after Codex exits. Its required input is `skill`; `prompt` is
 optional supplemental text.
+
+Both selectors use the same object type. Every successful call, including a clean
+`incomplete` return, produces a successor checkpoint. Omitting `session` starts a
+new private session. Old session caches and inbox home-state directories are not
+used. Git workspace state and user deliverables continue through c2j's existing
+workspace/artifact channels.
+
+`run_skill` also accepts `env` for invocation credentials and provider settings.
+Output repair shares the invocation's private state and publishes only after
+validation finishes. No successful checkpoint is returned for a failed op.

@@ -17,6 +17,7 @@ import (
 	"github.com/colony-2/c2j/pkg/contextual"
 	gitexport "github.com/colony-2/c2j/pkg/git/export"
 	"github.com/colony-2/c2j/pkg/jobdbschema"
+	"github.com/colony-2/c2j/pkg/objects"
 	coreops "github.com/colony-2/c2j/pkg/ops"
 	extops "github.com/colony-2/c2j/pkg/ops/extensions"
 	"github.com/colony-2/c2j/pkg/recipe"
@@ -90,6 +91,16 @@ func TestRecipeFixtures(t *testing.T) {
 					}
 					assertArtifactNames(t, tc.WantArtifacts, artifacts)
 					assertArtifactNames(t, tc.WantJobArtifacts, jobArtifacts)
+					for name := range publicArtifactNames(result["public_artifacts"]) {
+						require.False(t, objects.IsInternalArtifact(name), "checkpoint leaked into recipe artifacts")
+						require.NotContains(t, name, "codex-home-state")
+					}
+					if value, exists := result["session"]; exists {
+						ref, ok, err := objects.Parse(value)
+						require.NoError(t, err)
+						require.True(t, ok, "root output must forward a durable reference")
+						require.Equal(t, "c2ops.codex.session/v1", ref.Type)
+					}
 				})
 			}
 		})
@@ -111,12 +122,26 @@ func installStubCodex(t *testing.T) {
 	stubPath := filepath.Join(stubDir, "codex")
 	stub := `#!/usr/bin/env bash
 set -euo pipefail
+if [[ ${1:-} == --version ]]; then echo codex-cli 0.157.1; exit 0; fi
 prompt="${@: -1}"
 cmd="$(printf '%s\n' "$prompt" | sed -n "s/^bash -lc '\\(.*\\)'$/\\1/p" | head -n 1)"
 if [[ -z "${cmd}" ]]; then
   echo "missing fixture command in prompt" >&2
   exit 1
 fi
+python3 - <<'PYCODE'
+import os, sqlite3
+from pathlib import Path
+home = Path(os.environ['CODEX_HOME'])
+(home / 'sessions').mkdir(exist_ok=True)
+rollout = home / 'sessions/fixture-session.jsonl'
+if not rollout.exists():
+    rollout.write_text('original')
+for name in ['state_5', 'thread_history_1', 'goals_1', 'queue_1', 'memories_1']:
+    with sqlite3.connect(str(home / (name + '.sqlite'))) as db:
+        db.execute('CREATE TABLE IF NOT EXISTS threads(id TEXT PRIMARY KEY, rollout_path TEXT, cwd TEXT)')
+        db.execute('INSERT OR IGNORE INTO threads VALUES (?, ?, ?)', ('fixture-session', str(rollout), os.getcwd()))
+PYCODE
 bash -lc "$cmd"
 printf '%s\n' '{"type":"session.created","session_id":"fixture-session"}'
 printf '%s\n' '{"type":"item.completed","item":{"item_type":"assistant_message","text":"{\"status\":\"completed\",\"assistantSummary\":\"fixture completed\",\"incompleteReason\":\"\",\"incompleteCategory\":\"\",\"pendingDependencies\":[],\"errorMessage\":\"\"}"}}'
@@ -218,6 +243,10 @@ func createFixtureRepo(t *testing.T, primaryPath string, secondaryPaths []string
 		"test-fixtures": true,
 	}))
 	require.NoError(t, injectFixtureManifestEnv(filepath.Join(repoDir, filepath.Base(opRootDir(t)), "op.yaml"), fixtureOpEnv(t)))
+	require.NoError(t, injectFixtureManifestEnv(filepath.Join(repoDir, filepath.Base(opRootDir(t)), "run_skill", "op.yaml"), fixtureOpEnv(t)))
+	skillDir := filepath.Join(repoDir, ".agents", "skills", "checkpoint-test")
+	require.NoError(t, os.MkdirAll(skillDir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("---\nname: checkpoint-test\ndescription: Test checkpoint continuation.\n---\nFollow the supplied command.\n"), 0644))
 
 	require.NoError(t, runGit(repoDir, "init"))
 	require.NoError(t, runGit(repoDir, "config", "user.email", "test@example.com"))
@@ -601,4 +630,9 @@ func assertArtifactNames(t *testing.T, expected []string, actual []string) {
 	for _, name := range expected {
 		require.True(t, seen[name], "missing expected artifact: %s", name)
 	}
+}
+
+func publicArtifactNames(value any) map[string]any {
+	result, _ := value.(map[string]any)
+	return result
 }

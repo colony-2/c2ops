@@ -2,6 +2,7 @@ package codex
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -9,6 +10,7 @@ func buildCommand(opts Options, schemaContainerPath string) []string {
 	cmd := []string{
 		"codex",
 		"exec",
+		"-c", "sqlite_home=" + strconv.Quote(opts.CodexHome),
 		"--json",
 		"--dangerously-bypass-approvals-and-sandbox",
 		"--skip-git-repo-check",

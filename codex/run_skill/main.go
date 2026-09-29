@@ -14,6 +14,6 @@ func main() {
 		if err != nil {
 			return extensioncmd.Result[codex.SkillRunOutput]{Output: output}, fmt.Errorf("codex.run_skill: %w", err)
 		}
-		return extensioncmd.Result[codex.SkillRunOutput]{Output: output}, nil
+		return extensioncmd.Result[codex.SkillRunOutput]{Output: output, Objects: output.Objects}, nil
 	})
 }

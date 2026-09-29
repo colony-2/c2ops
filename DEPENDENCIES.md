@@ -78,3 +78,18 @@ Node.js 24.15+, and npm; package downloads require network access on first use.
 - [Codex noninteractive execution](https://developers.openai.com/codex/noninteractive/)
 - [Kimi Code](https://github.com/MoonshotAI/kimi-code)
 - [TypeSafe Python SDK](https://docs.typesafe.ai/sdk/python)
+
+## Codex object-session migration
+
+The Codex module now pins c2j
+`v0.0.56-0.20260929214740-e1334817a353` (commit `e1334817a353`), which implements
+immutable object checkpoints. Tagged `v0.0.55` lacks that API. Workers executing
+the migrated Codex selectors need this object-capable runtime as well.
+
+Codex CLI remains pinned to **0.157.1**, and the migrated ops now enforce that
+version in production. `modernc.org/sqlite` **v1.50.1** supplies pure-Go SQLite
+export/restore, including WAL-aware database snapshots and rollout-path relocation.
+No external SQLite executable is needed.
+
+See [the consumer migration guide](./codex/MIGRATION_OBJECT_SESSIONS.md). The change
+is limited to `codex` and `codex/run_skill`; other op modules retain their pins.

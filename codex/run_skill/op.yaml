@@ -4,6 +4,7 @@ command: ["go", "run", "."]
 timeout: 30m
 input_schema:
   type: object
+  additionalProperties: false
   required: [skill]
   properties:
     skill:
@@ -16,10 +17,15 @@ input_schema:
       type: object
     prompt:
       type: string
-    sessionId:
-      type: string
+    session:
+      type: object
+      x-c2j-object-type: c2ops.codex.session/v1
     model:
       type: string
+    env:
+      type: object
+      additionalProperties:
+        type: string
     return_on:
       type: array
       items:
@@ -71,7 +77,11 @@ input_schema:
       default: "{{ context.environment.op.outbox }}"
 output_schema:
   type: object
+  required: [session]
   properties:
+    session:
+      type: object
+      x-c2j-object-type: c2ops.codex.session/v1
     status:
       type: string
     sessionId:

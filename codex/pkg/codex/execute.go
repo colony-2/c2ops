@@ -1,10 +1,7 @@
 package codex
 
 import (
-	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
@@ -31,14 +28,6 @@ func Execute(ctx context.Context, opts Options) (Result, string, string, string,
 		return Result{}, "", "", "", err
 	}
 	activeOpts := opts
-	activeCodexHome, err := resolveDirectCodexHome(opts)
-	if err != nil {
-		return Result{}, "", "", "", err
-	}
-	activeOpts.CodexHome = activeCodexHome
-	if err := os.MkdirAll(activeOpts.CodexHome, 0o755); err != nil {
-		return Result{}, "", "", "", fmt.Errorf("create active codex home path: %w", err)
-	}
 
 	artifactDir, err := os.MkdirTemp("", "codex-artifacts-*")
 	if err != nil {
@@ -78,13 +67,6 @@ func Execute(ctx context.Context, opts Options) (Result, string, string, string,
 			runErr = fmt.Errorf("%v; sanitize codex home output: %w", runErr, sanitizeErr)
 		}
 	}
-	if persistErr := persistCodexHomeState(activeOpts.codexHomeStateOutboxPath(), activeOpts.CodexHome); persistErr != nil {
-		if runErr == nil {
-			runErr = fmt.Errorf("persist codex home state: %w", persistErr)
-		} else {
-			runErr = fmt.Errorf("%v; persist codex home state: %w", runErr, persistErr)
-		}
-	}
 	if closeErr := stdoutFile.Close(); closeErr != nil {
 		if runErr == nil {
 			runErr = fmt.Errorf("close stdout capture: %w", closeErr)
@@ -119,64 +101,10 @@ func Execute(ctx context.Context, opts Options) (Result, string, string, string,
 			result.SessionID = activeOpts.SessionID
 		}
 	}
-	if sessionID := strings.TrimSpace(result.SessionID); sessionID != "" {
-		if rolloutErr := materializeSessionRolloutFiles(activeOpts.CodexHome, sessionID, stdoutPath); rolloutErr != nil {
-			if runErr == nil {
-				runErr = fmt.Errorf("materialize session rollout files: %w", rolloutErr)
-			} else {
-				runErr = fmt.Errorf("%v; materialize session rollout files: %w", runErr, rolloutErr)
-			}
-		}
-		if mappingErr := persistSessionCodexHomePath(sessionID, activeOpts.CodexHome); mappingErr != nil {
-			if runErr == nil {
-				runErr = fmt.Errorf("persist session codex home path: %w", mappingErr)
-			} else {
-				runErr = fmt.Errorf("%v; persist session codex home path: %w", runErr, mappingErr)
-			}
-		}
-		if cacheErr := persistCodexHomeState(sessionCodexHomeStatePath(sessionID), activeOpts.CodexHome); cacheErr != nil {
-			if runErr == nil {
-				runErr = fmt.Errorf("persist session codex home state: %w", cacheErr)
-			} else {
-				runErr = fmt.Errorf("%v; persist session codex home state: %w", runErr, cacheErr)
-			}
-		}
-	}
-
 	return result, stdoutPath, stderrPath, artifactDir, nil
 }
 
-func resolveDirectCodexHome(opts Options) (string, error) {
-	sessionID := strings.TrimSpace(opts.SessionID)
-	if sessionID == "" {
-		return opts.CodexHome, nil
-	}
-
-	resolvedPath, err := loadSessionCodexHomePath(sessionID)
-	if err != nil {
-		return "", fmt.Errorf("load session codex home path: %w", err)
-	}
-	if strings.TrimSpace(resolvedPath) == "" {
-		return opts.CodexHome, nil
-	}
-	return resolvedPath, nil
-}
-
 func runCodexExec(ctx context.Context, opts Options, schemaPath string, collector *outputCollector) error {
-	if err := restoreCodexHomeStateIfExists(opts.codexHomeStateInboxPath(), opts.CodexHome); err != nil {
-		return fmt.Errorf("restore codex home state: %w", err)
-	}
-	if sessionID := strings.TrimSpace(opts.SessionID); sessionID != "" {
-		mappedHome, err := loadSessionCodexHomePath(sessionID)
-		if err != nil {
-			return fmt.Errorf("load session codex home path: %w", err)
-		}
-		if filepath.Clean(mappedHome) != filepath.Clean(opts.CodexHome) {
-			if err := restoreCodexHomeStateIfExists(sessionCodexHomeStatePath(sessionID), opts.CodexHome); err != nil {
-				return fmt.Errorf("restore session codex home state: %w", err)
-			}
-		}
-	}
 	if err := prepareDirectCodexHome(opts); err != nil {
 		return fmt.Errorf("prepare codex home: %w", err)
 	}
@@ -227,6 +155,8 @@ func runCommandWithWatchdog(ctx context.Context, cmd *exec.Cmd, idleTimeout time
 	for {
 		select {
 		case err := <-waitCh:
+			// Stop descendants before the caller snapshots durable state.
+			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 			return err
 		case <-ctx.Done():
 			terminateProcessGroup(cmd)
@@ -340,163 +270,6 @@ func ensureCodexHomeExists(codexHomeDir string) error {
 		return fmt.Errorf("create codex home %q: %w", codexHomeDir, err)
 	}
 	return nil
-}
-
-func restoreCodexHomeStateIfExists(sourceStateDir string, codexHomeDir string) error {
-	info, err := os.Stat(sourceStateDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return fmt.Errorf("stat inbox codex home %q: %w", sourceStateDir, err)
-	}
-	if !info.IsDir() {
-		return nil
-	}
-	if filepath.Clean(sourceStateDir) == filepath.Clean(codexHomeDir) {
-		return nil
-	}
-	if err := os.RemoveAll(codexHomeDir); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("reset codex home %q: %w", codexHomeDir, err)
-	}
-	return copyDirContents(sourceStateDir, codexHomeDir)
-}
-
-func persistCodexHomeState(targetStateDir string, codexHomeDir string) error {
-	if err := os.RemoveAll(targetStateDir); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("reset codex home state %q: %w", targetStateDir, err)
-	}
-	return copyDirContentsIfExists(codexHomeDir, targetStateDir)
-}
-
-func sessionCodexHomeStatePath(sessionID string) string {
-	sum := sha256.Sum256([]byte(strings.TrimSpace(sessionID)))
-	return filepath.Join(os.TempDir(), "colony2-codex-session-state", hex.EncodeToString(sum[:]))
-}
-
-func sessionCodexHomePathRecord(sessionID string) string {
-	sum := sha256.Sum256([]byte(strings.TrimSpace(sessionID)))
-	return filepath.Join(os.TempDir(), "colony2-codex-session-homes", hex.EncodeToString(sum[:]), "path.txt")
-}
-
-func persistSessionCodexHomePath(sessionID string, codexHome string) error {
-	recordPath := sessionCodexHomePathRecord(sessionID)
-	if err := os.MkdirAll(filepath.Dir(recordPath), 0o755); err != nil {
-		return fmt.Errorf("create session codex home record dir: %w", err)
-	}
-	return os.WriteFile(recordPath, []byte(strings.TrimSpace(codexHome)), 0o644)
-}
-
-func loadSessionCodexHomePath(sessionID string) (string, error) {
-	recordPath := sessionCodexHomePathRecord(sessionID)
-	data, err := os.ReadFile(recordPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return "", nil
-		}
-		return "", fmt.Errorf("read session codex home record: %w", err)
-	}
-	path := strings.TrimSpace(string(data))
-	if path == "" {
-		return "", nil
-	}
-	info, err := os.Stat(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return "", nil
-		}
-		return "", fmt.Errorf("stat session codex home: %w", err)
-	}
-	if !info.IsDir() {
-		return "", nil
-	}
-	return path, nil
-}
-
-func materializeSessionRolloutFiles(codexHomeDir string, sessionID string, stdoutPath string) error {
-	if strings.TrimSpace(sessionID) == "" || strings.TrimSpace(stdoutPath) == "" {
-		return nil
-	}
-	paths, err := discoverSessionRolloutPaths(codexHomeDir, sessionID)
-	if err != nil {
-		return err
-	}
-	for _, path := range paths {
-		if _, err := os.Stat(path); err == nil {
-			continue
-		} else if err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("stat rollout path %q: %w", path, err)
-		}
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			return fmt.Errorf("create rollout dir %q: %w", filepath.Dir(path), err)
-		}
-		if err := copyRegularFile(stdoutPath, path, 0o644); err != nil {
-			return fmt.Errorf("copy rollout file %q: %w", path, err)
-		}
-	}
-	return nil
-}
-
-func discoverSessionRolloutPaths(codexHomeDir string, sessionID string) ([]string, error) {
-	patterns := []string{
-		filepath.Join(codexHomeDir, "state_*.sqlite"),
-		filepath.Join(codexHomeDir, "state_*.sqlite-*"),
-	}
-	seenFiles := map[string]struct{}{}
-	seenPaths := map[string]struct{}{}
-	paths := make([]string, 0)
-	for _, pattern := range patterns {
-		matches, err := filepath.Glob(pattern)
-		if err != nil {
-			return nil, fmt.Errorf("glob state dbs %q: %w", pattern, err)
-		}
-		for _, match := range matches {
-			if _, ok := seenFiles[match]; ok {
-				continue
-			}
-			seenFiles[match] = struct{}{}
-			data, err := os.ReadFile(match)
-			if err != nil {
-				return nil, fmt.Errorf("read state db %q: %w", match, err)
-			}
-			for _, chunk := range bytes.Split(data, []byte{0}) {
-				candidate := extractRolloutPathCandidate(string(chunk), sessionID)
-				if candidate == "" {
-					continue
-				}
-				if _, ok := seenPaths[candidate]; ok {
-					continue
-				}
-				seenPaths[candidate] = struct{}{}
-				paths = append(paths, candidate)
-			}
-		}
-	}
-	return paths, nil
-}
-
-func extractRolloutPathCandidate(raw string, sessionID string) string {
-	idx := strings.Index(raw, string(filepath.Separator))
-	if idx == -1 {
-		return ""
-	}
-	raw = raw[idx:]
-	if !strings.Contains(raw, sessionID) {
-		return ""
-	}
-	sessionFragment := string(filepath.Separator) + ".codex" + string(filepath.Separator) + "sessions" + string(filepath.Separator)
-	if !strings.Contains(raw, sessionFragment) {
-		return ""
-	}
-	end := strings.Index(raw, ".jsonl")
-	if end == -1 {
-		return ""
-	}
-	candidate := raw[:end+len(".jsonl")]
-	if !filepath.IsAbs(candidate) {
-		return ""
-	}
-	return candidate
 }
 
 func copyDirContentsIfExists(sourceDir string, targetDir string) error {

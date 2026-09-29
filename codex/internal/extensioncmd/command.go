@@ -7,6 +7,8 @@ import (
 	"io"
 	"os"
 	"reflect"
+
+	"github.com/colony-2/c2ops/codex/pkg/checkpoint"
 )
 
 type ExternalRef struct {
@@ -23,11 +25,13 @@ type ArtifactRef struct {
 type Result[O any] struct {
 	Output       O
 	ArtifactRefs map[string]ArtifactRef
+	Objects      map[string]checkpoint.Draft
 }
 
 type envelope[O any] struct {
-	Output       O                      `json:"output,omitempty"`
-	ArtifactRefs map[string]ArtifactRef `json:"artifact_refs,omitempty"`
+	Output       O                           `json:"output,omitempty"`
+	ArtifactRefs map[string]ArtifactRef      `json:"artifact_refs,omitempty"`
+	Objects      map[string]checkpoint.Draft `json:"objects,omitempty"`
 }
 
 func NewExternalArtifactRef(name string, url string, expand bool) ArtifactRef {
@@ -56,8 +60,10 @@ func Run[I any, O any](run func(context.Context, I) (Result[O], error)) int {
 	env := envelope[O]{
 		Output:       result.Output,
 		ArtifactRefs: result.ArtifactRefs,
+		Objects:      result.Objects,
 	}
 	if err != nil {
+		env.Objects = nil
 		if hasEnvelopeData(env) {
 			if encodeErr := json.NewEncoder(os.Stdout).Encode(env); encodeErr != nil {
 				_, _ = fmt.Fprintf(os.Stderr, "encode output: %v\n", encodeErr)
@@ -79,8 +85,13 @@ func Run[I any, O any](run func(context.Context, I) (Result[O], error)) int {
 func decodeInput[I any](r io.Reader) (I, error) {
 	var input I
 	dec := json.NewDecoder(r)
+	dec.DisallowUnknownFields()
 	if err := dec.Decode(&input); err != nil && err != io.EOF {
 		return input, err
+	}
+	var extra any
+	if err := dec.Decode(&extra); err != io.EOF {
+		return input, fmt.Errorf("expected one JSON input object")
 	}
 	return input, nil
 }

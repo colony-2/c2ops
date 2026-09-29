@@ -10,6 +10,8 @@ import (
 	"strings"
 
 	jsonschemav6 "github.com/santhosh-tekuri/jsonschema/v6"
+
+	"github.com/colony-2/c2ops/codex/pkg/checkpoint"
 )
 
 const (
@@ -29,8 +31,9 @@ type SkillRunInput struct {
 	Skills             []string               `json:"skills,omitempty"`
 	Input              map[string]interface{} `json:"input,omitempty"`
 	Prompt             string                 `json:"prompt,omitempty"`
-	SessionID          string                 `json:"sessionId,omitempty"`
+	Session            *SessionInput          `json:"session,omitempty"`
 	Model              string                 `json:"model,omitempty"`
+	Env                map[string]string      `json:"env,omitempty"`
 	ReturnOn           []string               `json:"return_on,omitempty"`
 	StatusContract     StatusContractRef      `json:"status_contract,omitempty"`
 	Output             SkillRunOutputSpec     `json:"output,omitempty"`
@@ -62,14 +65,16 @@ type SkillRunOutputRepairConfig struct {
 
 // SkillRunOutput preserves codex outputs and adds structured artifact validation.
 type SkillRunOutput struct {
-	Status              string       `json:"status"`
-	SessionID           string       `json:"sessionId"`
-	Outcome             ExecOutcome  `json:"outcome"`
-	AssistantSummary    string       `json:"assistantSummary"`
-	IncompleteReason    string       `json:"incompleteReason"`
-	IncompleteCategory  string       `json:"incompleteCategory"`
-	PendingDependencies []Dependency `json:"pendingDependencies"`
-	SkillsInstalled     []string     `json:"skills_installed,omitempty"`
+	Session             *checkpoint.Marker          `json:"session,omitempty"`
+	Objects             map[string]checkpoint.Draft `json:"-"`
+	Status              string                      `json:"status"`
+	SessionID           string                      `json:"sessionId"`
+	Outcome             ExecOutcome                 `json:"outcome"`
+	AssistantSummary    string                      `json:"assistantSummary"`
+	IncompleteReason    string                      `json:"incompleteReason"`
+	IncompleteCategory  string                      `json:"incompleteCategory"`
+	PendingDependencies []Dependency                `json:"pendingDependencies"`
+	SkillsInstalled     []string                    `json:"skills_installed,omitempty"`
 
 	Skill                 string              `json:"skill"`
 	RawSummary            string              `json:"raw_summary"`
@@ -160,6 +165,13 @@ func RunSkill(ctx context.Context, input SkillRunInput) (SkillRunOutput, error) 
 		return SkillRunOutput{}, err
 	}
 
+	state, err := prepareSession(ctx, input.Session, paths, input.Env)
+	if err != nil {
+		return SkillRunOutput{}, err
+	}
+	defer state.close()
+	execInput.execution = state
+
 	configuredSkillDirs, skillsInstalled, skillSourcesCleanup, err := prepareConfiguredSkillSources(ctx, execInput, paths.Workdir)
 	if err != nil {
 		return SkillRunOutput{}, err
@@ -200,7 +212,6 @@ func RunSkill(ctx context.Context, input SkillRunInput) (SkillRunOutput, error) 
 		repairAttempts++
 		repairPrompt := renderRunSkillRepairPrompt(skill, outputSpec, outputValidation)
 		repairInput := execInput
-		repairInput.SessionID = execOutput.SessionID
 		repairExecOutput, repairErr := runCodexActivityPrepared(ctx, repairInput, repairPrompt, paths, configuredSkillDirs, skillsInstalled)
 		if repairErr != nil {
 			output.OutputRepairAttempts = repairAttempts
@@ -223,13 +234,15 @@ func RunSkill(ctx context.Context, input SkillRunInput) (SkillRunOutput, error) 
 	if !output.OutputSchemaValid && outputSpec.OnError == outputValidationFail {
 		return output, fmt.Errorf("output schema validation failed: %s", strings.Join(output.OutputSchemaErrors, "; "))
 	}
-	return output, nil
+	output.Session, output.Objects, err = state.publish()
+	return output, err
 }
 
 func execInputForSkillRun(input SkillRunInput) ExecOpInput {
 	return ExecOpInput{
-		SessionID:          input.SessionID,
+		Session:            input.Session,
 		Model:              input.Model,
+		Env:                input.Env,
 		Skills:             copyStrings(input.Skills),
 		ReturnOn:           copyStrings(input.ReturnOn),
 		StatusContract:     input.StatusContract,
@@ -654,4 +667,14 @@ func writeJSONFile(path string, value interface{}) error {
 		return fmt.Errorf("write %q: %w", path, err)
 	}
 	return nil
+}
+
+func (input *SkillRunInput) UnmarshalJSON(data []byte) error {
+	if err := rejectLegacySessionFields(data); err != nil {
+		return err
+	}
+	type plain SkillRunInput
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	return dec.Decode((*plain)(input))
 }

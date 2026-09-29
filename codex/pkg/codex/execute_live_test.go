@@ -74,6 +74,7 @@ func TestLiveExecuteResumesSessionKnowledge(t *testing.T) {
 	name := "Joe-" + strings.ReplaceAll(t.Name(), "/", "-")
 	api := newMockCodexAPI(t, []mockCodexTurn{
 		{Summary: "stored"},
+		{Command: "pwd > resumed-path.txt"},
 		{Summary: name},
 	})
 	defer api.Close()
@@ -93,10 +94,22 @@ func TestLiveExecuteResumesSessionKnowledge(t *testing.T) {
 	if strings.TrimSpace(firstResult.SessionID) == "" {
 		t.Fatalf("expected first execution to return a session id")
 	}
-	cleanupSessionPersistence(t, firstResult.SessionID)
+	exported := filepath.Join(t.TempDir(), "home")
+	if err := exportSessionHome(first.CodexHome, exported); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(first.CodexHome); err != nil {
+		t.Fatal(err)
+	}
 
 	second := liveExecuteOptions(t, api)
 	second.SessionID = firstResult.SessionID
+	if err := copyDirContents(exported, second.CodexHome); err != nil {
+		t.Fatal(err)
+	}
+	if err := relocateSessionIndex(second.CodexHome, second.SessionID, second.WorktreeRoot, false); err != nil {
+		t.Fatal(err)
+	}
 	second.Prompt = "Using the existing conversation in this resumed session, answer this question: what is my name? Do not modify files. Return a completed structured response with assistantSummary containing only the exact name."
 
 	secondResult, stdoutPath, stderrPath, artifactDir, err := Execute(context.Background(), second)
@@ -108,8 +121,18 @@ func TestLiveExecuteResumesSessionKnowledge(t *testing.T) {
 	if secondResult.Status != StatusCompleted {
 		t.Fatalf("expected second execution to complete, got %q: %s", secondResult.Status, secondResult.ErrorMessage)
 	}
+	assertFileContent(t, filepath.Join(second.WorktreeRoot, "resumed-path.txt"), second.WorktreeRoot+"\n")
+	if _, err := os.Stat(first.CodexHome); !os.IsNotExist(err) {
+		t.Fatal("resume recreated the old home")
+	}
 	if secondResult.SessionID != firstResult.SessionID {
 		t.Fatalf("expected resumed session id %q, got %q", firstResult.SessionID, secondResult.SessionID)
+	}
+	api.mu.Lock()
+	requestJSON, marshalErr := json.Marshal(api.requests[len(api.requests)-1]["input"])
+	api.mu.Unlock()
+	if marshalErr != nil || !strings.Contains(string(requestJSON), "Remember this exact fact") {
+		t.Fatalf("resume did not send the earlier conversation: %s, %v", requestJSON, marshalErr)
 	}
 	if !strings.Contains(strings.ToLower(secondResult.AssistantSummary), strings.ToLower(name)) {
 		t.Fatalf("expected resumed assistant summary to contain %q, got %q", name, secondResult.AssistantSummary)

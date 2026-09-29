@@ -1,0 +1,6 @@
+tests:
+  - name: restores_exact_session_checkpoint
+    inputs: {}
+    want:
+      status: completed
+    wantErr: false

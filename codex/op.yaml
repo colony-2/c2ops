@@ -4,12 +4,14 @@ command: ["go", "run", "."]
 timeout: 30m
 input_schema:
   type: object
+  additionalProperties: false
   required: [prompt]
   properties:
     prompt:
       type: string
-    sessionId:
-      type: string
+    session:
+      type: object
+      x-c2j-object-type: c2ops.codex.session/v1
     model:
       type: string
     env:
@@ -25,8 +27,6 @@ input_schema:
       items:
         type: string
     status_contract:
-      type: object
-    resume_context:
       type: object
     idle_timeout:
       type: string
@@ -45,7 +45,11 @@ input_schema:
       default: "{{ context.environment.op.outbox }}"
 output_schema:
   type: object
+  required: [session]
   properties:
+    session:
+      type: object
+      x-c2j-object-type: c2ops.codex.session/v1
     status:
       type: string
     sessionId:
