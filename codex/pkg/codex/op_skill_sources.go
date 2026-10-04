@@ -8,6 +8,8 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -32,6 +34,9 @@ func prepareConfiguredSkillSources(
 		return nil, nil, nil, nil
 	}
 
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	progress(ctx, "skills.prepare", map[string]any{"count": len(input.Skills)})
 	stageRoot := filepath.Join(workdir, ".codex-skill-inputs", uuid.NewString())
 	skillsRoot := filepath.Join(stageRoot, "skills")
 	if err := os.MkdirAll(skillsRoot, 0o755); err != nil {
@@ -44,6 +49,7 @@ func prepareConfiguredSkillSources(
 		_ = cleanup()
 		return nil, nil, nil, err
 	}
+	progress(ctx, "skills.ready", nil)
 	return []string{skillsRoot}, skillsInstalled, cleanup, nil
 }
 
@@ -123,11 +129,17 @@ func runGitCommand(ctx context.Context, workingDir string, args ...string) error
 
 func runGitCommandWithOutput(ctx context.Context, workingDir string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.WaitDelay = 2 * time.Second
+	cmd.Cancel = func() error { terminateProcessGroup(cmd); return nil }
 	if strings.TrimSpace(workingDir) != "" {
 		cmd.Dir = workingDir
 	}
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 	output, err := cmd.CombinedOutput()
+	if ctx.Err() != nil {
+		return "", fmt.Errorf("git skill preparation: %w", ctx.Err())
+	}
 	if err != nil {
 		text := strings.TrimSpace(string(output))
 		if text == "" {

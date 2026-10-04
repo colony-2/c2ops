@@ -208,18 +208,21 @@ the framework supplies `C2J_OBJECT_OUTBOX` for exported state. See the complete
 Apart from framework-owned protocol variables such as `C2J_OBJECT_OUTBOX`,
 extension ops do not receive implicit runtime metadata environment variables.
 
-Current behavior:
+Behavior in c2j v0.0.61:
 
 - the declared input payload is delivered on stdin as JSON
-- host execution does not inherit the ambient parent process environment
-- `sandbox.type: shai` follows the same contract
-- manifest `env` supplies application environment; an object-capable runner also
+- host execution inherits the ambient parent process environment
+- manifest `env` overrides inherited values; an object-capable runner also
   injects its reserved `C2J_OBJECT_OUTBOX` path
+- Shai receives the merged environment, but this version has a stdin-forwarding
+  defect: the process runtime does not pass the invocation's JSON bytes into
+  Shai. See [the diagnostic guide](./codex/TROUBLESHOOTING.md).
 
 So the process boundary is explicit:
 
 - stdin carries the structured input payload
-- manifest `env` carries any additional environment the extension author intentionally declared
+- manifest `env` declares application overrides; do not assume other worker
+  environment variables are absent
 
 ## Sandbox
 

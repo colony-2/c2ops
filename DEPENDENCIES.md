@@ -81,7 +81,7 @@ Node.js 24.15+, and npm; package downloads require network access on first use.
 
 ## Codex object-session migration
 
-The Codex module now pins c2j
+The initial Codex migration pinned c2j
 `v0.0.56-0.20260929214740-e1334817a353` (commit `e1334817a353`), which implements
 immutable object checkpoints. Tagged `v0.0.55` lacks that API. Workers executing
 the migrated Codex selectors need this object-capable runtime as well.
@@ -93,3 +93,16 @@ No external SQLite executable is needed.
 
 See [the consumer migration guide](./codex/MIGRATION_OBJECT_SESSIONS.md). The change
 is limited to `codex` and `codex/run_skill`; other op modules retain their pins.
+
+## c2j update — 2026-10-04
+
+The Codex module now pins **c2j v0.0.61**, the latest release returned by
+`go list -m github.com/colony-2/c2j@latest` on this date. Its required JobDB version
+is **v0.0.25-0.20261004045405-6d7395e73c67**. Other op module pins and Codex CLI
+**0.157.1** are unchanged. Updating this module does not update deployed c2j
+workers or cached extension selectors; deploy the worker and c2ops revision too.
+
+All repository op tests pass against local mock providers with this update.
+This does not exercise Docker/Shai execution. Investigation found that c2j
+v0.0.61's Shai path does not forward per-invocation stdin; see
+[Codex troubleshooting](./codex/TROUBLESHOOTING.md) for evidence and diagnosis.

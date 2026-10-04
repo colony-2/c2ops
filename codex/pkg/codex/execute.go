@@ -58,8 +58,10 @@ func Execute(ctx context.Context, opts Options) (Result, string, string, string,
 	debugArtifactStat("stderr-create", stderrPath)
 
 	collector := newOutputCollector(stdoutFile, stderrFile)
+	progress(ctx, "exec.start", map[string]any{"stdout_path": stdoutPath, "stderr_path": stderrPath, "idle_timeout": activeOpts.IdleTimeout.String()})
 
 	runErr := runCodexExec(ctx, activeOpts, schemaPath, collector)
+	progress(ctx, "exec.finished", map[string]any{"failed": runErr != nil})
 	if sanitizeErr := sanitizeCodexHomeOutput(activeOpts); sanitizeErr != nil {
 		if runErr == nil {
 			runErr = fmt.Errorf("sanitize codex home output: %w", sanitizeErr)
@@ -80,7 +82,7 @@ func Execute(ctx context.Context, opts Options) (Result, string, string, string,
 
 	parseRes, parseErr := parseJSONL(stdoutPath)
 	if parseErr != nil {
-		return Result{}, "", "", "", parseErr
+		return Result{}, stdoutPath, stderrPath, artifactDir, parseErr
 	}
 
 	result := buildResultFromParse(parseRes)
@@ -128,6 +130,9 @@ func runCodexExec(ctx context.Context, opts Options, schemaPath string, collecto
 }
 
 func runCommandWithWatchdog(ctx context.Context, cmd *exec.Cmd, idleTimeout time.Duration, collector *outputCollector) error {
+	// A descendant can inherit stdout/stderr after the CLI exits. Bound Go's
+	// pipe-copy wait even if that descendant escapes the process group.
+	cmd.WaitDelay = 2 * time.Second
 	var lastActivity atomic.Int64
 	recordActivity := func() {
 		lastActivity.Store(time.Now().UnixNano())
@@ -138,6 +143,10 @@ func runCommandWithWatchdog(ctx context.Context, cmd *exec.Cmd, idleTimeout time
 	if err := cmd.Start(); err != nil {
 		return err
 	}
+	progress(ctx, "exec.running", map[string]any{"pid": cmd.Process.Pid})
+	started := time.Now()
+	heartbeat := time.NewTicker(30 * time.Second)
+	defer heartbeat.Stop()
 
 	waitCh := make(chan error, 1)
 	go func() {
@@ -154,6 +163,12 @@ func runCommandWithWatchdog(ctx context.Context, cmd *exec.Cmd, idleTimeout time
 
 	for {
 		select {
+		case <-heartbeat.C:
+			progress(ctx, "exec.wait", map[string]any{
+				"pid": cmd.Process.Pid, "elapsed_seconds": int(time.Since(started).Seconds()),
+				"idle_seconds": int(time.Since(time.Unix(0, lastActivity.Load())).Seconds()),
+				"stdout_bytes": collector.stdoutBytes.Load(), "stderr_bytes": collector.stderrBytes.Load(),
+			})
 		case err := <-waitCh:
 			// Stop descendants before the caller snapshots durable state.
 			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)

@@ -100,11 +100,17 @@ type execRunPaths struct {
 var executeLibrary = Execute
 
 // Run executes codex.exec via explicit inputs.
-func Run(actx context.Context, input ExecOpInput) (ExecOpOutput, error) {
+func Run(actx context.Context, input ExecOpInput) (result ExecOpOutput, retErr error) {
 	paths, err := normalizeExecRunPaths(input)
 	if err != nil {
 		return ExecOpOutput{}, err
 	}
+	actx, closeProgress, err := withProgress(actx, paths.Outbox)
+	if err != nil {
+		return ExecOpOutput{}, err
+	}
+	defer closeProgress()
+	defer func() { progress(actx, "invocation.end", map[string]any{"failed": retErr != nil}) }()
 	state, err := prepareSession(actx, input.Session, paths, input.Env)
 	if err != nil {
 		return ExecOpOutput{}, err

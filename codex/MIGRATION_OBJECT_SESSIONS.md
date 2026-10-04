@@ -10,15 +10,16 @@ There is no legacy mode, automatic importer, or fallback to local state.
 
 ## 1. Upgrade the execution environment
 
-Use a c2j runtime with immutable object support. The tested baseline is commit
-`e1334817a353d4868a97fa5452fe8fe3aee2fc13`, pinned in this module as
-`v0.0.56-0.20260929214740-e1334817a353`. Tagged c2j `v0.0.55` does not contain this
-API. Upgrade the actual workers as well as the recipe submission/validation tools.
+Use a c2j runtime with immutable object support. The current tested baseline is
+**v0.0.61**. Tagged c2j `v0.0.55` does not contain this API. Upgrade the actual
+workers as well as the recipe submission/validation tools. See the
+[troubleshooting guide](./TROUBLESHOOTING.md) for a known stdin-forwarding issue
+in v0.0.61's Shai execution path.
 
 For a source-installed c2j CLI:
 
 ```sh
-go install github.com/colony-2/c2j/cmd/c2j@v0.0.56-0.20260929214740-e1334817a353
+go install github.com/colony-2/c2j/cmd/c2j@v0.0.61
 ```
 
 Install **Codex CLI 0.157.1** on the execution environment's PATH, including inside
@@ -192,6 +193,9 @@ The object pack does not appear in `sequence.node.artifacts`. Continue reading
 debugging can inspect backing object artifacts; opacity is not encryption.
 
 ## Troubleshooting and custom process runners
+
+For a hanging invocation, start with the live `codex-progress.jsonl` file in the
+invocation's artifact outbox and the [diagnostic steps](./TROUBLESHOOTING.md).
 
 | Error | Action |
 | --- | --- |

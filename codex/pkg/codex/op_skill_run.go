@@ -153,7 +153,7 @@ type skillRunStatusValidation struct {
 }
 
 // RunSkill runs one requested Codex skill with a generated invocation contract.
-func RunSkill(ctx context.Context, input SkillRunInput) (SkillRunOutput, error) {
+func RunSkill(ctx context.Context, input SkillRunInput) (result SkillRunOutput, retErr error) {
 	skill := strings.TrimSpace(input.Skill)
 	if skill == "" {
 		return SkillRunOutput{}, fmt.Errorf("skill is required")
@@ -165,6 +165,12 @@ func RunSkill(ctx context.Context, input SkillRunInput) (SkillRunOutput, error) 
 		return SkillRunOutput{}, err
 	}
 
+	ctx, closeProgress, err := withProgress(ctx, paths.Outbox)
+	if err != nil {
+		return SkillRunOutput{}, err
+	}
+	defer closeProgress()
+	defer func() { progress(ctx, "invocation.end", map[string]any{"failed": retErr != nil}) }()
 	state, err := prepareSession(ctx, input.Session, paths, input.Env)
 	if err != nil {
 		return SkillRunOutput{}, err
@@ -203,6 +209,7 @@ func RunSkill(ctx context.Context, input SkillRunInput) (SkillRunOutput, error) 
 		return output, err
 	}
 
+	progress(ctx, "skill.validate", nil)
 	statusValidation := validateSkillRunStatusContract(paths.Outbox, input.StatusContract.Path)
 	applyStatusValidation(&output, statusValidation)
 
@@ -210,6 +217,7 @@ func RunSkill(ctx context.Context, input SkillRunInput) (SkillRunOutput, error) 
 	repairAttempts := 0
 	for shouldRepairSkillRunOutput(outputValidation, outputSpec, execOutput) && repairAttempts < outputSpec.RepairMaxAttempts {
 		repairAttempts++
+		progress(ctx, "skill.repair", map[string]any{"attempt": repairAttempts})
 		repairPrompt := renderRunSkillRepairPrompt(skill, outputSpec, outputValidation)
 		repairInput := execInput
 		repairExecOutput, repairErr := runCodexActivityPrepared(ctx, repairInput, repairPrompt, paths, configuredSkillDirs, skillsInstalled)

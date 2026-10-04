@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"reflect"
+	"syscall"
+	"time"
 
 	"github.com/colony-2/c2ops/codex/pkg/checkpoint"
 )
@@ -50,13 +53,17 @@ func Main[I any, O any](run func(context.Context, I) (Result[O], error)) {
 }
 
 func Run[I any, O any](run func(context.Context, I) (Result[O], error)) int {
-	input, err := decodeInput[I](os.Stdin)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	_, _ = fmt.Fprintln(os.Stderr, "codex-op: waiting for JSON input on stdin (30s timeout)")
+	input, err := readInput[I](ctx, os.Stdin, 30*time.Second)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "decode input: %v\n", err)
 		return 1
 	}
 
-	result, err := run(context.Background(), input)
+	_, _ = fmt.Fprintln(os.Stderr, "codex-op: input decoded; starting invocation")
+	result, err := run(ctx, input)
 	env := envelope[O]{
 		Output:       result.Output,
 		ArtifactRefs: result.ArtifactRefs,
@@ -86,14 +93,31 @@ func decodeInput[I any](r io.Reader) (I, error) {
 	var input I
 	dec := json.NewDecoder(r)
 	dec.DisallowUnknownFields()
-	if err := dec.Decode(&input); err != nil && err != io.EOF {
+	if err := dec.Decode(&input); err != nil {
 		return input, err
 	}
-	var extra any
-	if err := dec.Decode(&extra); err != io.EOF {
-		return input, fmt.Errorf("expected one JSON input object")
-	}
+	// The protocol is one JSON value. Waiting for a second Decode requires EOF,
+	// which interactive/container stdin transports may never send.
 	return input, nil
+}
+
+func readInput[I any](ctx context.Context, stdin io.ReadCloser, timeout time.Duration) (I, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	type decoded struct {
+		input I
+		err   error
+	}
+	done := make(chan decoded, 1)
+	go func() { input, err := decodeInput[I](stdin); done <- decoded{input, err} }()
+	select {
+	case result := <-done:
+		return result.input, result.err
+	case <-ctx.Done():
+		_ = stdin.Close()
+		var zero I
+		return zero, fmt.Errorf("waiting for extension JSON input: %w; check c2j stdin forwarding (especially sandbox.type=shai)", ctx.Err())
+	}
 }
 
 func hasEnvelopeData[O any](env envelope[O]) bool {

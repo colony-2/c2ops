@@ -2,11 +2,31 @@ package codex
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 )
+
+func TestGitSkillFetchHonorsDeadline(t *testing.T) {
+	binDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(binDir, "git"), []byte("#!/usr/bin/env bash\nsleep 5\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
+	defer cancel()
+	started := time.Now()
+	_, err := runGitCommandWithOutput(ctx, "", "fetch")
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected fetch deadline, got %v", err)
+	}
+	if time.Since(started) > 3*time.Second {
+		t.Fatal("git process group did not stop on cancellation")
+	}
+}
 
 func TestRunMakesListedSkillsAvailableWithoutPromptEnforcement(t *testing.T) {
 	installFakeCodex(t, "#!/usr/bin/env bash\nset -euo pipefail\n")

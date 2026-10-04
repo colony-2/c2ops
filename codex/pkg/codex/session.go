@@ -11,6 +11,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/colony-2/c2j/pkg/objects"
 	"github.com/colony-2/c2ops/codex/pkg/checkpoint"
@@ -35,6 +37,7 @@ type SessionInput struct {
 }
 
 type sessionExecution struct {
+	ctx    context.Context
 	home   string
 	id     string
 	outbox string
@@ -63,13 +66,15 @@ func prepareSession(ctx context.Context, input *SessionInput, paths execRunPaths
 	} else if !os.IsNotExist(err) {
 		return nil, err
 	}
-	version, err := exec.CommandContext(ctx, "codex", "--version").Output()
+	progress(ctx, "version.check", nil)
+	version, err := readCodexVersion(ctx, 15*time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("read Codex version: %w", err)
 	}
 	if strings.TrimSpace(string(version)) != "codex-cli "+supportedCodexVersion {
 		return nil, fmt.Errorf("session checkpoints require codex-cli %s; got %q", supportedCodexVersion, strings.TrimSpace(string(version)))
 	}
+	progress(ctx, "version.ready", map[string]any{"version": supportedCodexVersion})
 	if err := os.MkdirAll(paths.Workdir, 0700); err != nil {
 		return nil, err
 	}
@@ -80,14 +85,17 @@ func prepareSession(ctx context.Context, input *SessionInput, paths execRunPaths
 	if err != nil {
 		return nil, err
 	}
-	s := &sessionExecution{home: home, outbox: outbox}
+	s := &sessionExecution{ctx: ctx, home: home, outbox: outbox}
 	if input == nil {
+		progress(ctx, "session.new", nil)
 		return s, nil
 	}
+	progress(ctx, "session.restore", nil)
 	if err := s.restore(input, paths.Worktree); err != nil {
 		os.RemoveAll(home)
 		return nil, fmt.Errorf("restore session: %w", err)
 	}
+	progress(ctx, "session.ready", nil)
 	return s, nil
 }
 
@@ -150,6 +158,7 @@ func (s *sessionExecution) restore(input *SessionInput, worktree string) error {
 func (s *sessionExecution) close() { _ = os.RemoveAll(s.home) }
 
 func (s *sessionExecution) publish() (*checkpoint.Marker, map[string]checkpoint.Draft, error) {
+	progress(s.ctx, "session.export", nil)
 	if s.id == "" {
 		return nil, nil, fmt.Errorf("Codex returned no session ID")
 	}
@@ -172,6 +181,7 @@ func (s *sessionExecution) publish() (*checkpoint.Marker, map[string]checkpoint.
 		return nil, nil, fmt.Errorf("finalize session: %w", err)
 	}
 	success = true
+	progress(s.ctx, "session.exported", nil)
 	return &checkpoint.Marker{Name: "session"}, map[string]checkpoint.Draft{
 		"session": {Type: SessionObjectType, Metadata: SessionMetadata{s.id, supportedCodexVersion, sessionStateFormat}, Files: map[string]string{"home": home}},
 	}, nil
@@ -391,4 +401,19 @@ func rejectLegacySessionFields(data []byte) error {
 		return fmt.Errorf("session must be an object; omit it to start fresh")
 	}
 	return nil
+}
+
+// Version probing happens before the execution idle watchdog starts.
+func readCodexVersion(ctx context.Context, timeout time.Duration) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "codex", "--version")
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.WaitDelay = 2 * time.Second
+	cmd.Cancel = func() error { terminateProcessGroup(cmd); return nil }
+	output, err := cmd.Output()
+	if ctx.Err() != nil {
+		return nil, fmt.Errorf("Codex version check: %w", ctx.Err())
+	}
+	return output, err
 }

@@ -2,12 +2,59 @@ package codex
 
 import (
 	"context"
+	"errors"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
+
+func TestWatchdogBoundsPipeDrainAfterProcessExit(t *testing.T) {
+	cmd := exec.Command("bash", "-c", "sleep 5 & exit 0")
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	collector := newOutputCollector(io.Discard, io.Discard)
+	cmd.Stdout = collector.stdoutWriter()
+	cmd.Stderr = collector.stderrWriter()
+	started := time.Now()
+	err := runCommandWithWatchdog(context.Background(), cmd, 10*time.Second, collector)
+	if !errors.Is(err, exec.ErrWaitDelay) {
+		t.Fatalf("expected bounded pipe-drain error; elapsed=%s err=%v", time.Since(started), err)
+	}
+	if time.Since(started) > 4*time.Second {
+		t.Fatal("waited for an inherited pipe indefinitely")
+	}
+}
+
+func TestVersionProbeIsBoundedBeforeIdleWatchdog(t *testing.T) {
+	// Deliberately omit the helper's --version fast path.
+	installFakeCodex(t, "#!/usr/bin/env bash\nsleep 5\n")
+	started := time.Now()
+	_, err := readCodexVersion(context.Background(), 25*time.Millisecond)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected version probe deadline, got %v", err)
+	}
+	if time.Since(started) > 3*time.Second {
+		t.Fatal("version check did not stop its process group")
+	}
+}
+
+func TestExecutePreservesLogsOnOversizedOutput(t *testing.T) {
+	installFakeCodex(t, "#!/usr/bin/env bash\nset -euo pipefail\nprintf '%*s\\n' 8388608 ''\nprintf 'diagnostic\\n' >&2\n")
+	_, stdout, stderr, dir, err := Execute(context.Background(), testExecuteOptions(t))
+	defer cleanupArtifacts(stdout, stderr, dir)
+	if err == nil {
+		t.Fatal("expected a parse error")
+	}
+	info, statErr := os.Stat(stdout)
+	if statErr != nil || info.Size() != 8388609 {
+		t.Fatalf("stdout capture was lost: info=%v err=%v", info, statErr)
+	}
+	assertFileContent(t, stderr, "diagnostic\n")
+}
 
 func TestExecuteReturnsIdleTimeoutError(t *testing.T) {
 	installFakeCodex(t, `#!/usr/bin/env bash

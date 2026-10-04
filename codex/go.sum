@@ -20,10 +20,10 @@ github.com/cenkalti/backoff/v5 v5.0.3 h1:ZN+IMa753KfX5hd8vVaMixjnqRZ3y8CuJKRKj1x
 github.com/cenkalti/backoff/v5 v5.0.3/go.mod h1:rkhZdG3JZukswDf7f0cwqPNk4K0sa+F97BxZthm/crw=
 github.com/cespare/xxhash/v2 v2.3.0 h1:UL815xU9SqsFlibzuggzjXhog7bL6oX9BbNZnL2UFvs=
 github.com/cespare/xxhash/v2 v2.3.0/go.mod h1:VGX0DQ3Q6kWi7AoAeZDth3/j3BFtOZR5XLFGgcrjCOs=
-github.com/colony-2/c2j v0.0.56-0.20260929214740-e1334817a353 h1:c0nTmbvowd86uam5AR4yPHkpLMC95TgIhx/Hnl3+JZA=
-github.com/colony-2/c2j v0.0.56-0.20260929214740-e1334817a353/go.mod h1:8BR0vTA6e90i+YwiA279+y8UasS6FXhqBZUufn6pZRI=
-github.com/colony-2/jobdb v0.0.19 h1:l1zLNQr+mGmwMjkk/LTFojmqUR3icdzFEewPUc9QCfo=
-github.com/colony-2/jobdb v0.0.19/go.mod h1:p2FeWO2+PRfngsjJPKFn8puFa2QxmCQZ7KElqXP+s4E=
+github.com/colony-2/c2j v0.0.61 h1:jjvJulmpZTlkC+c2L48h40xq1OPtK5q9IPMrlvS2eow=
+github.com/colony-2/c2j v0.0.61/go.mod h1:RpmPwjZnZmThZs705xXOqkt2oZn5ROG8mjSo9Zh7TaM=
+github.com/colony-2/jobdb v0.0.25-0.20261004045405-6d7395e73c67 h1:EtWtMDv6L93OfNTNLJN8yAIgGrVOpQSVskNDu70Ie5o=
+github.com/colony-2/jobdb v0.0.25-0.20261004045405-6d7395e73c67/go.mod h1:p2FeWO2+PRfngsjJPKFn8puFa2QxmCQZ7KElqXP+s4E=
 github.com/colony-2/shai v0.0.9 h1:vLNqy504bLYuW8EolA6cX2+6Zt7AagVEc3tzRND5FSI=
 github.com/colony-2/shai v0.0.9/go.mod h1:NgdBnmMCmWslGxhHzvpl8PvyW+CvQI+TEmPdFmZ37uo=
 github.com/containerd/errdefs v1.0.0 h1:tg5yIfIlQIrxYtu9ajqY42W3lpS19XqdxRQeEwYG8PI=

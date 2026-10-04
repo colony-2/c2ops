@@ -6,6 +6,10 @@ Go-backed Codex op with immutable object sessions and outbox artifacts.
 `codex-home-state` artifact. Read [the migration guide](./MIGRATION_OBJECT_SESSIONS.md)
 for required runtime versions, recipe changes, and session forwarding.
 
+For a hanging invocation, see [troubleshooting](./TROUBLESHOOTING.md). Both Codex
+ops write live phase and activity records to `codex-progress.jsonl` in the
+artifact outbox, with a copy on process stderr.
+
 ## Selector
 
 Use this op from the repo root as:

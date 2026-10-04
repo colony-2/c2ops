@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/colony-2/c2ops/codex/pkg/checkpoint"
 	"github.com/stretchr/testify/require"
@@ -19,6 +20,49 @@ type testInput struct {
 
 type testOutput struct {
 	Reply string `json:"reply,omitempty"`
+}
+
+func TestDecodeInputDoesNotWaitForEOF(t *testing.T) {
+	reader, writer, err := os.Pipe()
+	require.NoError(t, err)
+	defer reader.Close()
+	defer writer.Close()
+	done := make(chan error, 1)
+	go func() {
+		_, err := decodeInput[testInput](reader)
+		done <- err
+	}()
+	_, err = writer.Write([]byte(`{"message":"hello"}`))
+	require.NoError(t, err)
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(100 * time.Millisecond):
+		writer.Close()
+		<-done
+		t.Fatal("a complete input object blocked waiting for stdin EOF")
+	}
+}
+
+func TestReadInputTimesOutWhenRunnerNeverSendsJSON(t *testing.T) {
+	reader, writer, err := os.Pipe()
+	require.NoError(t, err)
+	defer reader.Close()
+	defer writer.Close()
+	_, err = readInput[testInput](context.Background(), reader, 25*time.Millisecond)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	require.ErrorContains(t, err, "stdin forwarding")
+}
+
+func TestReadInputHonorsCancellation(t *testing.T) {
+	reader, writer, err := os.Pipe()
+	require.NoError(t, err)
+	defer reader.Close()
+	defer writer.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err = readInput[testInput](ctx, reader, time.Minute)
+	require.ErrorIs(t, err, context.Canceled)
 }
 
 func TestRunWritesSuccessEnvelope(t *testing.T) {
@@ -33,7 +77,7 @@ func TestRunWritesSuccessEnvelope(t *testing.T) {
 	})
 
 	require.Equal(t, 0, code)
-	require.Empty(t, stderr)
+	require.Contains(t, stderr, "input decoded")
 
 	var env struct {
 		Output  testOutput                  `json:"output"`

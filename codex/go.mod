@@ -3,8 +3,8 @@ module github.com/colony-2/c2ops/codex
 go 1.26
 
 require (
-	github.com/colony-2/c2j v0.0.56-0.20260929214740-e1334817a353
-	github.com/colony-2/jobdb v0.0.19
+	github.com/colony-2/c2j v0.0.61
+	github.com/colony-2/jobdb v0.0.25-0.20261004045405-6d7395e73c67
 	github.com/google/uuid v1.6.0
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/stretchr/testify v1.12.1
