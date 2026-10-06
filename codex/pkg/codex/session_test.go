@@ -82,9 +82,31 @@ func hydrateSession(t *testing.T, store *objects.Store, ref objects.Ref) *Sessio
 	snapshot, err := store.Open(context.Background(), ref, SessionObjectType)
 	require.NoError(t, err)
 	t.Cleanup(func() { snapshot.Close() })
-	var metadata SessionMetadata
-	require.NoError(t, json.Unmarshal(snapshot.Metadata, &metadata))
-	return &SessionInput{Ref: ref, Metadata: metadata, Files: snapshot.Files}
+	// Cross the same JSON boundary as an extension process, without assigning
+	// framework Go types to the production input structure.
+	payload, err := json.Marshal(map[string]any{
+		"ref": ref, "metadata": snapshot.Metadata, "files": snapshot.Files,
+	})
+	require.NoError(t, err)
+	var input SessionInput
+	require.NoError(t, json.Unmarshal(payload, &input))
+	return &input
+}
+
+func TestSessionReferenceRemainsOpaque(t *testing.T) {
+	ref := json.RawMessage(`{"$c2j_object":"v1","type":"c2ops.codex.session/v1","future_field":{"value":42}}`)
+	payload, err := json.Marshal(map[string]any{"session": map[string]any{
+		"ref":      ref,
+		"metadata": SessionMetadata{SessionID: "id", RuntimeVersion: supportedCodexVersion, StateFormat: sessionStateFormat},
+		"files":    map[string]string{"home": "/hydrated/home"},
+	}})
+	require.NoError(t, err)
+	var execInput ExecOpInput
+	require.NoError(t, json.Unmarshal(payload, &execInput))
+	require.JSONEq(t, string(ref), string(execInput.Session.Ref))
+	var skillInput SkillRunInput
+	require.NoError(t, json.Unmarshal(payload, &skillInput))
+	require.JSONEq(t, string(ref), string(skillInput.Session.Ref))
 }
 
 func TestSessionBranchesRestoreExactCheckpoint(t *testing.T) {
@@ -221,7 +243,6 @@ func TestSessionRejectsUnsupportedMetadataAndCorruptDatabase(t *testing.T) {
 		func(in *SessionInput) { in.Metadata.RuntimeVersion = "future" },
 		func(in *SessionInput) { in.Metadata.StateFormat = "unknown/v2" },
 		func(in *SessionInput) { in.Metadata.SessionID = "absent" },
-		func(in *SessionInput) { in.Ref.Type = "c2ops.aider.session/v1" },
 		func(in *SessionInput) {
 			require.NoError(t, os.WriteFile(filepath.Join(in.Files["home"], "queue_1.sqlite"), []byte("broken"), 0600))
 		},

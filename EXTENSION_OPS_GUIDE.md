@@ -203,6 +203,14 @@ the framework supplies `C2J_OBJECT_OUTBOX` for exported state. See the complete
 [object protocol](./GUIDE-Op-Object-Checkpoints.md) and
 [Codex migration guide](./codex/MIGRATION_OBJECT_SESSIONS.md).
 
+Extensions define their own versioned contracts, such as `my-op.state/v1`, using
+`x-c2j-object-type` on the manifest's input/output properties. No Go import or
+framework type registration is required. The process reads hydrated metadata
+and file paths from stdin, writes checkpoint files beneath `C2J_OBJECT_OUTBOX`,
+and emits object drafts and markers in the JSON stdout envelope. c2j validates
+references and handles storage/hydration; the extension validates its own
+metadata and file contents. Treat the hydrated `ref` as opaque JSON.
+
 ## Environment
 
 Apart from framework-owned protocol variables such as `C2J_OBJECT_OUTBOX`,

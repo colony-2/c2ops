@@ -217,3 +217,10 @@ Using c2j handles this lifecycle automatically.
 Go callers of `Run` / `RunSkill` likewise consume the returned `Objects` map with
 the output marker. Low-level `Execute` requires an explicit private `CodexHome`;
 it does not persist checkpoints or look up state by session ID.
+
+The production ops do not import c2j's Go packages. Their manifests declare the
+`c2ops.codex.session/v1` contract, and all framework communication uses the JSON
+extension protocol. `SessionInput.Ref` is opaque `json.RawMessage`; custom
+runners must validate references and their type before providing hydrated
+inputs. Codex validates its own session metadata and files. c2j remains a Go
+dependency only for tests that exercise the actual object store and recipes.

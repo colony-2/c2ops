@@ -106,3 +106,12 @@ All repository op tests pass against local mock providers with this update.
 This does not exercise Docker/Shai execution. Investigation found that c2j
 v0.0.61's Shai path does not forward per-invocation stdin; see
 [Codex troubleshooting](./codex/TROUBLESHOOTING.md) for evidence and diagnosis.
+
+## Extension protocol dependency boundary — 2026-10-06
+
+Codex no longer imports c2j in production. The manifests declare the object
+contract; the op consumes hydrated JSON and returns JSON drafts/markers using
+local types. The incoming reference stays opaque, with reference validation
+and hydration owned by the runner. c2j and JobDB remain in `codex/go.mod` for
+object-store and recipe integration tests; Go keeps test dependencies in the
+same module file. Neither production entrypoint links c2j or JobDB packages.

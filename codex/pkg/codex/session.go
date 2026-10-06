@@ -14,7 +14,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/colony-2/c2j/pkg/objects"
 	"github.com/colony-2/c2ops/codex/pkg/checkpoint"
 	_ "modernc.org/sqlite"
 )
@@ -30,8 +29,10 @@ type SessionMetadata struct {
 }
 
 // SessionInput is c2j's hydrated checkpoint, not a bare recipe reference.
+// The runner validates the reference against the manifest before hydration.
+// Keep it opaque; the op owns only the metadata and file contents.
 type SessionInput struct {
-	Ref      objects.Ref       `json:"ref"`
+	Ref      json.RawMessage   `json:"ref"`
 	Metadata SessionMetadata   `json:"metadata"`
 	Files    map[string]string `json:"files"`
 }
@@ -100,12 +101,6 @@ func prepareSession(ctx context.Context, input *SessionInput, paths execRunPaths
 }
 
 func (s *sessionExecution) restore(input *SessionInput, worktree string) error {
-	if err := input.Ref.Validate(); err != nil {
-		return err
-	}
-	if input.Ref.Type != SessionObjectType {
-		return fmt.Errorf("expected %s", SessionObjectType)
-	}
 	m := input.Metadata
 	if m.SessionID == "" || m.RuntimeVersion != supportedCodexVersion || m.StateFormat != sessionStateFormat {
 		return fmt.Errorf("invalid or unsupported session metadata")
