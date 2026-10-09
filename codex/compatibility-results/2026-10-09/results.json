@@ -1,0 +1,232 @@
+{
+  "date": "2026-10-09T19:57:08.002222+00:00",
+  "source_commit": "36a5e2b6b81f8d1e97bec586c21151ae0516e071",
+  "latest_stable": "0.162.1",
+  "platform": "Linux aarch64",
+  "method": "real CLI, local mock provider; --version-only shim for full-op test",
+  "resume_version": null,
+  "versions": [
+    "0.143.0",
+    "0.144.6",
+    "0.145.0",
+    "0.146.1",
+    "0.147.0",
+    "0.148.0",
+    "0.149.1",
+    "0.150.1",
+    "0.151.0",
+    "0.152.1",
+    "0.153.4",
+    "0.154.0",
+    "0.155.1",
+    "0.156.1",
+    "0.157.1",
+    "0.158.0",
+    "0.159.3",
+    "0.160.1",
+    "0.161.0",
+    "0.162.1"
+  ],
+  "results": [
+    {
+      "version": "0.143.0",
+      "tests": {
+        "TestLiveExecuteWithConfiguredSkillCreatesMarker": "works",
+        "TestLiveExecuteResumesSessionKnowledge": "incompat",
+        "TestCompatibilityRunAndRunSkill": "incompat"
+      },
+      "actual_version": "codex-cli 0.143.0",
+      "failures": {
+        "TestLiveExecuteResumesSessionKnowledge": "=== RUN   TestLiveExecuteResumesSessionKnowledge\n    execute_live_test.go:99: lstat /tmp/TestLiveExecuteResumesSessionKnowledge2158896470/001/workdir/.codex/thread_history_1.sqlite: no such file or directory\n--- FAIL: TestLiveExecuteResumesSessionKnowledge (0.43s)\nFAIL\n",
+        "TestCompatibilityRunAndRunSkill": "=== RUN   TestCompatibilityRunAndRunSkill\ncodex-op: {\"phase\":\"invocation.start\",\"pid\":78733,\"time\":\"2026-10-09T19:57:10.064570047Z\"}\ncodex-op: {\"phase\":\"version.check\",\"time\":\"2026-10-09T19:57:10.064605839Z\"}\ncodex-op: {\"phase\":\"version.ready\",\"time\":\"2026-10-09T19:57:10.06514338Z\",\"version\":\"0.157.1\"}\ncodex-op: {\"phase\":\"session.new\",\"time\":\"2026-10-09T19:57:10.065233047Z\"}\ncodex-op: {\"idle_timeout\":\"15s\",\"phase\":\"exec.start\",\"stderr_path\":\"/tmp/codex-artifacts-1953865568/stderr.txt\",\"stdout_path\":\"/tmp/codex-artifacts-1953865568/stdout.jsonl\",\"time\":\"2026-10-09T19:57:10.065395172Z\"}\ncodex-op: {\"phase\":\"exec.running\",\"pid\":78750,\"time\":\"2026-10-09T19:57:10.06590013Z\"}\ncodex-op: {\"failed\":false,\"phase\":\"exec.finished\",\"time\":\"2026-10-09T19:57:10.456593172Z\"}\ncodex-op: {\"phase\":\"session.export\",\"time\":\"2026-10-09T19:57:10.457395756Z\"}\ncodex-op: {\"failed\":true,\"phase\":\"invocation.end\",\"time\":\"2026-10-09T19:57:10.468869089Z\"}\n    compatibility_test.go:35: \n        \tError Trace:\t/src/codex/pkg/codex/compatibility_test.go:35\n        \tError:      \tReceived unexpected error:\n        \t            \texport session: lstat /tmp/TestCompatibilityRunAndRunSkill453925996/002/workdir/.codex-session-113315396/thread_history_1.sqlite: no such file or directory\n        \tTest:       \tTestCompatibilityRunAndRunSkill\n        \tMessages:   \tfresh Run including checkpoint export\n--- FAIL: TestCompatibilityRunAndRunSkill (0.41s)\nFAIL\n"
+      }
+    },
+    {
+      "version": "0.144.6",
+      "tests": {
+        "TestLiveExecuteWithConfiguredSkillCreatesMarker": "works",
+        "TestLiveExecuteResumesSessionKnowledge": "incompat",
+        "TestCompatibilityRunAndRunSkill": "incompat"
+      },
+      "actual_version": "codex-cli 0.144.6",
+      "failures": {
+        "TestLiveExecuteResumesSessionKnowledge": "=== RUN   TestLiveExecuteResumesSessionKnowledge\n    execute_live_test.go:99: lstat /tmp/TestLiveExecuteResumesSessionKnowledge563355236/001/workdir/.codex/thread_history_1.sqlite: no such file or directory\n--- FAIL: TestLiveExecuteResumesSessionKnowledge (0.42s)\nFAIL\n",
+        "TestCompatibilityRunAndRunSkill": "=== RUN   TestCompatibilityRunAndRunSkill\ncodex-op: {\"phase\":\"invocation.start\",\"pid\":78724,\"time\":\"2026-10-09T19:57:10.057189672Z\"}\ncodex-op: {\"phase\":\"version.check\",\"time\":\"2026-10-09T19:57:10.057246005Z\"}\ncodex-op: {\"phase\":\"version.ready\",\"time\":\"2026-10-09T19:57:10.057756297Z\",\"version\":\"0.157.1\"}\ncodex-op: {\"phase\":\"session.new\",\"time\":\"2026-10-09T19:57:10.057815214Z\"}\ncodex-op: {\"idle_timeout\":\"15s\",\"phase\":\"exec.start\",\"stderr_path\":\"/tmp/codex-artifacts-2539836363/stderr.txt\",\"stdout_path\":\"/tmp/codex-artifacts-2539836363/stdout.jsonl\",\"time\":\"2026-10-09T19:57:10.057967589Z\"}\ncodex-op: {\"phase\":\"exec.running\",\"pid\":78734,\"time\":\"2026-10-09T19:57:10.058165339Z\"}\ncodex-op: {\"failed\":false,\"phase\":\"exec.finished\",\"time\":\"2026-10-09T19:57:10.457246881Z\"}\ncodex-op: {\"phase\":\"session.export\",\"time\":\"2026-10-09T19:57:10.458370881Z\"}\ncodex-op: {\"failed\":true,\"phase\":\"invocation.end\",\"time\":\"2026-10-09T19:57:10.464821922Z\"}\n    compatibility_test.go:35: \n        \tError Trace:\t/src/codex/pkg/codex/compatibility_test.go:35\n        \tError:      \tReceived unexpected error:\n        \t            \texport session: lstat /tmp/TestCompatibilityRunAndRunSkill2217838499/002/workdir/.codex-session-1299539360/thread_history_1.sqlite: no such file or directory\n        \tTest:       \tTestCompatibilityRunAndRunSkill\n        \tMessages:   \tfresh Run including checkpoint export\n--- FAIL: TestCompatibilityRunAndRunSkill (0.41s)\nFAIL\n"
+      }
+    },
+    {
+      "version": "0.145.0",
+      "tests": {
+        "TestLiveExecuteWithConfiguredSkillCreatesMarker": "works",
+        "TestLiveExecuteResumesSessionKnowledge": "incompat",
+        "TestCompatibilityRunAndRunSkill": "incompat"
+      },
+      "actual_version": "codex-cli 0.145.0",
+      "failures": {
+        "TestLiveExecuteResumesSessionKnowledge": "=== RUN   TestLiveExecuteResumesSessionKnowledge\n    execute_live_test.go:99: lstat /tmp/TestLiveExecuteResumesSessionKnowledge1146551064/001/workdir/.codex/thread_history_1.sqlite: no such file or directory\n--- FAIL: TestLiveExecuteResumesSessionKnowledge (0.46s)\nFAIL\n",
+        "TestCompatibilityRunAndRunSkill": "=== RUN   TestCompatibilityRunAndRunSkill\ncodex-op: {\"phase\":\"invocation.start\",\"pid\":78845,\"time\":\"2026-10-09T19:57:10.138562547Z\"}\ncodex-op: {\"phase\":\"version.check\",\"time\":\"2026-10-09T19:57:10.138633464Z\"}\ncodex-op: {\"phase\":\"version.ready\",\"time\":\"2026-10-09T19:57:10.138981547Z\",\"version\":\"0.157.1\"}\ncodex-op: {\"phase\":\"session.new\",\"time\":\"2026-10-09T19:57:10.139048256Z\"}\ncodex-op: {\"idle_timeout\":\"15s\",\"phase\":\"exec.start\",\"stderr_path\":\"/tmp/codex-artifacts-537528613/stderr.txt\",\"stdout_path\":\"/tmp/codex-artifacts-537528613/stdout.jsonl\",\"time\":\"2026-10-09T19:57:10.139263214Z\"}\ncodex-op: {\"phase\":\"exec.running\",\"pid\":78910,\"time\":\"2026-10-09T19:57:10.140285506Z\"}\ncodex-op: {\"failed\":false,\"phase\":\"exec.finished\",\"time\":\"2026-10-09T19:57:10.573253214Z\"}\ncodex-op: {\"phase\":\"session.export\",\"time\":\"2026-10-09T19:57:10.573707714Z\"}\ncodex-op: {\"failed\":true,\"phase\":\"invocation.end\",\"time\":\"2026-10-09T19:57:10.586666631Z\"}\n    compatibility_test.go:35: \n        \tError Trace:\t/src/codex/pkg/codex/compatibility_test.go:35\n        \tError:      \tReceived unexpected error:\n        \t            \texport session: lstat /tmp/TestCompatibilityRunAndRunSkill4288527688/002/workdir/.codex-session-497230736/thread_history_1.sqlite: no such file or directory\n        \tTest:       \tTestCompatibilityRunAndRunSkill\n        \tMessages:   \tfresh Run including checkpoint export\n--- FAIL: TestCompatibilityRunAndRunSkill (0.45s)\nFAIL\n"
+      }
+    },
+    {
+      "version": "0.146.1",
+      "tests": {
+        "TestLiveExecuteWithConfiguredSkillCreatesMarker": "works",
+        "TestLiveExecuteResumesSessionKnowledge": "incompat",
+        "TestCompatibilityRunAndRunSkill": "incompat"
+      },
+      "actual_version": "codex-cli 0.146.1",
+      "failures": {
+        "TestLiveExecuteResumesSessionKnowledge": "=== RUN   TestLiveExecuteResumesSessionKnowledge\n    execute_live_test.go:99: lstat /tmp/TestLiveExecuteResumesSessionKnowledge4166312512/001/workdir/.codex/thread_history_1.sqlite: no such file or directory\n--- FAIL: TestLiveExecuteResumesSessionKnowledge (0.48s)\nFAIL\n",
+        "TestCompatibilityRunAndRunSkill": "=== RUN   TestCompatibilityRunAndRunSkill\ncodex-op: {\"phase\":\"invocation.start\",\"pid\":80292,\"time\":\"2026-10-09T19:57:11.72140234Z\"}\ncodex-op: {\"phase\":\"version.check\",\"time\":\"2026-10-09T19:57:11.721442506Z\"}\ncodex-op: {\"phase\":\"version.ready\",\"time\":\"2026-10-09T19:57:11.722172965Z\",\"version\":\"0.157.1\"}\ncodex-op: {\"phase\":\"session.new\",\"time\":\"2026-10-09T19:57:11.722260381Z\"}\ncodex-op: {\"idle_timeout\":\"15s\",\"phase\":\"exec.start\",\"stderr_path\":\"/tmp/codex-artifacts-2200749526/stderr.txt\",\"stdout_path\":\"/tmp/codex-artifacts-2200749526/stdout.jsonl\",\"time\":\"2026-10-09T19:57:11.722426798Z\"}\ncodex-op: {\"phase\":\"exec.running\",\"pid\":80300,\"time\":\"2026-10-09T19:57:11.723241881Z\"}\ncodex-op: {\"failed\":false,\"phase\":\"exec.finished\",\"time\":\"2026-10-09T19:57:12.176516006Z\"}\ncodex-op: {\"phase\":\"session.export\",\"time\":\"2026-10-09T19:57:12.177889131Z\"}\ncodex-op: {\"failed\":true,\"phase\":\"invocation.end\",\"time\":\"2026-10-09T19:57:12.19124809Z\"}\n    compatibility_test.go:35: \n        \tError Trace:\t/src/codex/pkg/codex/compatibility_test.go:35\n        \tError:      \tReceived unexpected error:\n        \t            \texport session: lstat /tmp/TestCompatibilityRunAndRunSkill3106699307/002/workdir/.codex-session-695309604/thread_history_1.sqlite: no such file or directory\n        \tTest:       \tTestCompatibilityRunAndRunSkill\n        \tMessages:   \tfresh Run including checkpoint export\n--- FAIL: TestCompatibilityRunAndRunSkill (0.47s)\nFAIL\n"
+      }
+    },
+    {
+      "version": "0.147.0",
+      "tests": {
+        "TestLiveExecuteWithConfiguredSkillCreatesMarker": "works",
+        "TestLiveExecuteResumesSessionKnowledge": "incompat",
+        "TestCompatibilityRunAndRunSkill": "incompat"
+      },
+      "actual_version": "codex-cli 0.147.0",
+      "failures": {
+        "TestLiveExecuteResumesSessionKnowledge": "=== RUN   TestLiveExecuteResumesSessionKnowledge\n    execute_live_test.go:99: lstat /tmp/TestLiveExecuteResumesSessionKnowledge4027257765/001/workdir/.codex/thread_history_1.sqlite: no such file or directory\n--- FAIL: TestLiveExecuteResumesSessionKnowledge (0.50s)\nFAIL\n",
+        "TestCompatibilityRunAndRunSkill": "=== RUN   TestCompatibilityRunAndRunSkill\ncodex-op: {\"phase\":\"invocation.start\",\"pid\":80304,\"time\":\"2026-10-09T19:57:11.730589631Z\"}\ncodex-op: {\"phase\":\"version.check\",\"time\":\"2026-10-09T19:57:11.73062909Z\"}\ncodex-op: {\"phase\":\"version.ready\",\"time\":\"2026-10-09T19:57:11.731109965Z\",\"version\":\"0.157.1\"}\ncodex-op: {\"phase\":\"session.new\",\"time\":\"2026-10-09T19:57:11.731164465Z\"}\ncodex-op: {\"idle_timeout\":\"15s\",\"phase\":\"exec.start\",\"stderr_path\":\"/tmp/codex-artifacts-2225415224/stderr.txt\",\"stdout_path\":\"/tmp/codex-artifacts-2225415224/stdout.jsonl\",\"time\":\"2026-10-09T19:57:11.731312256Z\"}\ncodex-op: {\"phase\":\"exec.running\",\"pid\":80318,\"time\":\"2026-10-09T19:57:11.731518423Z\"}\ncodex-op: {\"failed\":false,\"phase\":\"exec.finished\",\"time\":\"2026-10-09T19:57:12.183113256Z\"}\ncodex-op: {\"phase\":\"session.export\",\"time\":\"2026-10-09T19:57:12.183713923Z\"}\ncodex-op: {\"failed\":true,\"phase\":\"invocation.end\",\"time\":\"2026-10-09T19:57:12.19629284Z\"}\n    compatibility_test.go:35: \n        \tError Trace:\t/src/codex/pkg/codex/compatibility_test.go:35\n        \tError:      \tReceived unexpected error:\n        \t            \texport session: lstat /tmp/TestCompatibilityRunAndRunSkill930431905/002/workdir/.codex-session-1783794142/thread_history_1.sqlite: no such file or directory\n        \tTest:       \tTestCompatibilityRunAndRunSkill\n        \tMessages:   \tfresh Run including checkpoint export\n--- FAIL: TestCompatibilityRunAndRunSkill (0.47s)\nFAIL\n"
+      }
+    },
+    {
+      "version": "0.148.0",
+      "tests": {
+        "TestLiveExecuteWithConfiguredSkillCreatesMarker": "works",
+        "TestLiveExecuteResumesSessionKnowledge": "works",
+        "TestCompatibilityRunAndRunSkill": "works"
+      },
+      "actual_version": "codex-cli 0.148.0"
+    },
+    {
+      "version": "0.149.1",
+      "tests": {
+        "TestLiveExecuteWithConfiguredSkillCreatesMarker": "works",
+        "TestLiveExecuteResumesSessionKnowledge": "works",
+        "TestCompatibilityRunAndRunSkill": "works"
+      },
+      "actual_version": "codex-cli 0.149.1"
+    },
+    {
+      "version": "0.150.1",
+      "tests": {
+        "TestLiveExecuteWithConfiguredSkillCreatesMarker": "works",
+        "TestLiveExecuteResumesSessionKnowledge": "works",
+        "TestCompatibilityRunAndRunSkill": "works"
+      },
+      "actual_version": "codex-cli 0.150.1"
+    },
+    {
+      "version": "0.151.0",
+      "tests": {
+        "TestLiveExecuteWithConfiguredSkillCreatesMarker": "works",
+        "TestLiveExecuteResumesSessionKnowledge": "works",
+        "TestCompatibilityRunAndRunSkill": "works"
+      },
+      "actual_version": "codex-cli 0.151.0"
+    },
+    {
+      "version": "0.152.1",
+      "tests": {
+        "TestLiveExecuteWithConfiguredSkillCreatesMarker": "works",
+        "TestLiveExecuteResumesSessionKnowledge": "works",
+        "TestCompatibilityRunAndRunSkill": "works"
+      },
+      "actual_version": "codex-cli 0.152.1"
+    },
+    {
+      "version": "0.153.4",
+      "tests": {
+        "TestLiveExecuteWithConfiguredSkillCreatesMarker": "works",
+        "TestLiveExecuteResumesSessionKnowledge": "works",
+        "TestCompatibilityRunAndRunSkill": "works"
+      },
+      "actual_version": "codex-cli 0.153.4"
+    },
+    {
+      "version": "0.154.0",
+      "tests": {
+        "TestLiveExecuteWithConfiguredSkillCreatesMarker": "works",
+        "TestLiveExecuteResumesSessionKnowledge": "works",
+        "TestCompatibilityRunAndRunSkill": "works"
+      },
+      "actual_version": "codex-cli 0.154.0"
+    },
+    {
+      "version": "0.155.1",
+      "tests": {
+        "TestLiveExecuteWithConfiguredSkillCreatesMarker": "works",
+        "TestLiveExecuteResumesSessionKnowledge": "works",
+        "TestCompatibilityRunAndRunSkill": "works"
+      },
+      "actual_version": "codex-cli 0.155.1"
+    },
+    {
+      "version": "0.156.1",
+      "tests": {
+        "TestLiveExecuteWithConfiguredSkillCreatesMarker": "works",
+        "TestLiveExecuteResumesSessionKnowledge": "works",
+        "TestCompatibilityRunAndRunSkill": "works"
+      },
+      "actual_version": "codex-cli 0.156.1"
+    },
+    {
+      "version": "0.157.1",
+      "tests": {
+        "TestLiveExecuteWithConfiguredSkillCreatesMarker": "works",
+        "TestLiveExecuteResumesSessionKnowledge": "works",
+        "TestCompatibilityRunAndRunSkill": "works"
+      },
+      "actual_version": "codex-cli 0.157.1"
+    },
+    {
+      "version": "0.158.0",
+      "tests": {
+        "TestLiveExecuteWithConfiguredSkillCreatesMarker": "works",
+        "TestLiveExecuteResumesSessionKnowledge": "works",
+        "TestCompatibilityRunAndRunSkill": "works"
+      },
+      "actual_version": "codex-cli 0.158.0"
+    },
+    {
+      "version": "0.159.3",
+      "tests": {
+        "TestLiveExecuteWithConfiguredSkillCreatesMarker": "works",
+        "TestLiveExecuteResumesSessionKnowledge": "works",
+        "TestCompatibilityRunAndRunSkill": "works"
+      },
+      "actual_version": "codex-cli 0.159.3"
+    },
+    {
+      "version": "0.160.1",
+      "tests": {
+        "TestLiveExecuteWithConfiguredSkillCreatesMarker": "works",
+        "TestLiveExecuteResumesSessionKnowledge": "works",
+        "TestCompatibilityRunAndRunSkill": "works"
+      },
+      "actual_version": "codex-cli 0.160.1"
+    },
+    {
+      "version": "0.161.0",
+      "tests": {
+        "TestLiveExecuteWithConfiguredSkillCreatesMarker": "works",
+        "TestLiveExecuteResumesSessionKnowledge": "works",
+        "TestCompatibilityRunAndRunSkill": "works"
+      },
+      "actual_version": "codex-cli 0.161.0"
+    },
+    {
+      "version": "0.162.1",
+      "tests": {
+        "TestLiveExecuteWithConfiguredSkillCreatesMarker": "works",
+        "TestLiveExecuteResumesSessionKnowledge": "works",
+        "TestCompatibilityRunAndRunSkill": "works"
+      },
+      "actual_version": "codex-cli 0.162.1"
+    }
+  ]
+}

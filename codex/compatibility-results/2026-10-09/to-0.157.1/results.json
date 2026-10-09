@@ -1,0 +1,21 @@
+{
+  "date": "2026-10-09T19:55:51.051245+00:00",
+  "source_commit": "36a5e2b6b81f8d1e97bec586c21151ae0516e071",
+  "latest_stable": "0.162.1",
+  "platform": "Linux aarch64",
+  "method": "real CLI, local mock provider; --version-only shim for full-op test",
+  "resume_version": "0.157.1",
+  "versions": [
+    "0.162.1"
+  ],
+  "results": [
+    {
+      "version": "0.162.1",
+      "tests": {
+        "TestCompatibilityRunAndRunSkill": "works"
+      },
+      "actual_version": "codex-cli 0.162.1"
+    }
+  ],
+  "actual_resume_version": "codex-cli 0.157.1"
+}

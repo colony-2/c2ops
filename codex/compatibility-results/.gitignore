@@ -1,0 +1,2 @@
+# The JSON reports retain failed-test output; individual run logs are local.
+*.log
