@@ -86,8 +86,8 @@ The initial Codex migration pinned c2j
 immutable object checkpoints. Tagged `v0.0.55` lacks that API. Workers executing
 the migrated Codex selectors need this object-capable runtime as well.
 
-Codex CLI remains pinned to **0.157.1**, and the migrated ops now enforce that
-version in production. `modernc.org/sqlite` **v1.50.1** supplies pure-Go SQLite
+The initial migration pinned and enforced Codex CLI **0.157.1** (superseded by
+the minimum-version policy below). `modernc.org/sqlite` **v1.50.1** supplies pure-Go SQLite
 export/restore, including WAL-aware database snapshots and rollout-path relocation.
 No external SQLite executable is needed.
 
@@ -115,3 +115,11 @@ local types. The incoming reference stays opaque, with reference validation
 and hydration owned by the runner. c2j and JobDB remain in `codex/go.mod` for
 object-store and recipe integration tests; Go keeps test dependencies in the
 same module file. Neither production entrypoint links c2j or JobDB packages.
+
+## Codex minimum version — 2026-10-09
+
+Both Codex ops require CLI **0.148.0 or later**, with no upper bound. The default
+test CLI remains pinned to **0.157.1** for repeatability. Runtime and checkpoint
+producer versions are checked against the minimum; exports record the actual
+CLI version. The existing checkpoint format identifier and file/database
+validation remain in place. See [the compatibility report](./codex/CLI_COMPATIBILITY.md).

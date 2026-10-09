@@ -1,0 +1,21 @@
+{
+  "date": "2026-10-09T20:07:00.727651+00:00",
+  "source_commit": "0a5d9ec36c87a6d81b9055140ff4cfada6dd3f33",
+  "latest_stable": "0.162.1",
+  "platform": "Linux aarch64",
+  "method": "real CLI, local mock provider; unaltered version checks and producer metadata",
+  "resume_version": "0.148.0",
+  "versions": [
+    "0.162.1"
+  ],
+  "results": [
+    {
+      "version": "0.162.1",
+      "tests": {
+        "TestCompatibilityRunAndRunSkill": "works"
+      },
+      "actual_version": "codex-cli 0.162.1"
+    }
+  ],
+  "actual_resume_version": "codex-cli 0.148.0"
+}

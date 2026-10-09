@@ -2,6 +2,10 @@
 
 Go-backed Codex op with immutable object sessions and outbox artifacts.
 
+Requires **Codex CLI 0.148.0 or later** on the execution environment's PATH.
+Both entrypoints enforce this minimum, with no upper version bound. See the
+[compatibility results](./CLI_COMPATIBILITY.md).
+
 **Breaking change:** resume with `session`, not `sessionId` or a
 `codex-home-state` artifact. Read [the migration guide](./MIGRATION_OBJECT_SESSIONS.md)
 for required runtime versions, recipe changes, and session forwarding.

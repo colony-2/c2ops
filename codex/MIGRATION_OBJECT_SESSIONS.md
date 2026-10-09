@@ -22,15 +22,21 @@ For a source-installed c2j CLI:
 go install github.com/colony-2/c2j/cmd/c2j@v0.0.61
 ```
 
-Install **Codex CLI 0.157.1** on the execution environment's PATH, including inside
-the sandbox if used. This adapter rejects other versions because its checkpoint
-layout is version-specific:
+Install **Codex CLI 0.148.0 or later** on the execution environment's PATH,
+including inside the sandbox if used. Older or unparseable versions are rejected;
+there is no upper version bound. For example, the pinned test runtime is:
 
 ```sh
 npm install -g @openai/codex@0.157.1
 codex --version
 # codex-cli 0.157.1
 ```
+
+Checkpoints record the actual producer CLI version. A consumer can use a
+different CLI version at or above the minimum; the checkpoint format and files
+must still pass validation. The existing `codex-0.157.1/v1` state-format name is
+retained as a layout identifier, not a required CLI version. Existing object
+sessions from 0.157.1 remain usable. See [compatibility tests](./CLI_COMPATIBILITY.md).
 
 The Go-backed extension needs Go 1.26 or later and access to its module
 dependencies. SQLite handling is implemented in Go; no `sqlite3` executable is
@@ -201,7 +207,7 @@ invocation's artifact outbox and the [diagnostic steps](./TROUBLESHOOTING.md).
 | --- | --- |
 | `sessionId` / `resume_context` no longer supported | Remove the input and route `outputs.session`. |
 | `C2J_OBJECT_OUTBOX` missing | Upgrade/configure the c2j worker, not only the submitting client. |
-| Codex version mismatch | Install 0.157.1 in the actual execution environment. |
+| Codex version below minimum / unparseable | Install 0.148.0 or later in the actual execution environment. |
 | `env.CODEX_HOME` is managed by the session object | Remove the override; supply credentials/configuration separately. |
 | `codex-home-state` no longer supported | Remove the legacy artifact binding and begin a new object session. |
 | Invalid metadata, missing files, unsupported format | Use an intact checkpoint from these migrated ops and the supported CLI version. Do not edit its reference or home contents. |

@@ -11,8 +11,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Opt-in experiment: the matrix runner supplies a real CLI behind a shim that
-// changes only --version. Production version checks and storage code stay intact.
+// Opt-in experiment: the matrix runner supplies real CLI releases. Production
+// version checks and checkpoint metadata are exercised unless spoofing is explicit.
 func TestCompatibilityRunAndRunSkill(t *testing.T) {
 	if os.Getenv("C2OPS_CODEX_COMPAT") != "1" {
 		t.Skip("run with scripts/compatibility_matrix.py")
@@ -37,6 +37,7 @@ func TestCompatibilityRunAndRunSkill(t *testing.T) {
 	require.NotNil(t, output.Session)
 	store := checkpointStore(t)
 	draft := output.Objects[output.Session.Name]
+	require.Equal(t, os.Getenv("C2OPS_CODEX_COMPAT_VERSION"), draft.Metadata.(SessionMetadata).RuntimeVersion)
 	ref, err := store.Publish(context.Background(), draft.Type, draft.Metadata, draft.Files)
 	require.NoError(t, err)
 	require.NoError(t, os.RemoveAll(first.WorkDirRoot))
@@ -62,6 +63,7 @@ func TestCompatibilityRunAndRunSkill(t *testing.T) {
 	require.True(t, skillOutput.OutputSchemaValid)
 	require.Equal(t, output.SessionID, skillOutput.SessionID)
 	require.NotNil(t, skillOutput.Session)
+	require.Equal(t, os.Getenv("C2OPS_CODEX_COMPAT_RESUME_VERSION"), skillOutput.Objects[skillOutput.Session.Name].Metadata.(SessionMetadata).RuntimeVersion)
 	assertFileContent(t, filepath.Join(second.WorktreeRoot, "resumed-path.txt"), second.WorktreeRoot+"\n")
 	assertFileContent(t, filepath.Join(second.ArtifactOutbox, "skill-result.json"), `{"summary":"skill result"}`)
 	_, err = os.Stat(first.WorkDirRoot)

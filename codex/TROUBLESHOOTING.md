@@ -1,7 +1,8 @@
 # Troubleshoot a hanging Codex op
 
 Applies to `codex` and `codex/run_skill`. Tested dependency baseline: c2j
-**v0.0.61**, Codex CLI **0.157.1**. A dependency update alone does not establish
+**v0.0.61**, Codex CLI **0.157.1** for the default tests. Production accepts
+**0.148.0 or later**. A dependency update alone does not establish
 the cause of a particular deployment's hang.
 
 ## Check the actual execution environment
@@ -18,7 +19,7 @@ when using a sandbox:
 go version -m "$(command -v c2j)"
 command -v codex
 codex --version
-# Must report: codex-cli 0.157.1
+# Must report: codex-cli <version>, with version >= 0.148.0
 ```
 
 The extension starts with `go run .`. Module downloads and compilation happen

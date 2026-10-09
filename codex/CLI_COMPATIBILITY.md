@@ -5,7 +5,12 @@ object-session flow worked on 15, from 0.148.0 through 0.162.1.** The five earli
 releases failed during checkpoint export because our exporter requires a
 database they did not create. The command-line interface was compatible.
 
-**The production op still accepts only 0.157.1.** For this experiment only, a
+**Policy update:** the production op now requires **0.148.0 or later**, with no
+upper bound, and records the actual producer version in checkpoints. Existing
+format/file validation remains. The grid below records the original experiment;
+the runner now uses real version checks by default.
+
+At the time of this experiment, the production op accepted only 0.157.1. A
 launcher returned `codex-cli 0.157.1` for `--version` and delegated every other
 invocation to the actual verified CLI version. No production commands, parsing,
 export/restore logic, or metadata checks were changed. Thus “works” below means
@@ -34,7 +39,7 @@ The npm `latest` tag was **0.162.1** when queried; prereleases were excluded.
 | 0.154.0 | Works | Works | Works | Works |
 | 0.155.1 | Works | Works | Works | Works |
 | 0.156.1 | Works | Works | Works | Works |
-| 0.157.1 | Works | Works | Works | Works; current production pin |
+| 0.157.1 | Works | Works | Works | Works; default test pin |
 | 0.158.0 | Works | Works | Works | Works |
 | 0.159.3 | Works | Works | Works | Works |
 | 0.160.1 | Works | Works | Works | Works |
@@ -99,15 +104,16 @@ selection, hosted authentication, provider/model compatibility, network retries,
 Shai execution, large/long-lived sessions, or every optional Codex feature.
 Ordinary op tests and recipe fixtures also pass at the production pin.
 
-## Suggested change based on the results
+## Change based on the results
 
-The exact 0.157.1 runtime restriction is narrower than these results justify.
-A follow-up can accept the tested compatible releases, record the actual producer
-CLI version separately, and base restore checks on the supported checkpoint
-format/capabilities rather than requiring the producer version to equal one
-constant. Keep this matrix as a release check before broadening support; this
-sample does not prove compatibility with every intervening patch or future
-release.
+The exact 0.157.1 runtime restriction was replaced with a minimum of 0.148.0.
+Exports record the actual producer CLI version; restore requires a producer at
+or above the minimum and the supported checkpoint layout, rather than requiring
+producer and consumer to match. Semantic versions are compared numerically:
+0.148.0 prereleases precede the minimum; prereleases of higher versions pass the
+minimum check. Build metadata does not affect comparison. This policy does not
+establish compatibility with every future release's storage layout; actual
+checkpoint validation remains in force.
 
 For pre-0.148 support, first identify which databases are required for that CLI
 and which are optional state parts, then test export/resume with that contract.
@@ -115,9 +121,23 @@ Do not silently create empty replacement databases or skip all state validation.
 The CLI invocation itself appears basic enough across this entire sample; the
 restriction comes from checkpoint handling.
 
-No production version policy or exporter behavior was changed by this experiment.
+The original experiment made no production changes. The subsequent policy update
+changes version acceptance and producer metadata; export/restore file handling
+is unchanged.
 
 ## Reproduce and inspect evidence
+
+After the minimum-version policy change, the three test flows passed on
+**0.148.0, 0.157.1, and 0.162.1 without spoofing**. Cross-version continuations
+also passed for **0.148.0 → 0.162.1**, **0.157.1 → 0.162.1**, and
+**0.162.1 → 0.148.0**, with assertions that each new checkpoint records the actual
+producer CLI version. Boundary tests reject 0.147.x, malformed versions and
+0.148.0 prereleases, and accept higher numeric versions. The full Codex suite,
+build, and vet checks pass.
+
+- [Minimum-version verification](./compatibility-results/2026-10-09/minimum-148/results.json)
+- [Upgrade verification](./compatibility-results/2026-10-09/minimum-148/to-0.162.1/results.json)
+- [Downgrade verification](./compatibility-results/2026-10-09/minimum-148/to-0.148.0/results.json)
 
 From `codex/` (Go, Node/npm, Python 3 and package-download access required):
 
@@ -133,6 +153,10 @@ python3 scripts/compatibility_matrix.py \
   --versions 0.148.0 0.157.1 --resume-version 0.162.1 \
   --output /tmp/codex-upgrade
 ```
+
+Use `--spoof-version 0.157.1` only to reproduce the historical experiment that
+bypassed version checks. Default runs exercise the real production version
+policy and assert actual producer versions in both checkpoint generations.
 
 The runner compiles the current tests once, uses isolated npm package resolution
 without a global installation, and records actual versions and per-test outcomes.

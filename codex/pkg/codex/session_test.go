@@ -97,7 +97,7 @@ func TestSessionReferenceRemainsOpaque(t *testing.T) {
 	ref := json.RawMessage(`{"$c2j_object":"v1","type":"c2ops.codex.session/v1","future_field":{"value":42}}`)
 	payload, err := json.Marshal(map[string]any{"session": map[string]any{
 		"ref":      ref,
-		"metadata": SessionMetadata{SessionID: "id", RuntimeVersion: supportedCodexVersion, StateFormat: sessionStateFormat},
+		"metadata": SessionMetadata{SessionID: "id", RuntimeVersion: "0.157.1", StateFormat: sessionStateFormat},
 		"files":    map[string]string{"home": "/hydrated/home"},
 	}})
 	require.NoError(t, err)
@@ -118,7 +118,7 @@ func TestSessionBranchesRestoreExactCheckpoint(t *testing.T) {
 	// Secrets and transient files must never enter the exported home.
 	require.NoError(t, os.WriteFile(filepath.Join(home, "auth.json"), []byte("secret"), 0600))
 	require.NoError(t, os.WriteFile(filepath.Join(home, "config.toml"), []byte("secret"), 0600))
-	state := &sessionExecution{home: home, id: "same-id", outbox: os.Getenv("C2J_OBJECT_OUTBOX")}
+	state := &sessionExecution{runtimeVersion: "0.157.1", home: home, id: "same-id", outbox: os.Getenv("C2J_OBJECT_OUTBOX")}
 	a := freezeSession(t, store, state)
 	require.NoError(t, os.RemoveAll(home))
 	resume := func(ref objects.Ref) *sessionExecution {
@@ -174,7 +174,7 @@ func TestSessionExportIncludesWALAndRejectsIncompleteState(t *testing.T) {
 	require.NoError(t, copyDB.QueryRow("SELECT value FROM goal").Scan(&value))
 	require.Equal(t, "from WAL", value)
 	require.NoError(t, os.Remove(filepath.Join(home, "sessions", "id.jsonl")))
-	s := &sessionExecution{home: home, id: "id", outbox: t.TempDir()}
+	s := &sessionExecution{runtimeVersion: "0.157.1", home: home, id: "id", outbox: t.TempDir()}
 	marker, drafts, err := s.publish()
 	require.Error(t, err)
 	require.Nil(t, marker)
@@ -237,7 +237,7 @@ func TestSessionRejectsUnsupportedMetadataAndCorruptDatabase(t *testing.T) {
 	store := checkpointStore(t)
 	home := t.TempDir()
 	seedTestSession(t, home, "id")
-	ref := freezeSession(t, store, &sessionExecution{home: home, id: "id", outbox: t.TempDir()})
+	ref := freezeSession(t, store, &sessionExecution{runtimeVersion: "0.157.1", home: home, id: "id", outbox: t.TempDir()})
 	paths := execRunPaths{Workdir: t.TempDir(), Worktree: t.TempDir(), Inbox: t.TempDir()}
 	for _, change := range []func(*SessionInput){
 		func(in *SessionInput) { in.Metadata.RuntimeVersion = "future" },

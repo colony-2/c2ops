@@ -19,7 +19,9 @@ import (
 )
 
 const SessionObjectType = "c2ops.codex.session/v1"
-const supportedCodexVersion = "0.157.1"
+const minimumCodexVersion = "0.148.0"
+
+// This existing format identifier names the checkpoint layout, not a CLI pin.
 const sessionStateFormat = "codex-0.157.1/v1"
 
 type SessionMetadata struct {
@@ -38,10 +40,11 @@ type SessionInput struct {
 }
 
 type sessionExecution struct {
-	ctx    context.Context
-	home   string
-	id     string
-	outbox string
+	ctx            context.Context
+	home           string
+	id             string
+	outbox         string
+	runtimeVersion string
 }
 
 // The supported CLI creates all these databases in a private sqlite_home.
@@ -72,10 +75,15 @@ func prepareSession(ctx context.Context, input *SessionInput, paths execRunPaths
 	if err != nil {
 		return nil, fmt.Errorf("read Codex version: %w", err)
 	}
-	if strings.TrimSpace(string(version)) != "codex-cli "+supportedCodexVersion {
-		return nil, fmt.Errorf("session checkpoints require codex-cli %s; got %q", supportedCodexVersion, strings.TrimSpace(string(version)))
+	fields := strings.Fields(string(version))
+	if len(fields) != 2 || fields[0] != "codex-cli" {
+		return nil, fmt.Errorf("cannot parse Codex version %q; require codex-cli %s or later", strings.TrimSpace(string(version)), minimumCodexVersion)
 	}
-	progress(ctx, "version.ready", map[string]any{"version": supportedCodexVersion})
+	runtimeVersion := fields[1]
+	if err := validateCodexVersion(runtimeVersion); err != nil {
+		return nil, err
+	}
+	progress(ctx, "version.ready", map[string]any{"version": runtimeVersion})
 	if err := os.MkdirAll(paths.Workdir, 0700); err != nil {
 		return nil, err
 	}
@@ -86,7 +94,7 @@ func prepareSession(ctx context.Context, input *SessionInput, paths execRunPaths
 	if err != nil {
 		return nil, err
 	}
-	s := &sessionExecution{ctx: ctx, home: home, outbox: outbox}
+	s := &sessionExecution{ctx: ctx, home: home, outbox: outbox, runtimeVersion: runtimeVersion}
 	if input == nil {
 		progress(ctx, "session.new", nil)
 		return s, nil
@@ -102,8 +110,11 @@ func prepareSession(ctx context.Context, input *SessionInput, paths execRunPaths
 
 func (s *sessionExecution) restore(input *SessionInput, worktree string) error {
 	m := input.Metadata
-	if m.SessionID == "" || m.RuntimeVersion != supportedCodexVersion || m.StateFormat != sessionStateFormat {
+	if m.SessionID == "" || m.StateFormat != sessionStateFormat {
 		return fmt.Errorf("invalid or unsupported session metadata")
+	}
+	if err := validateCodexVersion(m.RuntimeVersion); err != nil {
+		return fmt.Errorf("unsupported checkpoint producer: %w", err)
 	}
 	home := input.Files["home"]
 	if len(input.Files) != 1 || !filepath.IsAbs(home) {
@@ -178,7 +189,7 @@ func (s *sessionExecution) publish() (*checkpoint.Marker, map[string]checkpoint.
 	success = true
 	progress(s.ctx, "session.exported", nil)
 	return &checkpoint.Marker{Name: "session"}, map[string]checkpoint.Draft{
-		"session": {Type: SessionObjectType, Metadata: SessionMetadata{s.id, supportedCodexVersion, sessionStateFormat}, Files: map[string]string{"home": home}},
+		"session": {Type: SessionObjectType, Metadata: SessionMetadata{s.id, s.runtimeVersion, sessionStateFormat}, Files: map[string]string{"home": home}},
 	}, nil
 }
 
