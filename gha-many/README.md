@@ -10,16 +10,16 @@ Use this op from the repo root as:
 op: ./gha-many
 ```
 
-Git selector example:
+Nix package selector (replace `<commit>` with a published CI revision):
 
 ```yaml
-op: git+https://github.com/colony-2/c2ops.git//gha-many@main
+op: nix:github:colony-2/c2ops/<commit>#gha-many
 ```
 
 ## What It Does
 
 - Reads one JSON payload from stdin
-- Runs the standalone Go project in this directory with `go run .`
+- Runs a prebuilt Go executable from the Nix package (local source selectors use `go run .`)
 - Returns aggregated workflow results in the extension-op `{"output": ...}` envelope
 
 ## Inputs
@@ -34,7 +34,7 @@ op: git+https://github.com/colony-2/c2ops.git//gha-many@main
 ```yaml
 sequence:
   - id: ci_matrix
-    op: git+https://github.com/colony-2/c2ops.git//gha-many@main
+    op: nix:github:colony-2/c2ops/<commit>#gha-many
     inputs:
       workflows:
         - workflow: .github/workflows/ci.yml

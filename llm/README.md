@@ -10,16 +10,16 @@ Use this op from the repo root as:
 op: ./llm
 ```
 
-Git selector example:
+Nix package selector (replace `<commit>` with a published CI revision):
 
 ```yaml
-op: git+https://github.com/colony-2/c2ops.git//llm@main
+op: nix:github:colony-2/c2ops/<commit>#llm
 ```
 
 ## What It Does
 
 - Reads one JSON payload from stdin
-- Runs the standalone Go project in this directory with `go run .`
+- Runs a prebuilt Go executable from the Nix package (local source selectors use `go run .`)
 - Returns JSON on stdout in the extension-op `{"output": ...}` envelope
 
 ## Inputs
@@ -36,7 +36,7 @@ op: git+https://github.com/colony-2/c2ops.git//llm@main
 ```yaml
 sequence:
   - id: ask
-    op: git+https://github.com/colony-2/c2ops.git//llm@main
+    op: nix:github:colony-2/c2ops/<commit>#llm
     inputs:
       provider: openai
       model: gpt-4.1-mini

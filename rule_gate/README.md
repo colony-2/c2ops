@@ -10,16 +10,16 @@ Use this op from the repo root as:
 op: ./rule_gate
 ```
 
-Git selector example:
+Nix package selector (replace `<commit>` with a published CI revision):
 
 ```yaml
-op: git+https://github.com/colony-2/c2ops.git//rule_gate@main
+op: nix:github:colony-2/c2ops/<commit>#rule_gate
 ```
 
 ## What It Does
 
 - Reads one JSON payload from stdin
-- Runs the standalone Go project in this directory with `go run .`
+- Runs a prebuilt Go executable from the Nix package (local source selectors use `go run .`)
 - Evaluates required policy rules in input order
 - Returns a normalized decision in the extension-op `{"output": ...}` envelope
 - Exits successfully for policy failures with `ok: false`
@@ -97,7 +97,7 @@ rules:
 ```yaml
 sequence:
   - id: final_gate
-    op: git+https://github.com/colony-2/c2ops.git//rule_gate@main
+    op: nix:github:colony-2/c2ops/<commit>#rule_gate
     artifacts:
       reviews/review-pack.json: ${{ states.review.artifacts["reviews/review-pack.json"] }}
     inputs:

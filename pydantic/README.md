@@ -10,22 +10,22 @@ Use this op from the repo root as:
 op: ./pydantic
 ```
 
-Git selector example:
+Nix package selector (replace `<commit>` with a published CI revision):
 
 ```yaml
-op: git+https://github.com/colony-2/c2ops.git//pydantic@main
+op: nix:github:colony-2/c2ops/<commit>#pydantic
 ```
 
 ## What It Does
 
 - Reads one JSON payload from stdin
-- Runs through `uv run --script ./main.py`
-- Uses PEP 723 inline dependencies pinned in [main.py](./main.py)
+- Runs with a packaged Python interpreter and locked dependencies
+- Shares the direct dependency pins in [main.py](./main.py); Nix locks all transitive dependencies
 - Returns JSON via the extension-op `{"output": ...}` envelope
 
 ## Requirements
 
-- `uv` installed on the machine running the op
+- A c2j worker configured for the [`colony2` cache](../NIX_PACKAGES.md); Python and libraries are packaged
 - Provider API keys supplied either:
   - in `api_keys`
   - or already present in the process environment
@@ -121,7 +121,7 @@ Git-backed recipe example:
 ```yaml
 sequence:
   - id: plan_change
-    op: git+https://github.com/colony-2/c2ops.git//pydantic@main
+    op: nix:github:colony-2/c2ops/<commit>#pydantic
     inputs:
       default_provider: openai
       default_model: gpt-4.1
@@ -154,7 +154,7 @@ sequence:
       execute_tools: true
       enable_tool_execution: true
       max_tool_rounds: 3
-      tool_working_dir: "{{ context.environment.worktree_path }}"
+      tool_working_dir: "{{ context.environment.op.worktree_path }}"
 ```
 
 ## Outputs

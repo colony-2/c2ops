@@ -2,8 +2,9 @@
 
 Go-backed Codex op with immutable object sessions and outbox artifacts.
 
-Requires **Codex CLI 0.148.0 or later** on the execution environment's PATH.
-Both entrypoints enforce this minimum, with no upper version bound. See the
+Both manifests declare **`pnpm:@openai/codex@0.157.1`**, which c2j prepares and
+places on the invocation's PATH. Direct invocations require **Codex CLI 0.148.0
+or later**; both entrypoints enforce this minimum with no upper bound. See the
 [compatibility results](./CLI_COMPATIBILITY.md).
 
 **Breaking change:** resume with `session`, not `sessionId` or a
@@ -16,22 +17,24 @@ artifact outbox, with a copy on process stderr.
 
 ## Selector
 
+Configure the [`colony2` cache](../NIX_PACKAGES.md) before using a Nix selector.
+
 Use this op from the repo root as:
 
 ```yaml
 op: ./codex
 ```
 
-Git selector example:
+Nix package selector (replace `<commit>` with a published CI revision):
 
 ```yaml
-op: git+https://github.com/colony-2/c2ops.git//codex@main
+op: nix:github:colony-2/c2ops/<commit>#codex
 ```
 
 ## What It Does
 
 - Reads one JSON payload from stdin
-- Runs the standalone Go project in this directory with `go run .`
+- Runs a prebuilt Go executable from the Nix package (local source selectors use `go run .`)
 - Returns a `codex.exec`-style result in the extension-op `{"output": ..., "objects": ...}` envelope
 
 ## Inputs
@@ -58,7 +61,7 @@ Sandboxing is controlled by the reserved extension-op `sandbox` recipe input. Th
 ```yaml
 sequence:
   - id: code_task
-    op: git+https://github.com/colony-2/c2ops.git//codex@main
+    op: nix:github:colony-2/c2ops/<commit>#codex
     inputs:
       prompt: Fix the failing tests in this repository.
       worktree_path: "{{ context.environment.op.worktree_path }}"
@@ -83,7 +86,7 @@ This module also exposes a nested selector-backed op for running one requested
 skill:
 
 ```yaml
-op: git+https://github.com/colony-2/c2ops.git//codex/run_skill@main
+op: nix:github:colony-2/c2ops/<commit>#skill-run
 ```
 
 `run_skill` uses the same Codex execution path as this op, but generates the

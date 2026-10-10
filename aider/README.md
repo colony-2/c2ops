@@ -10,23 +10,23 @@ Use this op from the repo root as:
 op: ./aider
 ```
 
-Git selector example:
+Nix package selector (replace `<commit>` with a published CI revision):
 
 ```yaml
-op: git+https://github.com/colony-2/c2ops.git//aider@main
+op: nix:github:colony-2/c2ops/<commit>#aider
 ```
 
 ## What It Does
 
 - Reads one JSON payload from stdin
-- Runs `uv run --script ./main.py`
-- Uses PEP 723 inline dependencies pinned in [main.py](./main.py)
+- Runs with a packaged Python interpreter and locked dependencies
+- Shares the direct dependency pins in [main.py](./main.py); Nix locks all transitive dependencies
 - Invokes the `aider` CLI as a subprocess
 - Returns a `codex.exec`-shaped JSON result in the extension-op `{"output": ...}` envelope
 
 ## Requirements
 
-- `uv` installed on the machine running the op
+- A c2j worker configured for the [`colony2` cache](../NIX_PACKAGES.md); Python and libraries are packaged
 - A supported model configuration for `aider`
 
 You can provide provider-specific environment variables through the op input `env`, for example:
@@ -78,9 +78,9 @@ sequence:
       model: sonnet
       env:
         ANTHROPIC_API_KEY: "${{ secrets.anthropic_api_key }}"
-      workdir_path: "{{ context.environment.workdir }}"
-      worktree_path: "{{ context.environment.worktree_path }}"
-      artifact_outbox_path: "{{ context.environment.outbox }}"
+      workdir_path: "{{ context.environment.op.workdir }}"
+      worktree_path: "{{ context.environment.op.worktree_path }}"
+      artifact_outbox_path: "{{ context.environment.op.outbox }}"
 ```
 
 Git-backed recipe example:
@@ -88,13 +88,13 @@ Git-backed recipe example:
 ```yaml
 sequence:
   - id: apply_fix
-    op: git+https://github.com/colony-2/c2ops.git//aider@main
+    op: nix:github:colony-2/c2ops/<commit>#aider
     inputs:
       prompt: Fix the failing unit tests in this repository.
       model: sonnet
       env:
         ANTHROPIC_API_KEY: "${{ secrets.anthropic_api_key }}"
-      worktree_path: "{{ context.environment.worktree_path }}"
+      worktree_path: "{{ context.environment.op.worktree_path }}"
 ```
 
 Resume example:
@@ -108,7 +108,7 @@ sequence:
       prompt: Continue and summarize what changed.
       env:
         ANTHROPIC_API_KEY: "${{ secrets.anthropic_api_key }}"
-      worktree_path: "{{ context.environment.worktree_path }}"
+      worktree_path: "{{ context.environment.op.worktree_path }}"
 ```
 
 ## Outputs

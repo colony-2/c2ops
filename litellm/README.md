@@ -10,22 +10,22 @@ Use this op from the repo root as:
 op: ./litellm
 ```
 
-Git selector example:
+Nix package selector (replace `<commit>` with a published CI revision):
 
 ```yaml
-op: git+https://github.com/colony-2/c2ops.git//litellm@main
+op: nix:github:colony-2/c2ops/<commit>#litellm
 ```
 
 ## What It Does
 
 - Reads one JSON payload from stdin
-- Runs the request through `uv run --script ./main.py`
-- Uses PEP 723 inline dependencies pinned in [main.py](./main.py)
+- Runs with a packaged Python interpreter and locked dependencies
+- Shares the direct dependency pins in [main.py](./main.py); Nix locks all transitive dependencies
 - Returns JSON on stdout using the extension-op `{"output": ...}` envelope
 
 ## Requirements
 
-- `uv` installed on the machine running the op
+- A c2j worker configured for the [`colony2` cache](../NIX_PACKAGES.md); Python and libraries are packaged
 - A provider API key available to LiteLLM through the normal environment for your chosen provider
 
 Common cases:
@@ -52,7 +52,7 @@ If `model` is already fully qualified, it is passed through unchanged. Otherwise
 ```yaml
 sequence:
   - id: ask_model
-    op: ./litellm
+    op: nix:github:colony-2/c2ops/<commit>#litellm
     inputs:
       provider: openai
       model: gpt-4.1-mini
@@ -64,7 +64,7 @@ Git-backed recipe example:
 ```yaml
 sequence:
   - id: ask_model
-    op: git+https://github.com/colony-2/c2ops.git//litellm@main
+    op: nix:github:colony-2/c2ops/<commit>#litellm
     inputs:
       provider: openai
       model: gpt-4.1-mini
@@ -76,7 +76,7 @@ Structured output example:
 ```yaml
 sequence:
   - id: ask_model
-    op: ./litellm
+    op: nix:github:colony-2/c2ops/<commit>#litellm
     inputs:
       provider: anthropic
       model: claude-sonnet-4-5

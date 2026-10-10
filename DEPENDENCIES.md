@@ -123,3 +123,24 @@ test CLI remains pinned to **0.157.1** for repeatability. Runtime and checkpoint
 producer versions are checked against the minimum; exports record the actual
 CLI version. The existing checkpoint format identifier and file/database
 validation remain in place. See [the compatibility report](./codex/CLI_COMPATIBILITY.md).
+
+## Nix distribution and explicit dependencies — 2026-10-10
+
+All 12 ops now have Nix package definitions and generated `op.json` manifests.
+`flake.lock` pins nixpkgs and the uv2nix build inputs; each Python library op has
+its own transitive `uv.lock`. Aider uses Python 3.12 for NumPy 1.26.4 compatibility;
+the other Python packages use 3.13. Production Go vendor hashes omit test-only
+private imports while retaining the op modules' existing dependency pins.
+
+Codex and Kimi now declare their CLI dependencies as
+`pnpm:@openai/codex@0.157.1` and `pnpm:@moonshot-ai/kimi-code@2.1.1`. c2j prepares
+these before the execution timeout. The earlier host-PATH and invocation-time
+`npm exec` descriptions above are historical. Nix wrappers bind Git, Docker
+clients, Python, and library environments; packaged manifests have no `nix:`
+dependencies. Local/Git manifests explicitly declare their source-execution tools.
+
+The existing test workflow also builds and checks native packages on both Linux
+architectures, then publishes their closures to `colony2` using the
+`CACHIX_COLONY2_AUTHKEY` secret. See [Nix packages](./NIX_PACKAGES.md) for setup and
+update procedures. These packages require c2j's new Nix/dependency lifecycle;
+the older test-only c2j module pin has not been upgraded by this change.

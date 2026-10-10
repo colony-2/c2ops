@@ -10,27 +10,17 @@ There is no legacy mode, automatic importer, or fallback to local state.
 
 ## 1. Upgrade the execution environment
 
-Use a c2j runtime with immutable object support. The current tested baseline is
-**v0.0.61**. Tagged c2j `v0.0.55` does not contain this API. Upgrade the actual
-workers as well as the recipe submission/validation tools. See the
-[troubleshooting guide](./TROUBLESHOOTING.md) for a known stdin-forwarding issue
-in v0.0.61's Shai execution path.
+Use a c2j runtime with immutable objects **and the new Nix extension/dependency
+lifecycle** described in [NIX_PACKAGES.md](../NIX_PACKAGES.md). Upgrade the actual
+workers as well as recipe submission/validation tools. The test-only module
+baseline, **v0.0.61**, exercises object sessions but is not sufficient for the
+Nix selectors below. See the [troubleshooting guide](./TROUBLESHOOTING.md) for
+historical v0.0.61 Shai limitations.
 
-For a source-installed c2j CLI:
-
-```sh
-go install github.com/colony-2/c2j/cmd/c2j@v0.0.61
-```
-
-Install **Codex CLI 0.148.0 or later** on the execution environment's PATH,
-including inside the sandbox if used. Older or unparseable versions are rejected;
-there is no upper version bound. For example, the pinned test runtime is:
-
-```sh
-npm install -g @openai/codex@0.157.1
-codex --version
-# codex-cli 0.157.1
-```
+The manifests declare `pnpm:@openai/codex@0.157.1`. With the new dependency
+lifecycle, c2j prepares that CLI and binds it to the invocation's PATH before
+execution. Direct invocations still need **Codex CLI 0.148.0 or later** available;
+older or unparseable versions are rejected.
 
 Checkpoints record the actual producer CLI version. A consumer can use a
 different CLI version at or above the minimum; the checkpoint format and files
@@ -38,16 +28,16 @@ must still pass validation. The existing `codex-0.157.1/v1` state-format name is
 retained as a layout identifier, not a required CLI version. Existing object
 sessions from 0.157.1 remain usable. See [compatibility tests](./CLI_COMPATIBILITY.md).
 
-The Go-backed extension needs Go 1.26 or later and access to its module
-dependencies. SQLite handling is implemented in Go; no `sqlite3` executable is
-required. Pin both Codex selectors to the same c2ops revision containing this
-change. In the examples below, local selectors refer to that migrated checkout.
-For Git selectors, replace `REVISION` with its actual commit or release:
+Use a c2j worker implementing the [Nix package contract](../EXTENSION_OPS.md)
+and configure the [`colony2` cache](../NIX_PACKAGES.md). Packaged ops include the
+Go executable and SQLite implementation; workers do not need Go or `sqlite3`.
+Source selectors still need Go 1.26 or later and access to the module dependencies.
+Pin both selectors to the same c2ops commit whose CI build and upload completed:
 
 ```yaml
-op: git+https://github.com/colony-2/c2ops.git//codex@REVISION
+op: nix:github:colony-2/c2ops/<commit>#codex
 # or:
-op: git+https://github.com/colony-2/c2ops.git//codex/run_skill@REVISION
+op: nix:github:colony-2/c2ops/<commit>#skill-run
 ```
 
 c2j supplies `C2J_OBJECT_OUTBOX` automatically. Do not set it in recipe `env`, and
@@ -81,13 +71,13 @@ id: codex-session-example
 version: "1"
 sequence:
   - id: investigate
-    op: ./codex
+    op: nix:github:colony-2/c2ops/<commit>#codex
     inputs:
       prompt: Investigate the failing tests and explain the cause.
       env:
         CODEX_API_KEY: "${{ secrets.openai_api_key }}"
   - id: fix
-    op: ./codex
+    op: nix:github:colony-2/c2ops/<commit>#codex
     inputs:
       prompt: Apply the fix and run the relevant tests.
       session: "${{ sequence.investigate.outputs.session }}"
@@ -120,7 +110,7 @@ continue from `codex` into `run_skill`, or from `run_skill` back into `codex`:
 
 ```yaml
 - id: implement
-  op: ./codex/run_skill
+  op: nix:github:colony-2/c2ops/<commit>#skill-run
   inputs:
     skill: implement-fix
     session: "${{ sequence.investigate.outputs.session }}"
@@ -162,7 +152,7 @@ inputs:
   session: "${{ inputs.session }}"
 sequence:
   - id: continue_work
-    op: ./codex
+    op: nix:github:colony-2/c2ops/<commit>#codex
     inputs:
       prompt: Continue the investigation from the saved conversation.
       session: "${{ inputs.session }}"

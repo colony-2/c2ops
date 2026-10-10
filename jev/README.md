@@ -1,12 +1,15 @@
 # Jev op
 
 Evaluates state using [TypeSafe Jev](https://docs.typesafe.ai/introduction) through
-the official `typesafe-sdk==0.7.2` Python SDK. Requires `uv` and Python 3.12+.
+the official `typesafe-sdk==0.7.2` Python SDK. The Nix package includes Python and
+the locked SDK environment. Configure the [`colony2` cache](../NIX_PACKAGES.md)
+and replace `<commit>` below with a published CI revision. Local source execution
+uses `uv run --script` and Python 3.12+.
 
 ```yaml
 sequence:
   - id: triage
-    op: git+https://github.com/colony-2/c2ops.git//jev@main
+    op: nix:github:colony-2/c2ops/<commit>#jev
     inputs:
       api_key: "${{ secrets.typesafe_api_key }}"
       state:
@@ -42,8 +45,8 @@ The JSON output envelope contains `model`, `answers`, and `usage` from the SDK,
 without converting probabilities to booleans or discarding confidence scores.
 `model` defaults to `jev-latest`; use an explicit model version when you need
 stable thresholds. `api_key` takes precedence over `TYPESAFE_API_KEY`. Recipes
-should pass the key explicitly because extension ops do not inherit the host
-environment. `base_url` overrides the API origin for proxies/testing (the SDK adds
+should pass the key explicitly rather than depend on worker environment setup.
+`base_url` overrides the API origin for proxies/testing (the SDK adds
 `/v1/systemone`). `timeout_seconds` defaults to 60 per HTTP attempt; SDK retry
 behavior applies, within the manifest's five-minute process limit.
 

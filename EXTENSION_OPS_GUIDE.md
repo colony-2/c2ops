@@ -1,358 +1,75 @@
-# Extension Ops Guide
+# Extension ops in c2ops
 
-## Overview
+The current protocol is documented in [EXTENSION_OPS.md](./EXTENSION_OPS.md).
+Use [NIX_PACKAGES.md](./NIX_PACKAGES.md) for this repository's packages, CI,
+Cachix setup, and dependency updates. [Execution tools](./EXECUTION_TOOLS.md)
+describes c2j's explicit dependency scopes and setup lifecycle.
 
-Extension ops let you package an operation as a directory with an `op.yaml` manifest plus an executable command.
+## Calling a published op
 
-There are two selector forms:
-
-- cell-local extension ops: referenced by local path such as `./tools/ops/echo`
-- git-backed extension ops: referenced by git selector such as `git+https://github.com/acme/repo.git//tools/ops/echo@main`
-
-At runtime, an extension op receives a JSON input object on stdin and is expected to write JSON on stdout.
-
-## Choosing A Selector
-
-Use a cell-local path when the op lives alongside the current cell or repository content.
-
-Local selector:
+Use the package reference directly in `op:` and replace `<commit>` with a
+revision whose CI build and Cachix upload completed:
 
 ```yaml
 sequence:
-  - id: say_hi
-    op: ./tools/ops/echo
+  - id: evaluate
+    op: nix:github:colony-2/c2ops/<commit>#rule_gate
     inputs:
-      message: hello
+      rules:
+        - id: ready
+          type: assert
+          value: true
+          message: Ready to continue.
 ```
 
-Git selector:
+The attribute identifies the operation; the worker selects its native Linux
+architecture. `skill.run` uses the attribute `skill-run`. Bare op names do not
+identify packages. Do not wrap Nix selectors in `extension_execution`.
+
+Local and Git source selectors remain available for development:
 
 ```yaml
-sequence:
-  - id: say_hi
-    op: git+https://github.com/acme/repo.git//tools/ops/echo@main
-    inputs:
-      message: hello
+op: ./rule_gate
+# or:
+op: git+https://github.com/colony-2/c2ops.git//rule_gate@<commit>
 ```
 
-Supported selector forms:
+Source manifests declare their tool dependencies explicitly. Their `go run` and
+`uv run --script` commands still compile or prepare library environments during
+execution. Use Nix selectors for prebuilt ops.
 
-- `./path/to/op`
-- `../path/to/op`
-- `git+<repo-url>//<repo-relative-path>@<ref>`
+## Manifests and process boundary
 
-Resolution notes:
+`op.yaml` is the schema source. `make manifests` generates each `op.json`, replacing
+the development command with `bin/<package>` and retaining the schemas, defaults,
+environment, timeout, and non-Nix dependency declarations. CI checks for drift.
+Each Nix derivation exposes this document as `passthru.c2j` and installs the same
+JSON at `$out/share/c2j/op.json`.
 
-- for local recipes, `./...` and `../...` resolve from the local project/worktree
-- for git-backed recipes, same-repo `./...` selectors resolve within the recipe source repo at the recipe's ref
-- same-repo selectors must not escape the recipe source repo with `../...`
-- this guide documents the selector-based author model rather than the old discovered-op compatibility path
+The process receives one JSON input object on stdin and returns a JSON envelope
+on stdout. Logs go to stderr. Both input and output schemas are required. The
+Nix package directory is read-only; writable paths come from inputs such as
+`context.environment.op.worktree_path`, `.workdir`, `.inbox`, and `.outbox`.
+Schema defaults can supply these paths and explicit inputs override them.
 
-## Manifest
+Op runtime tools are bound in Nix wrappers. Codex and Kimi additionally declare
+versioned `pnpm:` dependencies for their CLIs; c2j prepares those before the
+execution timeout starts. Library dependencies belong in the package, because
+`uv:` declarations install CLI applications rather than Python project libraries.
 
-Each extension op directory contains `op.yaml`.
+## Objects and artifacts
 
-Example:
-
-```yaml
-name: echo
-description: Echo input back to the caller
-version: 1.0.0
-
-shell: bash
-run: python3 main.py
-timeout: 30s
-
-env:
-  PYTHONUNBUFFERED: "1"
-
-input_schema:
-  type: object
-  required: [message]
-  properties:
-    message:
-      type: string
-    ref:
-      type: string
-      default: "${{ context.git.ref }}"
-
-output_schema:
-  type: object
-  properties:
-    message:
-      type: string
-```
-
-## Manifest Fields
-
-- `name`: optional display/runtime name.
-- `description`: optional description.
-- `version`: optional version string.
-- `shell`: shell used with `run`. Defaults to `bash` when available, otherwise `sh`.
-- `run`: shell command to execute.
-- `command`: argv form alternative to `run`.
-- `env`: extra environment variables added to the process.
-- `timeout`: Go duration string such as `30s` or `5m`.
-- `input_schema`: required JSON Schema-like input schema used for validation and defaults.
-- `output_schema`: required JSON Schema-like output schema used to validate stdout.
-
-The process working directory is engine-controlled. For selector-resolved extension ops, it is the op directory.
-
-## Inputs
-
-Recipe inputs are passed under the node's `inputs:` block:
-
-```yaml
-sequence:
-  - id: say_hi
-    op: ./tools/ops/echo
-    inputs:
-      message: "${{ inputs.title }}"
-```
-
-The runtime behavior is:
-
-1. Start with the authored `inputs` map.
-2. Apply any extension-op schema defaults from `input_schema`.
-3. Resolve template and CEL expressions.
-4. Validate the resolved payload against `input_schema`.
-5. Marshal that payload to JSON and pass it to the extension process on stdin.
-
-### Defaults
-
-Extension ops use the standard schema `default` keyword inside `input_schema`.
-
-Example:
-
-```yaml
-input_schema:
-  type: object
-  required: [message, ref]
-  properties:
-    message:
-      type: string
-    ref:
-      type: string
-      default: "${{ context.git.ref }}"
-    config:
-      type: object
-      properties:
-        label:
-          type: string
-          default: "${{ inputs.title }}"
-```
-
-Key points:
-
-- defaults only fill missing fields
-- explicit user input wins
-- string defaults can use normal `{{ ... }}` and `${{ ... }}`
-- defaults can be nested inside objects and arrays
-- `required` plus `default` is allowed
-
-## Process Contract
-
-### Stdin
-
-The extension process receives a single JSON object on stdin.
-
-Example stdin:
-
-```json
-{"message":"hello","ref":"main"}
-```
-
-### Stdout
-
-The process must write JSON to stdout.
-
-The simplest form is a plain output object:
-
-```json
-{"message":"hello"}
-```
-
-Stdout may also use this envelope:
-
-```json
-{
-  "output": {
-    "message": "hello"
-  },
-  "artifact_refs": {
-    "report": {
-      "external": {
-        "url": "https://example.com/report.txt",
-        "expand": false
-      }
-    }
-  }
-}
-```
-
-Notes:
-
-- extension ops understand the `output` / `artifact_refs` envelope
-- if `output_schema` is present, the final output object is validated against it
-
-## Object checkpoints
-
-Object-capable c2j runtimes also accept an `objects` map in the stdout envelope
-and `$object` markers in `output`. Annotated inputs receive hydrated descriptors;
-the framework supplies `C2J_OBJECT_OUTBOX` for exported state. See the complete
+Object-capable runtimes accept an `objects` map in the stdout envelope and
+`$object` markers in `output`. Annotated inputs receive hydrated descriptors;
+c2j supplies `C2J_OBJECT_OUTBOX` for exported state. See the
 [object protocol](./GUIDE-Op-Object-Checkpoints.md) and
 [Codex migration guide](./codex/MIGRATION_OBJECT_SESSIONS.md).
 
-Extensions define their own versioned contracts, such as `my-op.state/v1`, using
-`x-c2j-object-type` on the manifest's input/output properties. No Go import or
-framework type registration is required. The process reads hydrated metadata
-and file paths from stdin, writes checkpoint files beneath `C2J_OBJECT_OUTBOX`,
-and emits object drafts and markers in the JSON stdout envelope. c2j validates
-references and handles storage/hydration; the extension validates its own
-metadata and file contents. Treat the hydrated `ref` as opaque JSON.
+Extensions own their versioned contracts, such as `c2ops.codex.session/v1`,
+using `x-c2j-object-type` annotations. The op validates its own metadata and
+files; c2j validates references and handles storage and hydration. Treat incoming
+object `ref` values as opaque JSON.
 
-## Environment
-
-Apart from framework-owned protocol variables such as `C2J_OBJECT_OUTBOX`,
-extension ops do not receive implicit runtime metadata environment variables.
-
-Behavior in c2j v0.0.61:
-
-- the declared input payload is delivered on stdin as JSON
-- host execution inherits the ambient parent process environment
-- manifest `env` overrides inherited values; an object-capable runner also
-  injects its reserved `C2J_OBJECT_OUTBOX` path
-- Shai receives the merged environment, but this version has a stdin-forwarding
-  defect: the process runtime does not pass the invocation's JSON bytes into
-  Shai. See [the diagnostic guide](./codex/TROUBLESHOOTING.md).
-
-So the process boundary is explicit:
-
-- stdin carries the structured input payload
-- manifest `env` declares application overrides; do not assume other worker
-  environment variables are absent
-
-## Sandbox
-
-Extension ops support a reserved `sandbox` input field that is not passed through to the extension payload.
-
-Example:
-
-```yaml
-sequence:
-  - id: run_sandboxed
-    op: ./tools/ops/echo
-    inputs:
-      message: hello
-      sandbox:
-        type: shai
-```
-
-Supported values today:
-
-- `type: none`
-- `type: shai`
-
-For `shai`, inline config can be merged into the local `.shai/config.yaml`.
-
-## Validation Timing
-
-Extension ops are resolved at execution time.
-
-That means:
-
-- the static recipe schema only knows that `inputs` is an object
-- concrete `input_schema` validation happens after the op is resolved
-- defaults are still applied before template resolution once the op is resolved
-
-## Example
-
-Directory:
-
-```text
-tools/
-  ops/
-    echo/
-      op.yaml
-      main.py
-```
-
-`op.yaml`:
-
-```yaml
-name: echo
-shell: bash
-run: python3 main.py
-input_schema:
-  type: object
-  required: [message, ref]
-  properties:
-    message:
-      type: string
-    ref:
-      type: string
-      default: "${{ context.git.ref }}"
-output_schema:
-  type: object
-  properties:
-    echoed:
-      type: string
-    ref:
-      type: string
-```
-
-`main.py`:
-
-```python
-import json
-import sys
-
-payload = json.load(sys.stdin)
-json.dump(
-    {
-        "echoed": payload["message"],
-        "ref": payload["ref"],
-    },
-    sys.stdout,
-)
-```
-
-Recipe:
-
-```yaml
-id: example
-version: "1.0"
-input_schema:
-  title:
-    type: string
-    required: true
-sequence:
-  - id: echo
-    op: ./tools/ops/echo
-    inputs:
-      message: "${{ inputs.title }}"
-outputs:
-  echoed: "${{ sequence.echo.outputs.echoed }}"
-  ref: "${{ sequence.echo.outputs.ref }}"
-```
-
-If the recipe is run with:
-
-```yaml
-title: Hello World
-```
-
-The extension process receives stdin equivalent to:
-
-```json
-{"message":"Hello World","ref":"<resolved from context.git.ref>"}
-```
-
-## Practical Guidance
-
-- Prefer stdin JSON for all business inputs.
-- Use manifest `env` only for explicit process configuration that is not part of the typed input payload.
-- `input_schema` and `output_schema` are required so validation failures are immediate.
-- Use schema `default` for missing-field behavior instead of baking defaults into the script. Use CEL expressions/templates to automatically configure common context values.
-- Use cell-local paths for ops that live with the current cell or repo.
-- Use git selectors for ops loaded from another repo or pinned ref.
+For execution issues with older c2j versions, see
+[Codex troubleshooting](./codex/TROUBLESHOOTING.md). Those historical runtime
+limitations are not the current Nix package contract.

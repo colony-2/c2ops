@@ -1,13 +1,16 @@
 # Kimi Code op
 
 Runs the maintained [Kimi Code CLI](https://github.com/MoonshotAI/kimi-code), pinned
-at `@moonshot-ai/kimi-code@2.1.1`, through `npm exec`. Requires Node.js 24.15+
-with npm and Python 3.12+. The obsolete Python `kimi-cli` package is not used.
+at `@moonshot-ai/kimi-code@2.1.1`. The manifest explicitly declares
+`pnpm:@moonshot-ai/kimi-code@2.1.1`; c2j prepares the CLI before execution.
+The Nix package includes Python and Git. The worker base supplies pnpm and
+Node.js 24.15+. Configure the [`colony2` cache](../NIX_PACKAGES.md) and replace
+`<commit>` below with a published CI revision.
 
 ```yaml
 sequence:
   - id: code_task
-    op: git+https://github.com/colony-2/c2ops.git//kimi@main
+    op: nix:github:colony-2/c2ops/<commit>#kimi
     inputs:
       prompt: Fix the failing tests in this repository.
       worktree_path: "{{ context.environment.op.worktree_path }}"
