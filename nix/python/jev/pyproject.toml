@@ -3,7 +3,7 @@ name = "c2ops-jev-runtime"
 version = "0.1.0"
 requires-python = ">=3.13,<3.14"
 dependencies = [
-  "typesafe-sdk==0.7.2"
+  "typesafe-sdk==0.7.4"
 ]
 
 [tool.uv]

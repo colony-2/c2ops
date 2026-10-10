@@ -3,6 +3,7 @@ package codex
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -107,10 +108,19 @@ func installFakeCodex(t *testing.T, script string) {
 	t.Helper()
 
 	binDir := t.TempDir()
-	path := filepath.Join(binDir, "codex")
+	path := filepath.Join(binDir, "fake-codex")
 	script = strings.Replace(script, "set -euo pipefail", "set -euo pipefail\nif [[ ${1:-} == --version ]]; then echo codex-cli 0.157.1; exit 0; fi", 1)
 	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
 		t.Fatalf("write fake codex: %v", err)
+	}
+	// Match the native qualified form; a bare codex lookup must fail.
+	launcher := fmt.Sprintf("#!/bin/sh\n[ \"$1\" = %s ] && [ \"$2\" = dlx ] && [ \"$3\" = codex ] || exit 127\nshift 3\nexec %s \"$@\"\n",
+		shellQuote("--package="+codexPackage), shellQuote(path))
+	if err := os.WriteFile(filepath.Join(binDir, "pnpm"), []byte(launcher), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(binDir, "codex"), []byte("#!/bin/sh\necho 'unexpected bare codex invocation' >&2\nexit 127\n"), 0o755); err != nil {
+		t.Fatal(err)
 	}
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("CODEX_HOME", filepath.Join(t.TempDir(), "host-codex-home"))
@@ -150,3 +160,5 @@ func assertFileContent(t *testing.T, path string, want string) {
 		t.Fatalf("expected %s content %q, got %q", path, want, data)
 	}
 }
+
+func shellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'" }

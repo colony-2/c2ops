@@ -27,6 +27,13 @@ class KimiTests(unittest.TestCase):
         self.command = [sys.executable, str(Path(__file__).resolve().parents[1] / "scripts/op_test.py"),
                         "run", "nix:github:colony-2/c2ops/main#kimi"]
 
+    def test_cli_call_matches_declared_package(self):
+        with patch.object(main, "execute", return_value=subprocess.CompletedProcess([], 1, "", "test")) as execute:
+            main.run(self.payload)
+        args = execute.call_args.args[0]
+        self.assertEqual(args[:4], ["pnpm", "--package=" + main.KIMI_PACKAGE, "dlx", "kimi"])
+        self.assertIn("pnpm:" + main.KIMI_PACKAGE, self.manifest["dependencies"])
+
     def test_real_cli_session_and_artifacts(self):
         requests = []
 
@@ -64,11 +71,16 @@ class KimiTests(unittest.TestCase):
             "KIMI_DISABLE_TELEMETRY": "1",
         }
         jsonschema.validate(self.payload, self.manifest["input_schema"])
+        poison = self.root / "bin"
+        poison.mkdir()
+        (poison / "kimi").write_text("#!/bin/sh\necho 'unexpected bare kimi invocation' >&2\nexit 127\n")
+        (poison / "kimi").chmod(0o755)
         for index in range(2):
-            # Execute the real manifest; the test launcher supplies its declared CLI.
+            # The runner prepares declared tools; a conflicting host CLI must not win.
             proc = subprocess.run(self.command, input=json.dumps(self.payload),
                                   capture_output=True, text=True, timeout=90,
-                                  env={**os.environ, **self.manifest.get("env", {})})
+                                  env={**os.environ, **self.manifest.get("env", {}),
+                                       "PATH": str(poison) + os.pathsep + os.environ["PATH"]})
             self.assertEqual(proc.returncode, 0, proc.stderr + proc.stdout)
             output = json.loads(proc.stdout)["output"]
             jsonschema.validate(output, self.manifest["output_schema"])

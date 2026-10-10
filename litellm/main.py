@@ -2,7 +2,7 @@
 # /// script
 # requires-python = ">=3.12"
 # dependencies = [
-#   "litellm==1.102.1",
+#   "litellm==1.104.2",
 # ]
 # ///
 

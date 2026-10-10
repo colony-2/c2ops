@@ -54,6 +54,17 @@ def run(coordinate):
     if entry.is_absolute() or entry.parts[0] != "bin" or ".." in entry.parts:
         raise ValueError(f"invalid packaged command: {command}")
     env = {**os.environ, **manifest.get("env", {})}
+    if manifest.get("dependencies"):
+        # Use c2j's real preparer and qualified dispatchers, exactly as recipe
+        # setup does. Do not supply CLI binaries through npm or ambient PATH.
+        prepared = subprocess.run([
+            "go", "run", str(ROOT / "scripts/with-tools.go"),
+            "--manifest", str(package / "share/c2j/op.json"),
+        ], cwd=ROOT / "codex", text=True, capture_output=True)
+        if prepared.returncode:
+            raise RuntimeError(prepared.stderr.strip())
+        bindings = prepared.stdout.strip()
+        env["PATH"] = bindings + os.pathsep + env.get("PATH", "")
     os.chdir(package)
     os.execve(package / entry, [str(package / entry), *command[1:]], env)
 

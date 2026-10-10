@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["typesafe-sdk==0.7.2"]
+# dependencies = ["typesafe-sdk==0.7.4"]
 # ///
 """Evaluate typed questions with TypeSafe's System One API."""
 

@@ -14,6 +14,10 @@ import sys
 from pathlib import Path
 
 
+# Must match the declared CLI dependency in op.yaml/op.json.
+KIMI_PACKAGE = "@moonshot-ai/kimi-code@2.1.1"
+
+
 def execute(args, worktree, env, timeout):
     # A coding CLI can spawn shells. Stop the entire process group on timeout.
     with subprocess.Popen(args, stdin=subprocess.DEVNULL, cwd=worktree, env=env,
@@ -59,7 +63,8 @@ def run(payload):
     env.update(extra_env)
     env.setdefault("KIMI_CODE_HOME", str(workdir / ".kimi-op"))
     env.setdefault("KIMI_DISABLE_TELEMETRY", "1")
-    args = ["kimi", "--prompt", prompt, "--output-format", "stream-json"]
+    args = ["pnpm", "--package=" + KIMI_PACKAGE, "dlx", "kimi",
+            "--prompt", prompt, "--output-format", "stream-json"]
     if session:
         args.extend(["--session", session])
     if payload.get("model"):

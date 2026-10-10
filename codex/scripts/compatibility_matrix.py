@@ -13,6 +13,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import shlex
 import subprocess
 import tempfile
@@ -43,9 +44,10 @@ def main():
     output.mkdir(parents=True, exist_ok=True)
     env = dict(os.environ)
     env.setdefault("npm_config_cache", "/tmp/c2ops-npm-cache")
-    registry = run(["npm", "view", "@openai/codex", "dist-tags", "versions", "--json"], env=env, timeout=60)
+    registry = subprocess.run(["npm", "view", "@openai/codex", "dist-tags", "versions", "--json"],
+                              env=env, timeout=60, text=True, capture_output=True)
     if registry.returncode:
-        raise RuntimeError(registry.stdout)
+        raise RuntimeError(registry.stderr)
     metadata = json.loads(registry.stdout)
     if isinstance(metadata, list):
         metadata = metadata[0]
@@ -75,25 +77,28 @@ def main():
             raise RuntimeError(build.stdout)
 
         def provision(version, directory):
-            install = run(["npm", "exec", "--yes", f"--package=@openai/codex@{version}",
-                           "--", "sh", "-c", "command -v codex"], env=env, timeout=180)
-            (output / f"{version}-install.log").write_text(install.stdout)
-            if install.returncode:
-                raise RuntimeError("npm provisioning failed; see install log")
-            executable = install.stdout.strip().splitlines()[-1]
-            actual = run([executable, "--version"], env=env, timeout=20)
-            if actual.returncode or actual.stdout.strip() != f"codex-cli {version}":
+            # Provision and invoke a named command from an explicit package.
+            command = ["pnpm", "--reporter=silent", f"--package=@openai/codex@{version}", "dlx", "codex"]
+            actual = run([*command, "--version"], env=env, timeout=180)
+            (output / f"{version}-install.log").write_text(actual.stdout)
+            version_line = actual.stdout.strip().splitlines()[-1] if actual.stdout.strip() else ""
+            if actual.returncode or version_line != f"codex-cli {version}":
                 raise RuntimeError(f"wrong CLI resolved: {actual.stdout}")
             # Every invocation delegates to the verified CLI by default.
             shim = Path(temp) / directory
             shim.mkdir()
-            script = "#!/bin/sh\n"
+            declared = next(ref.removeprefix("pnpm:") for ref in json.loads((ROOT / "op.json").read_text())["dependencies"]
+                            if ref.startswith("pnpm:@openai/codex@"))
+            script = ("#!/bin/sh\n"
+                      f'[ "$1" = {shlex.quote("--package=" + declared)} ] && [ "$2" = dlx ] && [ "$3" = codex ] || exit 127\n'
+                      "shift 3\n")
             if args.spoof_version:
                 script += ("if [ \"$#\" -eq 1 ] && [ \"$1\" = --version ]; then\n"
                            f"  printf '%s\\n' {shlex.quote('codex-cli ' + args.spoof_version)}\n  exit 0\nfi\n")
-            (shim / "codex").write_text(script + f"exec {shlex.quote(executable)} \"$@\"\n")
-            (shim / "codex").chmod(0o755)
-            return shim, actual.stdout.strip()
+            (shim / "pnpm").write_text(script + "exec " + shlex.join([
+                shutil.which("pnpm", path=env["PATH"]), *command[1:]]) + ' "$@"\n')
+            (shim / "pnpm").chmod(0o755)
+            return shim, version_line
 
         resume_shim = None
         if args.resume_version:

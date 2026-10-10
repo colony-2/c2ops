@@ -31,12 +31,14 @@ let
         version = "0.1.0";
         # Test-only c2j/JobDB imports are private and are not runtime inputs.
         # The normal Go suites run separately in CI, with repository credentials.
-        src = lib.cleanSourceWith {
-          src = ../. + "/${module}";
-          filter = path: type:
-            type == "directory" ||
-            (lib.hasSuffix ".go" path && !(lib.hasSuffix "_test.go" path)) ||
-            builtins.elem (builtins.baseNameOf path) [ "go.mod" "go.sum" ];
+        src = lib.fileset.toSource {
+          root = ../. + "/${module}";
+          # Exclude empty test/cache directories as well as their files, so a
+          # path override and a Git checkout produce the same package.
+          fileset = lib.fileset.fileFilter (file:
+            (file.hasExt "go" && !(lib.hasSuffix "_test.go" file.name)) ||
+            builtins.elem file.name [ "go.mod" "go.sum" ]
+          ) (../. + "/${module}");
         };
         vendorHash = vendorHashes.${module};
         subPackages = [ subPackage ];

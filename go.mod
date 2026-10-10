@@ -3,15 +3,15 @@ module github.com/colony-2/c2ops
 go 1.26.0
 
 require (
-	github.com/anthropics/anthropic-sdk-go v1.75.0
-	github.com/colony-2/shai v0.0.13
+	github.com/anthropics/anthropic-sdk-go v1.80.0
+	github.com/colony-2/shai v0.0.14
 	github.com/go-playground/validator/v10 v10.30.5
 	github.com/google/uuid v1.6.0
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/stretchr/testify v1.12.1
 	golang.org/x/time v0.16.0
-	google.golang.org/genai v1.71.0
+	google.golang.org/genai v1.73.0
 )
 
 require (

@@ -39,7 +39,8 @@
         let pkgs = nixpkgs.legacyPackages.${system};
         in {
           default = pkgs.mkShell {
-            packages = with pkgs; [ go gitMinimal gnumake python312 uv nodejs_24 pnpm_10 ];
+            packages = with pkgs; [ go gitMinimal gnumake python312 uv nodejs_24 pnpm ];
+            PNPM_CONFIG_ALLOW_BUILDS = builtins.readFile ./nix/pnpm-build-policy.json;
           };
         });
     };

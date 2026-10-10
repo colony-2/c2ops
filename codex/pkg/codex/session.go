@@ -413,7 +413,8 @@ func rejectLegacySessionFields(data []byte) error {
 func readCodexVersion(ctx context.Context, timeout time.Duration) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "codex", "--version")
+	args := codexCommand("--version")
+	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.WaitDelay = 2 * time.Second
 	cmd.Cancel = func() error { terminateProcessGroup(cmd); return nil }

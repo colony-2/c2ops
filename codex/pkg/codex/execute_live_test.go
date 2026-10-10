@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -141,8 +140,8 @@ func TestLiveExecuteResumesSessionKnowledge(t *testing.T) {
 
 func requireCodexCLI(t *testing.T) {
 	t.Helper()
-	if _, err := exec.LookPath("codex"); err != nil {
-		t.Fatalf("codex CLI not found: %v", err)
+	if _, err := readCodexVersion(context.Background(), 30*time.Second); err != nil {
+		t.Fatalf("declared Codex CLI not available: %v", err)
 	}
 }
 

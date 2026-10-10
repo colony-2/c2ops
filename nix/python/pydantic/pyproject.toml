@@ -3,7 +3,7 @@ name = "c2ops-pydantic-runtime"
 version = "0.1.0"
 requires-python = ">=3.13,<3.14"
 dependencies = [
-  "pydantic-ai==2.51.0"
+  "pydantic-ai==2.55.0"
 ]
 
 [tool.uv]

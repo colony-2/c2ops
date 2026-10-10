@@ -6,17 +6,23 @@ import (
 	"strings"
 )
 
+// Keep this package coordinate aligned with both Codex manifests.
+const codexPackage = "@openai/codex@0.162.1"
+
+func codexCommand(args ...string) []string {
+	return append([]string{"pnpm", "--package=" + codexPackage, "dlx", "codex"}, args...)
+}
+
 func buildCommand(opts Options, schemaContainerPath string) []string {
-	cmd := []string{
-		"codex",
+	cmd := codexCommand(
 		"exec",
-		"-c", "sqlite_home=" + strconv.Quote(opts.CodexHome),
+		"-c", "sqlite_home="+strconv.Quote(opts.CodexHome),
 		"--json",
 		"--dangerously-bypass-approvals-and-sandbox",
 		"--skip-git-repo-check",
 		"--output-schema",
 		schemaContainerPath,
-	}
+	)
 	if strings.TrimSpace(opts.Model) != "" {
 		cmd = append(cmd, "--model", opts.Model)
 	}

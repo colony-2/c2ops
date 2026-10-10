@@ -2,7 +2,7 @@
 # /// script
 # requires-python = ">=3.12"
 # dependencies = [
-#   "pydantic-ai==2.51.0",
+#   "pydantic-ai==2.55.0",
 # ]
 # ///
 

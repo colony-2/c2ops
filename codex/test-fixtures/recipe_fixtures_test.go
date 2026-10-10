@@ -24,6 +24,7 @@ import (
 	extops "github.com/colony-2/c2j/pkg/ops/extensions"
 	"github.com/colony-2/c2j/pkg/recipe"
 	"github.com/colony-2/c2j/pkg/swfutil"
+	"github.com/colony-2/c2j/pkg/toolenv"
 	"github.com/colony-2/c2j/pkg/worker/commandop"
 	"github.com/colony-2/c2j/pkg/worker/compiler"
 	workerops "github.com/colony-2/c2j/pkg/worker/ops"
@@ -152,7 +153,6 @@ printf '%s\n' '{"type":"item.completed","item":{"item_type":"assistant_message",
 `
 	require.NoError(t, os.WriteFile(stubPath, []byte(stub), 0o755))
 
-	t.Setenv("PATH", stubDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	return stubPath
 }
 
@@ -446,7 +446,7 @@ func (c *capturingTaskWorker) Run(ctx jobworkflow.TaskContext, input jobdb.TaskD
 			if setup.Environment == nil {
 				return nil, fmt.Errorf("Codex fixture is missing its prepared tool environment")
 			}
-			bindings, bindErr := c.fixtureBindings(setup.Environment.Path)
+			bindings, bindErr := c.fixtureBindings(setup.Environment)
 			if bindErr != nil {
 				return nil, bindErr
 			}
@@ -471,8 +471,8 @@ func (c *capturingTaskWorker) Run(ctx jobworkflow.TaskContext, input jobdb.TaskD
 	return output, err
 }
 
-func (c *capturingTaskWorker) fixtureBindings(prepared string) (string, error) {
-	entries, err := os.ReadDir(prepared)
+func (c *capturingTaskWorker) fixtureBindings(prepared *toolenv.Environment) (string, error) {
+	entries, err := os.ReadDir(prepared.Path)
 	if err != nil {
 		return "", err
 	}
@@ -481,14 +481,37 @@ func (c *capturingTaskWorker) fixtureBindings(prepared string) (string, error) {
 		return "", err
 	}
 	for _, entry := range entries {
-		if entry.Name() == "codex" {
+		if entry.Name() == "codex" || entry.Name() == "pnpm" {
 			continue
 		}
-		if err := os.Symlink(filepath.Join(prepared, entry.Name()), filepath.Join(dir, entry.Name())); err != nil {
+		if err := os.Symlink(filepath.Join(prepared.Path, entry.Name()), filepath.Join(dir, entry.Name())); err != nil {
 			return "", err
 		}
 	}
-	if err := os.Symlink(c.capture.stubCodex, filepath.Join(dir, "codex")); err != nil {
+	// Retain c2j's real qualified dispatcher, replacing only the prepared
+	// client's absolute target. Poison the bare name to catch PATH regressions.
+	client := ""
+	for _, tool := range prepared.Tools {
+		if strings.HasPrefix(tool.Reference, "pnpm:@openai/codex@") {
+			client = filepath.Join(tool.Bin, "codex")
+		}
+	}
+	if client == "" {
+		return "", fmt.Errorf("missing prepared Codex package")
+	}
+	runner, err := os.ReadFile(filepath.Join(prepared.Path, "pnpm"))
+	if err != nil {
+		return "", err
+	}
+	quote := func(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'" }
+	patched := strings.ReplaceAll(string(runner), quote(client), quote(c.capture.stubCodex))
+	if patched == string(runner) {
+		return "", fmt.Errorf("prepared dispatcher did not bind the declared Codex client")
+	}
+	if err := os.WriteFile(filepath.Join(dir, "pnpm"), []byte(patched), 0o755); err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "codex"), []byte("#!/bin/sh\necho 'unexpected bare codex invocation' >&2\nexit 127\n"), 0o755); err != nil {
 		return "", err
 	}
 	return dir, nil
