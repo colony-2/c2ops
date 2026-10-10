@@ -197,3 +197,46 @@ install scripts; the noninteractive CLI's shell/session/artifact tests pass
 using its published assets. CI and the dev shell set `PNPM_CONFIG_ALLOW_BUILDS`
 from that file. Workers need the same policy before c2j setup, as documented in
 [Nix packages](./NIX_PACKAGES.md). This does not enable scripts globally.
+
+## Shared nixpkgs Python dependencies — 2026-10-10
+
+This supersedes the Python packaging and version choices above. Prefer existing
+nixpkgs packages and accept compatible older releases so ops reuse the same
+library store paths and upstream binary-cache entries.
+
+| Dependency | Selected package |
+| --- | --- |
+| Python | nixpkgs `python3`, currently 3.14.7 |
+| PydanticAI | Locally packaged Slim/Graph 2.31.0; nixpkgs OpenAI 2.53.0 and Google GenAI 2.16.0; compatible Anthropic 0.108.0 wheel |
+| LiteLLM | `python3Packages.litellm` 1.102.1 with an interpreter-shutdown fix |
+| Aider | `aider-chat` 0.86.1, including nixpkgs' patches and our shared patched LiteLLM |
+| TypeSafe SDK | Locally packaged 0.7.4 wheel, with all dependencies from nixpkgs |
+
+Removed uv2nix, pyproject-nix, their build-system input, and the per-op Python
+lockfiles. `flake.lock` now pins the shared package set. Pydantic, LiteLLM, and
+Jev use `python3.withPackages`; Aider invokes the existing Nix-packaged CLI by
+an absolute store path. Its source wrapper uses a qualified `nix run` reference
+declared in `op.yaml`. Source library pins match the installed package versions.
+
+The Nix checks verify version agreement and actual reuse of the Pydantic library
+path, and construct all documented PydanticAI providers. The Aider integration
+test supplies a failing ambient `aider` executable to catch accidental PATH
+selection. These checks run in the existing AMD64 and ARM64 CI matrix.
+
+Provider construction exposed incompatible SDKs in nixpkgs' PydanticAI 2.52.0
+combination. The selected older Python wheels keep all three documented
+providers usable while sharing other nixpkgs dependencies. It also caught the
+obsolete `google-gla:` model mapping; Gemini now uses `google:`, accepting the old
+explicit prefix as an alias. Aider's resume test exposed a LiteLLM destructor
+deadlock during interpreter shutdown, fixed by skipping cleanup once Python is
+finalizing. These compatibility packages must be published to `colony2`.
+
+Cachix skips paths available in `cache.nixos.org`; the existing publishing action
+can therefore push the complete runtime closure without duplicating those
+upstream entries in `colony2`. Custom outputs still need publishing. See the
+[Cachix FAQ](https://docs.cachix.org/faq).
+
+Validation on ARM64: all five Python op integration suites and all Python
+package/manifest checks passed. The rebuilt Aider package also passed 460
+upstream tests (one skipped). Metadata evaluation passed for both architectures;
+native AMD64 execution remains covered by CI.

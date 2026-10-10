@@ -80,14 +80,48 @@ needs access to this definition repository and the flake's evaluation inputs.
 | `codex`, `skill-run` | Compiled Go op, SQLite implementation, Git | `pnpm:@openai/codex@0.162.1` |
 | `gha`, `gha-many` | Compiled Go op, Git, Docker client | Reachable Docker daemon for the local backend; credentials for the GitHub backend |
 | `rule_gate` | Compiled Go op | None |
-| `pydantic`, `litellm`, `jev` | Python 3.13 and locked Python libraries | Provider credentials |
-| `aider` | Python 3.12, locked Aider environment, Git | Provider credentials |
-| `kimi` | Python 3.13 and Git | `pnpm:@moonshot-ai/kimi-code@2.1.1` |
+| `pydantic` | Python 3.14, PydanticAI Slim 2.31.0 and OpenAI/Anthropic/Google provider libraries | Provider credentials |
+| `litellm` | Python 3.14 and nixpkgs LiteLLM 1.102.1 with a shutdown fix | Provider credentials |
+| `jev` | Python 3.14, TypeSafe SDK 0.7.4 and nixpkgs library dependencies | Provider credentials |
+| `aider` | Python 3.14, nixpkgs Aider 0.86.1 using the same patched LiteLLM, Git | Provider credentials |
+| `kimi` | Python 3.14 and Git | `pnpm:@moonshot-ai/kimi-code@2.1.1` |
 
-Python environments are built using uv2nix from per-op `uv.lock` files. Aider
-uses Python 3.12 for its pinned NumPy dependency. No packaged op calls `go run`,
-`uv run`, or `npm exec`. Codex and Kimi's declared CLIs are prepared by c2j before
-the op's execution budget; those npm packages are **not** stored in Cachix.
+Python environments use nixpkgs' `python3.withPackages`: each environment links
+to separately packaged libraries in `/nix/store`. Ops with matching dependencies
+share those store paths. The package contains the op script and a wrapper that
+binds its interpreter; Aider's wrapper also binds the upstream CLI's absolute
+path. We accept the versions in the pinned nixpkgs package set, even when PyPI
+has newer releases, to preserve upstream package and binary-cache reuse.
+
+There are three compatibility exceptions; their other dependencies still come
+from the shared nixpkgs package set:
+
+- TypeSafe SDK is not in this nixpkgs revision. Its wheel is packaged in
+  [`nix/typesafe-sdk.nix`](./nix/typesafe-sdk.nix) with `buildPythonPackage`.
+- Nixpkgs' PydanticAI 2.52.0 expects newer SDKs than nixpkgs supplies. We package
+  PydanticAI/Graph 2.31.0 and Anthropic 0.108.0 as small wheels, reusing nixpkgs'
+  OpenAI 2.53.0 and Google GenAI 2.16.0. Anthropic 1.6.0 uses incompatible httpx2
+  clients. These versions are also pinned for uv source execution.
+- LiteLLM's HTTP-client destructor can deadlock during Python shutdown. A small
+  [patch](./nix/patches/litellm-finalization.patch) skips cleanup during interpreter
+  finalization. Aider and the LiteLLM op share that patched library. Aider is
+  rebuilt against it with nixpkgs' existing packaging and tests.
+
+We do not maintain separate uv2nix environments or transitive Python lockfiles.
+
+CI still pushes each op's runtime closure through the existing Cachix action.
+Cachix treats paths already in `cache.nixos.org` as upstream and does not store
+them in our cache. Our wrappers, composed environments, compatibility packages,
+and any dependencies unavailable upstream still need publishing. Workers must retain
+both substituters. See [Cachix's upstream-cache behavior](https://docs.cachix.org/faq).
+
+No packaged op calls `go run`, `uv run`, or `npm exec`. Codex and Kimi's declared
+CLIs are prepared by c2j before the op's execution budget; those npm packages
+are **not** stored in Cachix.
+
+The flake also exports `aider-cli`, a normal CLI package for source/Git Aider
+dependencies. It is not a JSON-speaking op. The packaged Aider op references the
+same CLI, so its closure includes everything needed to publish this helper.
 Their declared top-level versions are pinned; c2j does not provide a transitive
 pnpm lock service. Keep the worker tool cache persistent for reuse.
 
@@ -171,32 +205,40 @@ nix eval --json .#packages.aarch64-linux.codex.c2j
 
 The package checks compare installed and evaluation-time manifests and invoke
 every op with an empty PATH and invalid input from its read-only package
-directory. They also exercise a successful `rule_gate` invocation. Integration tests
+directory. They also exercise a successful `rule_gate` invocation, check Python
+source pins against installed distributions, construct all three PydanticAI
+providers, and verify that the Python library ops import the same nixpkgs
+Pydantic store path. Integration tests
 use the packaged processes and real pinned clients against mock providers; the
 package checks need no provider credentials. CI disables import-from-derivation during evaluation.
 
 Add new ops to `nix/ops.json`. Edit schemas in `op.yaml`, then regenerate `op.json`.
 The generator fails if a discovered manifest is absent from the catalog.
 
-For Python dependency updates, change the direct pins in `main.py` and the
-corresponding `nix/python/<op>/pyproject.toml`, then run:
+For Python dependency updates, prefer updating the pinned nixpkgs package set.
+Keep the PEP 723 pins in Pydantic, LiteLLM, and Jev's `main.py` aligned with the
+installed distributions; the Nix checks enforce agreement. Provider libraries
+are selected explicitly in `nix/packages.nix`. Update the version and wheel hash
+in the corresponding `nix/*.nix` expression for a locally packaged library.
+Recheck whether newer nixpkgs packages eliminate each compatibility exception.
+Accept compatible
+nixpkgs versions rather than overriding packages solely to match the latest PyPI
+release, since an override can prevent reuse of upstream substitutes.
 
-```sh
-uv lock --project nix/python/jev
-```
-
-Commit the lock and run the source and Nix checks. The generator verifies that
-direct dependency declarations agree. For Go module changes, update the matching
+For Go module changes, update the matching
 entry in `nix/go-vendor-hashes.json`: temporarily set it to
 `sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=`, build that package, replace
 it with the actual hash reported by Nix, and build again. Hashes cover production
 source dependencies, excluding test-only private c2j/JobDB imports.
 
 Update Nix inputs with `nix flake update` and commit `flake.lock`. Also update the
-pinned nixpkgs revision in local/Git `op.yaml` dependency references and regenerate
-the manifests. Local/Git source execution remains available, with explicit tool
+pinned nixpkgs revision in local/Git `op.yaml` dependency references, then
+regenerate the manifests. Check that
+the source manifests' Python attributes still match `pkgs.python3`. Local/Git
+source execution remains available, with explicit tool
 declarations, but still performs Go compilation or uv script library setup at
-invocation time. Packaged execution avoids those steps.
+invocation time. Aider's source wrapper uses its declared Nix CLI through
+`nix run <reference> -- ...`; packaged execution binds that CLI directly.
 
 ## Integration tests and local overrides
 

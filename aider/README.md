@@ -19,9 +19,9 @@ op: nix:github:colony-2/c2ops/main#aider
 ## What It Does
 
 - Reads one JSON payload from stdin
-- Runs with a packaged Python interpreter and locked dependencies
-- Shares the direct dependency pins in [main.py](./main.py); Nix locks all transitive dependencies
-- Invokes the `aider` CLI as a subprocess
+- Runs a standard-library Python wrapper with the shared nixpkgs Aider package
+- Uses Aider 0.86.1 from the revision pinned in `flake.lock`, with the shared LiteLLM shutdown fix described in [Nix packages](../NIX_PACKAGES.md)
+- Invokes the packaged CLI by its absolute store path; source execution uses the manifest-declared Nix reference
 - Returns a `codex.exec`-shaped JSON result in the extension-op `{"output": ...}` envelope
 
 ## Requirements

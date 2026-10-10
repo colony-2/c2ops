@@ -2,6 +2,11 @@
 
 Status: proposal for c2j; the example syntax below is not currently supported.
 
+c2ops currently uses shared nixpkgs libraries and an explicitly bound Python
+interpreter instead; see [Nix packages](./NIX_PACKAGES.md). This proposal remains
+an optional alternative for projects that want uv-managed environments. It is
+not required to share dependencies between Nix-packaged ops.
+
 ## Request
 
 Let an extension op declare a locked Python environment in its manifest and
