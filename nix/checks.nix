@@ -3,7 +3,7 @@ let
   inherit (pkgs) lib;
 in {
   manifests = pkgs.runCommand "c2ops-manifests" {
-    nativeBuildInputs = [ (pkgs.python313.withPackages (p: [ p.pyyaml p.jsonschema ])) ];
+    nativeBuildInputs = [ (pkgs.python3.withPackages (p: [ p.pyyaml p.jsonschema ])) ];
   } ''
     cd ${../.}
     python scripts/manifests.py --check
@@ -20,9 +20,16 @@ in {
   '';
 } // lib.mapAttrs (name: package:
   pkgs.runCommand "c2ops-${name}-contract" {
-    nativeBuildInputs = [ pkgs.python313 ];
+    nativeBuildInputs = [ pkgs.python3 ];
+    SSL_CERT_FILE = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
   } ''
     python ${../scripts/check-package.py} ${package} ${pkgs.writeText "${name}-manifest.json" (builtins.toJSON package.c2j)} nix:github:colony-2/c2ops/main#${name}
+    ${lib.optionalString (builtins.elem name [ "pydantic" "litellm" "jev" ]) ''
+      ${package.pythonEnv}/bin/python ${../scripts/check-python-runtime.py} ${../. + "/${name}/main.py"} ${pkgs.python3Packages.pydantic} ${name}
+    ''}
+    ${lib.optionalString (name == "aider") ''
+      HOME=$(mktemp -d) timeout 30 ${lib.getExe packages.aider-cli} --version
+    ''}
     touch "$out"
   ''
-) packages
+) (lib.getAttrs (builtins.attrNames (builtins.fromJSON (builtins.readFile ./ops.json))) packages)

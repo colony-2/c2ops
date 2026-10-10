@@ -1,0 +1,14 @@
+--- a/litellm/llms/custom_httpx/http_handler.py
++++ b/litellm/llms/custom_httpx/http_handler.py
+@@ -1086,6 +1086,11 @@
+             transport._close_recycled_session(session)  # pyright: ignore[reportPrivateUsage]  # deliberate reuse of the transport's lifecycle-aware disposal; an async close can never run in this context
+ 
+     def __del__(self) -> None:
++        # Importing the transport while Python tears down modules can deadlock
++        # in the import lock. Process exit will reclaim these resources; only
++        # attempt client cleanup while the interpreter can still run it.
++        if sys.is_finalizing():
++            return
+         try:
+             if not _handler_may_close_client(sys.getrefcount(self._client), self._owns_client):
+                 return

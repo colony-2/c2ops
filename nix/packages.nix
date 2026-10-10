@@ -1,21 +1,31 @@
-{ inputs, pkgs }:
+{ pkgs }:
 let
   inherit (pkgs) lib;
   catalog = builtins.fromJSON (builtins.readFile ./ops.json);
   vendorHashes = builtins.fromJSON (builtins.readFile ./go-vendor-hashes.json);
 
-  pythonEnv = name:
-    let
-      workspace = inputs.uv2nix.lib.workspace.loadWorkspace {
-        workspaceRoot = ./python + "/${name}";
-      };
-      pythonSet = (pkgs.callPackage inputs.pyproject-nix.build.packages {
-        python = pkgs.${catalog.${name}.python or "python313"};
-      }).overrideScope (lib.composeManyExtensions [
-        inputs.pyproject-build-systems.overlays.wheel
-        (workspace.mkPyprojectOverlay { sourcePreference = "wheel"; })
-      ]);
-    in pythonSet.mkVirtualEnv "c2ops-${name}-python" workspace.deps.default;
+  pythonRuntime = pkgs.python3.override {
+    packageOverrides = final: prev: {
+      litellm = prev.litellm.overridePythonAttrs (old: {
+        patches = (old.patches or [ ]) ++ [ ./patches/litellm-finalization.patch ];
+      });
+    };
+  };
+  aiderPackage = pkgs.aider-chat.override { python3Packages = pythonRuntime.pkgs; };
+
+  # Reuse nixpkgs derivations, with only the compatibility fixes above/below.
+  # withPackages links libraries into an environment; it does not vendor them.
+  pythonEnvs = {
+    pydantic = pythonRuntime.withPackages (p: [
+      (p.callPackage ./pydantic-ai.nix { })
+      (p.callPackage ./anthropic-compat.nix { })
+      p.openai p.tiktoken p.google-genai
+    ]);
+    litellm = pythonRuntime.withPackages (p: [ p.litellm ]);
+    jev = pythonRuntime.withPackages (p: [ (p.callPackage ./typesafe-sdk.nix { }) ]);
+    aider = pythonRuntime;
+    kimi = pythonRuntime;
+  };
 
   mkOp = name: op:
     let
@@ -46,7 +56,7 @@ let
         ldflags = [ "-s" "-w" ];
         doCheck = false;
       };
-      python = if name == "kimi" then pkgs.python313 else pythonEnv name;
+      python = pythonEnvs.${name};
     in pkgs.stdenvNoCC.mkDerivation {
       pname = "c2ops-${name}";
       version = "0.1.0";
@@ -64,11 +74,13 @@ let
           --add-flags "$out/libexec/main.py" \
           --set PYTHONNOUSERSITE 1 \
           --set PYTHONDONTWRITEBYTECODE 1 \
+          ${lib.optionalString (name == "aider") "--set C2OPS_AIDER_BIN ${lib.getExe aiderPackage}"} \
           --prefix PATH : ${lib.makeBinPath ([ python ] ++ runtime)}
       '') + ''
         runHook postInstall
       '';
       passthru.c2j = manifest;
+      passthru.pythonEnv = if op.kind == "python" then python else null;
       meta = {
         description = manifest.description;
         mainProgram = name;
@@ -76,4 +88,8 @@ let
         license = lib.licenses.asl20;
       };
     };
-in lib.mapAttrs mkOp catalog
+in (lib.mapAttrs mkOp catalog) // {
+  # A CLI dependency for source/Git Aider ops, not a JSON-speaking c2j op.
+  # It is also in the packaged Aider op's closure, so CI publishes it there.
+  aider-cli = aiderPackage;
+}

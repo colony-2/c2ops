@@ -60,8 +60,7 @@
     "kind": "python",
     "runtime": [
       "gitMinimal"
-    ],
-    "python": "python312"
+    ]
   },
   "litellm": {
     "path": "litellm",

@@ -2,7 +2,10 @@
 # /// script
 # requires-python = ">=3.12"
 # dependencies = [
-#   "pydantic-ai==2.55.0",
+#   "pydantic-ai-slim[anthropic,google,openai]==2.31.0",
+#   "anthropic==0.108.0",
+#   "openai==2.53.0",
+#   "google-genai==2.16.0",
 # ]
 # ///
 
@@ -72,12 +75,14 @@ def model_name(provider: str, model: str) -> str:
     # Chat Completions contract, including OpenAI-compatible endpoints.
     if model.startswith("openai:"):
         return "openai-chat:" + model.removeprefix("openai:")
+    if model.startswith("google-gla:"):
+        return "google:" + model.removeprefix("google-gla:")
     if ":" in model:
         return model
     if provider == "openai":
         return f"openai-chat:{model}"
     if provider == "gemini":
-        return f"google-gla:{model}"
+        return f"google:{model}"
     return f"{provider}:{model}"
 
 

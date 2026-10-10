@@ -1,11 +1,4 @@
 #!/usr/bin/env python3
-# /// script
-# requires-python = ">=3.12"
-# dependencies = [
-#   "aider-chat==0.86.2",
-#   "audioop-lts==0.2.2; python_version >= '3.13'",
-# ]
-# ///
 
 import json
 import os
@@ -14,6 +7,16 @@ import sys
 import uuid
 from pathlib import Path
 from typing import Any
+
+
+AIDER_REFERENCE = "github:colony-2/c2ops/main#aider-cli"
+
+
+def aider_command() -> list[str]:
+    # The Nix wrapper binds the packaged CLI directly. Source ops use c2j's
+    # qualified dispatch for the same manifest-declared derivation.
+    binary = os.environ.get("C2OPS_AIDER_BIN")
+    return [binary] if binary else ["nix", "run", AIDER_REFERENCE, "--"]
 
 
 def validate_input(payload: dict[str, Any]) -> None:
@@ -111,8 +114,7 @@ def main() -> int:
     prompt_file = session_dir / "prompt.txt"
     prompt_file.write_text(build_prompt(payload), encoding="utf-8")
 
-    args = [
-        "aider",
+    args = aider_command() + [
         "--message-file",
         str(prompt_file),
         "--exit",

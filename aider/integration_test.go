@@ -55,6 +55,11 @@ func TestAiderOpIntegration(t *testing.T) {
 	outbox := filepath.Join(workdir, "outbox")
 	require.NoError(t, os.MkdirAll(worktree, 0o755))
 	require.NoError(t, os.MkdirAll(outbox, 0o755))
+	// The packaged op must use its bound Nix CLI even when the caller supplies
+	// an unrelated executable with the same name in PATH.
+	poisonDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(poisonDir, "aider"), []byte("#!/bin/sh\necho unexpected ambient aider >&2\nexit 99\n"), 0o755))
+	callerPath := poisonDir + string(os.PathListSeparator) + os.Getenv("PATH")
 
 	first, stdout, stderr, err := runPackagedOp(t, map[string]any{
 		"prompt":               "Fix the test suite",
@@ -63,6 +68,7 @@ func TestAiderOpIntegration(t *testing.T) {
 		"worktree_path":        worktree,
 		"artifact_outbox_path": outbox,
 		"env": map[string]string{
+			"PATH":                  callerPath,
 			"AIDER_OPENAI_API_KEY":  "dummy",
 			"AIDER_OPENAI_API_BASE": server.BaseURL(),
 		},
@@ -92,6 +98,7 @@ func TestAiderOpIntegration(t *testing.T) {
 		"worktree_path":        worktree,
 		"artifact_outbox_path": outbox,
 		"env": map[string]string{
+			"PATH":                  callerPath,
 			"AIDER_OPENAI_API_KEY":  "dummy",
 			"AIDER_OPENAI_API_BASE": server.BaseURL(),
 		},

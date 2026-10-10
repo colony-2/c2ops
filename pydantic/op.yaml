@@ -3,7 +3,7 @@ description: Runs llm_inference2-compatible requests through PydanticAI via uv
 command: ["uv", "run", "--script", "./main.py"]
 timeout: 5m
 dependencies:
-  - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#python313
+  - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#python314
   - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#uv
 env:
   PYTHONUNBUFFERED: "1"

@@ -8,7 +8,6 @@
 import argparse
 import json
 from pathlib import Path
-import tomllib
 
 import yaml
 
@@ -28,16 +27,6 @@ def main():
         manifest = yaml.safe_load(source.read_text())
         for key in ("input_schema", "output_schema"):
             assert isinstance(manifest[key], dict), f"{source}: missing {key}"
-        if op["kind"] == "python" and name != "kimi":
-            script = source.with_name("main.py").read_text()
-            metadata = script.split("# /// script\n", 1)[1].split("# ///", 1)[0]
-            inline = tomllib.loads("\n".join(
-                line.removeprefix("# ") for line in metadata.splitlines()
-            ))
-            project = tomllib.loads((ROOT / "nix/python" / name / "pyproject.toml").read_text())
-            assert inline["dependencies"] == project["project"]["dependencies"], (
-                f"{name}: Nix Python dependencies differ from main.py; update pyproject.toml and uv.lock"
-            )
         manifest.pop("run", None)
         manifest.pop("shell", None)
         manifest["command"] = [f"bin/{name}"]

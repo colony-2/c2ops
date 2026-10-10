@@ -1,13 +1,12 @@
 {
   "name": "aider",
-  "description": "Runs Aider through the selector-backed extension mechanism via uv",
+  "description": "Runs the Nix-packaged Aider CLI through the selector-backed extension mechanism",
   "command": [
     "bin/aider"
   ],
   "timeout": "30m",
   "env": {
-    "PYTHONUNBUFFERED": "1",
-    "UV_PYTHON": "3.12"
+    "PYTHONUNBUFFERED": "1"
   },
   "input_schema": {
     "type": "object",

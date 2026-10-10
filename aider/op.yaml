@@ -1,14 +1,13 @@
 name: aider
-description: Runs Aider through the selector-backed extension mechanism via uv
-command: ["uv", "run", "--script", "./main.py"]
+description: Runs the Nix-packaged Aider CLI through the selector-backed extension mechanism
+command: ["python3", "./main.py"]
 timeout: 30m
 dependencies:
-  - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#python312
+  - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#python314
   - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#gitMinimal
-  - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#uv
+  - nix:github:colony-2/c2ops/main#aider-cli
 env:
   PYTHONUNBUFFERED: "1"
-  UV_PYTHON: "3.12"
 input_schema:
   type: object
   required: [prompt]
