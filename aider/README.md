@@ -10,10 +10,10 @@ Use this op from the repo root as:
 op: ./aider
 ```
 
-Nix package selector (replace `<commit>` with a published CI revision):
+Nix package selector:
 
 ```yaml
-op: nix:github:colony-2/c2ops/<commit>#aider
+op: nix:github:colony-2/c2ops/main#aider
 ```
 
 ## What It Does
@@ -88,7 +88,7 @@ Git-backed recipe example:
 ```yaml
 sequence:
   - id: apply_fix
-    op: nix:github:colony-2/c2ops/<commit>#aider
+    op: nix:github:colony-2/c2ops/main#aider
     inputs:
       prompt: Fix the failing unit tests in this repository.
       model: sonnet

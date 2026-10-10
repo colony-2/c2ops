@@ -25,10 +25,10 @@ Use this op from the repo root as:
 op: ./codex
 ```
 
-Nix package selector (replace `<commit>` with a published CI revision):
+Nix package selector:
 
 ```yaml
-op: nix:github:colony-2/c2ops/<commit>#codex
+op: nix:github:colony-2/c2ops/main#codex
 ```
 
 ## What It Does
@@ -61,7 +61,7 @@ Sandboxing is controlled by the reserved extension-op `sandbox` recipe input. Th
 ```yaml
 sequence:
   - id: code_task
-    op: nix:github:colony-2/c2ops/<commit>#codex
+    op: nix:github:colony-2/c2ops/main#codex
     inputs:
       prompt: Fix the failing tests in this repository.
       worktree_path: "{{ context.environment.op.worktree_path }}"
@@ -86,7 +86,7 @@ This module also exposes a nested selector-backed op for running one requested
 skill:
 
 ```yaml
-op: nix:github:colony-2/c2ops/<commit>#skill-run
+op: nix:github:colony-2/c2ops/main#skill-run
 ```
 
 `run_skill` uses the same Codex execution path as this op, but generates the

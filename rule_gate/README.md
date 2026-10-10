@@ -10,10 +10,10 @@ Use this op from the repo root as:
 op: ./rule_gate
 ```
 
-Nix package selector (replace `<commit>` with a published CI revision):
+Nix package selector:
 
 ```yaml
-op: nix:github:colony-2/c2ops/<commit>#rule_gate
+op: nix:github:colony-2/c2ops/main#rule_gate
 ```
 
 ## What It Does
@@ -97,7 +97,7 @@ rules:
 ```yaml
 sequence:
   - id: final_gate
-    op: nix:github:colony-2/c2ops/<commit>#rule_gate
+    op: nix:github:colony-2/c2ops/main#rule_gate
     artifacts:
       reviews/review-pack.json: ${{ states.review.artifacts["reviews/review-pack.json"] }}
     inputs:

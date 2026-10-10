@@ -10,10 +10,10 @@ Use this op from the repo root as:
 op: ./llm
 ```
 
-Nix package selector (replace `<commit>` with a published CI revision):
+Nix package selector:
 
 ```yaml
-op: nix:github:colony-2/c2ops/<commit>#llm
+op: nix:github:colony-2/c2ops/main#llm
 ```
 
 ## What It Does
@@ -36,7 +36,7 @@ op: nix:github:colony-2/c2ops/<commit>#llm
 ```yaml
 sequence:
   - id: ask
-    op: nix:github:colony-2/c2ops/<commit>#llm
+    op: nix:github:colony-2/c2ops/main#llm
     inputs:
       provider: openai
       model: gpt-4.1-mini

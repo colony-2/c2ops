@@ -10,10 +10,10 @@ Use this op from the repo root as:
 op: ./pydantic
 ```
 
-Nix package selector (replace `<commit>` with a published CI revision):
+Nix package selector:
 
 ```yaml
-op: nix:github:colony-2/c2ops/<commit>#pydantic
+op: nix:github:colony-2/c2ops/main#pydantic
 ```
 
 ## What It Does
@@ -121,7 +121,7 @@ Git-backed recipe example:
 ```yaml
 sequence:
   - id: plan_change
-    op: nix:github:colony-2/c2ops/<commit>#pydantic
+    op: nix:github:colony-2/c2ops/main#pydantic
     inputs:
       default_provider: openai
       default_model: gpt-4.1

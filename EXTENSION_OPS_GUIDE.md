@@ -7,13 +7,13 @@ describes c2j's explicit dependency scopes and setup lifecycle.
 
 ## Calling a published op
 
-Use the package reference directly in `op:` and replace `<commit>` with a
-revision whose CI build and Cachix upload completed:
+Use the package reference directly in `op:`. These coordinates follow `main`;
+wait for its CI build and Cachix upload to complete after each update:
 
 ```yaml
 sequence:
   - id: evaluate
-    op: nix:github:colony-2/c2ops/<commit>#rule_gate
+    op: nix:github:colony-2/c2ops/main#rule_gate
     inputs:
       rules:
         - id: ready
@@ -31,7 +31,7 @@ Local and Git source selectors remain available for development:
 ```yaml
 op: ./rule_gate
 # or:
-op: git+https://github.com/colony-2/c2ops.git//rule_gate@<commit>
+op: git+https://github.com/colony-2/c2ops.git//rule_gate@main
 ```
 
 Source manifests declare their tool dependencies explicitly. Their `go run` and

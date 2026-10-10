@@ -3,13 +3,13 @@
 Evaluates state using [TypeSafe Jev](https://docs.typesafe.ai/introduction) through
 the official `typesafe-sdk==0.7.2` Python SDK. The Nix package includes Python and
 the locked SDK environment. Configure the [`colony2` cache](../NIX_PACKAGES.md)
-and replace `<commit>` below with a published CI revision. Local source execution
+for the `main` coordinates below. Local source execution
 uses `uv run --script` and Python 3.12+.
 
 ```yaml
 sequence:
   - id: triage
-    op: nix:github:colony-2/c2ops/<commit>#jev
+    op: nix:github:colony-2/c2ops/main#jev
     inputs:
       api_key: "${{ secrets.typesafe_api_key }}"
       state:

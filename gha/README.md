@@ -10,10 +10,10 @@ Use this op from the repo root as:
 op: ./gha
 ```
 
-Nix package selector (replace `<commit>` with a published CI revision):
+Nix package selector:
 
 ```yaml
-op: nix:github:colony-2/c2ops/<commit>#gha
+op: nix:github:colony-2/c2ops/main#gha
 ```
 
 ## What It Does
@@ -41,7 +41,7 @@ op: nix:github:colony-2/c2ops/<commit>#gha
 ```yaml
 sequence:
   - id: ci
-    op: nix:github:colony-2/c2ops/<commit>#gha
+    op: nix:github:colony-2/c2ops/main#gha
     inputs:
       workflow: .github/workflows/ci.yml
 ```
