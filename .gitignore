@@ -52,3 +52,7 @@ server/colony2/colony2
 **/test-results/*
 .nx
 **/*.pyc
+
+# Nix build result links
+/result
+/result-*

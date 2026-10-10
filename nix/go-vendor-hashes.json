@@ -1,0 +1,8 @@
+{
+  "llm": "sha256-I2SLEJTSTYPFVQ6Stw4RGgF+E71j1EU4xHbfBFcuXjI=",
+  "llm2": "sha256-I2SLEJTSTYPFVQ6Stw4RGgF+E71j1EU4xHbfBFcuXjI=",
+  "codex": "sha256-RUKozHDYJZLfVcpYBaINa6Qrv/K6z0tgOJOju8GA9xo=",
+  "gha": "sha256-9pk0i2cOpNKLVn2wPXcA+SRr5nBiz/GHSA4NokmZgT8=",
+  "gha-many": "sha256-9pk0i2cOpNKLVn2wPXcA+SRr5nBiz/GHSA4NokmZgT8=",
+  "rule_gate": "sha256-Pw0nUpZRG0QMDOvXvWfihcnQQtSC0pogIdBnFM41098="
+}

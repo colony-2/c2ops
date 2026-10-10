@@ -6,7 +6,8 @@
   ],
   "timeout": "30m",
   "env": {
-    "PYTHONUNBUFFERED": "1"
+    "PYTHONUNBUFFERED": "1",
+    "UV_PYTHON": "3.12"
   },
   "input_schema": {
     "type": "object",
