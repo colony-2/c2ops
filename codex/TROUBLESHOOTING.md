@@ -1,6 +1,6 @@
 # Troubleshoot a hanging Codex op
 
-Applies to `codex` and `codex/run_skill`. Tested dependency baseline: c2j
+Applies to `codex` and `codex/run_skill`. Historical investigation baseline: c2j
 **v0.0.61**, Codex CLI **0.157.1** for the default tests. Production accepts
 **0.148.0 or later**. A dependency update alone does not establish
 the cause of a particular deployment's hang.
@@ -9,8 +9,9 @@ the cause of a particular deployment's hang.
 
 Upgrade the deployed c2j worker as well as submission tools. This repository's
 `codex/go.mod` controls its linked library and fixture tests; it cannot replace
-an already running worker. Pin the recipe's c2ops Git selectors to the revision
-containing these diagnostics so that an old cached selector is not executed.
+an already running worker. Use `nix:github:colony-2/c2ops/main#codex` (or
+`#skill-run`) after CI has published its packages. Check the resolved store path
+in setup diagnostics; see [Nix packages](../NIX_PACKAGES.md) for worker setup.
 
 Run these checks in the worker environment, and inside the execution container
 when using a sandbox:
@@ -22,7 +23,10 @@ codex --version
 # Must report: codex-cli <version>, with version >= 0.148.0
 ```
 
-The extension starts with `go run .`. Module downloads and compilation happen
+Nix selectors execute a prebuilt wrapper. Check tool-setup diagnostics for
+package substitution or declared CLI dependency failures before execution.
+
+Local/Git source selectors start with `go run .`. Module downloads and compilation happen
 before any wrapper diagnostics or its startup timeouts. Check worker launch
 errors and, from the resolved op checkout in the same environment, run
 `go mod download` and `go build ./...`. Check Go availability, cache permissions,
@@ -147,10 +151,12 @@ CLI output capture paths are retained when output parsing fails.
 Run all op suites from the repository root:
 
 ```sh
-npm_config_cache=/tmp/c2ops-npm-cache make test
+nix develop -c make test-local
 ```
 
-For focused debugging, run `make test` from `codex/`. Tests cover missing stdin,
+For focused debugging after building packages, run
+`C2OPS_TEST_FLAKE=path:/absolute/path/to/c2ops make -C codex test` in the dev shell.
+Tests cover missing stdin,
 JSON without EOF, stalled version probing, inherited output pipes, progress
 visibility, real CLI calls against a local mock API, and object-session resume
 fixtures. They do not exercise a real Shai container or paid provider access.

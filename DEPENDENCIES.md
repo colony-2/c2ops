@@ -143,4 +143,10 @@ The existing test workflow also builds and checks native packages on both Linux
 architectures, then publishes their closures to `colony2` using the
 `CACHIX_COLONY2_AUTHKEY` secret. See [Nix packages](./NIX_PACKAGES.md) for setup and
 update procedures. These packages require c2j's new Nix/dependency lifecycle;
-the older test-only c2j module pin has not been upgraded by this change.
+the test harness now uses c2j `v0.0.64-0.20261010012403-3849f3a48140` and
+JobDB `v0.0.28` to exercise it. These remain test-only Go dependencies.
+
+Public op coordinates follow `nix:github:colony-2/c2ops/main#<op>`. Integration
+tests use those same coordinates with `C2OPS_TEST_FLAKE=path:<checkout>` to test
+locally built packages. CI builds and tests each architecture before registering
+Cachix publication; failed tests do not publish packages.

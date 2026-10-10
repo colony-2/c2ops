@@ -1,7 +1,9 @@
 package testfixtures_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -39,7 +41,7 @@ var registerFixtureOpsOnce sync.Once
 
 func TestRecipeFixtures(t *testing.T) {
 	ensureFixtureOps()
-	installStubCodex(t)
+	stubCodex := installStubCodex(t)
 
 	testFiles, err := filepath.Glob(filepath.Join(fixturesRootDir(t), "recipes", "*.test.yaml"))
 	require.NoError(t, err)
@@ -75,6 +77,8 @@ func TestRecipeFixtures(t *testing.T) {
 						gitCtx.ParentRef,
 						registry,
 						deps,
+						t.TempDir(),
+						stubCodex,
 					)
 
 					if tc.WantErr {
@@ -115,7 +119,7 @@ func ensureFixtureOps() {
 	})
 }
 
-func installStubCodex(t *testing.T) {
+func installStubCodex(t *testing.T) string {
 	t.Helper()
 
 	stubDir := t.TempDir()
@@ -149,41 +153,7 @@ printf '%s\n' '{"type":"item.completed","item":{"item_type":"assistant_message",
 	require.NoError(t, os.WriteFile(stubPath, []byte(stub), 0o755))
 
 	t.Setenv("PATH", stubDir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	for _, key := range []string{"GOMODCACHE", "GOPATH", "GOCACHE", "HOME"} {
-		value := strings.TrimSpace(os.Getenv(key))
-		if value == "" {
-			value = strings.TrimSpace(goEnvValue(t, key))
-		}
-		if value != "" {
-			t.Setenv(key, value)
-		}
-	}
-}
-
-func goEnvValue(t *testing.T, key string) string {
-	t.Helper()
-
-	output, err := exec.Command("go", "env", key).CombinedOutput()
-	require.NoError(t, err, string(output))
-	return strings.TrimSpace(string(output))
-}
-
-func fixtureOpEnv(t *testing.T) map[string]string {
-	t.Helper()
-
-	env := map[string]string{
-		"PATH": os.Getenv("PATH"),
-	}
-	for _, key := range []string{"GOMODCACHE", "GOPATH", "GOCACHE", "HOME"} {
-		value := strings.TrimSpace(os.Getenv(key))
-		if value == "" {
-			value = goEnvValue(t, key)
-		}
-		if value != "" {
-			env[key] = value
-		}
-	}
-	return env
+	return stubPath
 }
 
 func fixturesRootDir(t *testing.T) string {
@@ -212,14 +182,42 @@ func loadTestCases(t *testing.T, path string) testfixtures.TestCases {
 
 func loadRecipe(t *testing.T, path string) recipe.Recipe {
 	t.Helper()
-
-	file, err := os.Open(path)
-	require.NoError(t, err)
-	defer file.Close()
-
-	def, err := recipe.LoadRecipeFromReader(file)
+	def, err := recipe.LoadRecipeFromReader(bytes.NewReader(fixtureRecipeYAML(t, path)))
 	require.NoError(t, err)
 	return *def
+}
+
+func fixtureRecipeYAML(t *testing.T, path string) []byte {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	var authored any
+	require.NoError(t, yaml.Unmarshal(data, &authored))
+	var override func(any)
+	override = func(value any) {
+		switch node := value.(type) {
+		case map[string]any:
+			if coordinate, ok := node["op"].(string); ok && coordinate != "command_execution" {
+				require.True(t, strings.HasPrefix(coordinate, "nix:github:colony-2/c2ops/main#"), "fixture must use a public op coordinate: %s", coordinate)
+				output, err := exec.Command("python3", filepath.Join(opRootDir(t), "..", "scripts", "op_test.py"),
+					"reference", coordinate).CombinedOutput()
+				require.NoError(t, err, string(output))
+				node["op"] = strings.TrimSpace(string(output))
+
+			}
+			for _, child := range node {
+				override(child)
+			}
+		case []any:
+			for _, child := range node {
+				override(child)
+			}
+		}
+	}
+	override(authored)
+	data, err = yaml.Marshal(authored)
+	require.NoError(t, err)
+	return data
 }
 
 func createFixtureRepo(t *testing.T, primaryPath string, secondaryPaths []string) (string, string, func()) {
@@ -238,12 +236,6 @@ func createFixtureRepo(t *testing.T, primaryPath string, secondaryPaths []string
 		sourcePath := filepath.Join(fixturesRootDir(t), "recipes", relPath)
 		require.NoError(t, copyRecipeIntoFixtureRepo(t, repoDir, sourcePath, filepath.ToSlash(relPath)))
 	}
-	require.NoError(t, copyDirTree(opRootDir(t), filepath.Join(repoDir, filepath.Base(opRootDir(t))), map[string]bool{
-		".git":          true,
-		"test-fixtures": true,
-	}))
-	require.NoError(t, injectFixtureManifestEnv(filepath.Join(repoDir, filepath.Base(opRootDir(t)), "op.yaml"), fixtureOpEnv(t)))
-	require.NoError(t, injectFixtureManifestEnv(filepath.Join(repoDir, filepath.Base(opRootDir(t)), "run_skill", "op.yaml"), fixtureOpEnv(t)))
 	skillDir := filepath.Join(repoDir, ".agents", "skills", "checkpoint-test")
 	require.NoError(t, os.MkdirAll(skillDir, 0755))
 	require.NoError(t, os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("---\nname: checkpoint-test\ndescription: Test checkpoint continuation.\n---\nFollow the supplied command.\n"), 0644))
@@ -290,85 +282,12 @@ func fixtureRecipeRelPath(t *testing.T, recipePath string) string {
 func copyRecipeIntoFixtureRepo(t *testing.T, repoDir string, sourcePath string, relPath string) error {
 	t.Helper()
 
-	data, err := os.ReadFile(sourcePath)
-	if err != nil {
-		return err
-	}
+	data := fixtureRecipeYAML(t, sourcePath)
 	destPath := filepath.Join(repoDir, filepath.FromSlash(path.Join(compiler.CellRecipeDirectory, relPath)))
 	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
 		return err
 	}
 	return os.WriteFile(destPath, data, 0o644)
-}
-
-func copyDirTree(sourceDir string, targetDir string, skip map[string]bool) error {
-	if err := os.MkdirAll(targetDir, 0o755); err != nil {
-		return err
-	}
-
-	entries, err := os.ReadDir(sourceDir)
-	if err != nil {
-		return err
-	}
-	for _, entry := range entries {
-		if skip[entry.Name()] {
-			continue
-		}
-
-		sourcePath := filepath.Join(sourceDir, entry.Name())
-		targetPath := filepath.Join(targetDir, entry.Name())
-		info, err := entry.Info()
-		if err != nil {
-			return err
-		}
-		if info.IsDir() {
-			if err := copyDirTree(sourcePath, targetPath, skip); err != nil {
-				return err
-			}
-			continue
-		}
-		if !info.Mode().IsRegular() {
-			continue
-		}
-		data, err := os.ReadFile(sourcePath)
-		if err != nil {
-			return err
-		}
-		if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
-			return err
-		}
-		if err := os.WriteFile(targetPath, data, info.Mode().Perm()); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func injectFixtureManifestEnv(manifestPath string, extraEnv map[string]string) error {
-	data, err := os.ReadFile(manifestPath)
-	if err != nil {
-		return err
-	}
-
-	var manifest map[string]any
-	if err := yaml.Unmarshal(data, &manifest); err != nil {
-		return err
-	}
-
-	env, _ := manifest["env"].(map[string]any)
-	if env == nil {
-		env = map[string]any{}
-	}
-	for key, value := range extraEnv {
-		env[key] = value
-	}
-	manifest["env"] = env
-
-	updated, err := yaml.Marshal(manifest)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(manifestPath, updated, 0o644)
 }
 
 func runGit(dir string, args ...string) error {
@@ -477,12 +396,15 @@ func buildRecipeRegistry(
 }
 
 type artifactCapture struct {
-	mu    sync.Mutex
-	names map[string]bool
+	mu           sync.Mutex
+	names        map[string]bool
+	nixPackages  map[string]bool
+	bindingsRoot string
+	stubCodex    string
 }
 
-func newArtifactCapture() *artifactCapture {
-	return &artifactCapture{names: make(map[string]bool)}
+func newArtifactCapture(bindingsRoot, stubCodex string) *artifactCapture {
+	return &artifactCapture{names: make(map[string]bool), nixPackages: make(map[string]bool), bindingsRoot: bindingsRoot, stubCodex: stubCodex}
 }
 
 func (c *artifactCapture) add(artifacts []jobdb.Artifact) {
@@ -514,12 +436,62 @@ func (c *capturingTaskWorker) Name() string {
 
 func (c *capturingTaskWorker) Run(ctx jobworkflow.TaskContext, input jobdb.TaskData) (jobdb.TaskData, error) {
 	output, err := c.inner.Run(ctx, input)
+	if err == nil && output != nil && c.inner.Name() == workerops.ToolSetupTaskType {
+		data, readErr := output.GetData()
+		var setup workerops.ToolSetupResult
+		if readErr == nil && json.Unmarshal(data, &setup) == nil && setup.Extension != nil &&
+			setup.Extension.Nix != nil && setup.Ready() {
+			// Keep real dependency preparation, but replace the downstream model
+			// client in a private binding directory. Never modify c2j's shared cache.
+			if setup.Environment == nil {
+				return nil, fmt.Errorf("Codex fixture is missing its prepared tool environment")
+			}
+			bindings, bindErr := c.fixtureBindings(setup.Environment.Path)
+			if bindErr != nil {
+				return nil, bindErr
+			}
+			setup.Environment.Path = bindings
+			if !setup.Ready() {
+				return nil, fmt.Errorf("fixture tool environment is not ready")
+			}
+			output, err = jobdb.NewTaskData(setup)
+			if err != nil {
+				return nil, err
+			}
+			c.capture.mu.Lock()
+			c.capture.nixPackages[setup.Extension.Nix.StorePath] = true
+			c.capture.mu.Unlock()
+		}
+	}
 	if output != nil {
 		if artifacts, artErr := output.GetArtifacts(); artErr == nil {
 			c.capture.add(artifacts)
 		}
 	}
 	return output, err
+}
+
+func (c *capturingTaskWorker) fixtureBindings(prepared string) (string, error) {
+	entries, err := os.ReadDir(prepared)
+	if err != nil {
+		return "", err
+	}
+	dir, err := os.MkdirTemp(c.capture.bindingsRoot, "tools-")
+	if err != nil {
+		return "", err
+	}
+	for _, entry := range entries {
+		if entry.Name() == "codex" {
+			continue
+		}
+		if err := os.Symlink(filepath.Join(prepared, entry.Name()), filepath.Join(dir, entry.Name())); err != nil {
+			return "", err
+		}
+	}
+	if err := os.Symlink(c.capture.stubCodex, filepath.Join(dir, "codex")); err != nil {
+		return "", err
+	}
+	return dir, nil
 }
 
 func wrapTaskWorkers(workers map[string]jobworkflow.TaskWorker, capture *artifactCapture) map[string]jobworkflow.TaskWorker {
@@ -539,6 +511,7 @@ func executeRecipeWithArtifacts(
 	gitRef string,
 	recipeRegistry workflow.RecipeProjectProvider,
 	deps coreops.ServiceDependencies2,
+	bindingsRoot, stubCodex string,
 ) (map[string]interface{}, []string, []string, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -562,7 +535,7 @@ func executeRecipeWithArtifacts(
 		return nil, nil, nil, err
 	}
 
-	capture := newArtifactCapture()
+	capture := newArtifactCapture(bindingsRoot, stubCodex)
 	workset.TaskWorkers = wrapTaskWorkers(workset.TaskWorkers, capture)
 
 	taskWorkers := make([]jobworkflow.TaskWorker, 0, len(workset.TaskWorkers))
@@ -583,17 +556,25 @@ func executeRecipeWithArtifacts(
 	control.Engine = engine
 
 	jobKey, err := control.StartJob(ctx, workflowctl.StartJob{
-		TenantId:   "default",
-		RecipeName: recipeDef.GetMetadata().ID,
-		Inputs:     inputs,
-		JobContext: jobCtx,
-		GitRef:     gitRef,
+		ToolSetupVersion: 1,
+		TenantId:         "default",
+		RecipeName:       recipeDef.GetMetadata().ID,
+		Inputs:           inputs,
+		JobContext:       jobCtx,
+		GitRef:           gitRef,
 	})
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	if err := jobworkflow.WaitForJobToComplete(ctx, 2*time.Minute, jobKey, engine); err != nil {
+	if err := jobworkflow.WaitForJobToComplete(ctx, 5*time.Minute, jobKey, engine); err != nil {
 		return nil, nil, nil, err
+	}
+
+	capture.mu.Lock()
+	prepared := len(capture.nixPackages)
+	capture.mu.Unlock()
+	if prepared == 0 {
+		return nil, nil, nil, fmt.Errorf("fixture did not prepare a Nix op")
 	}
 
 	out, err := swfutil.JobResult(ctx, engine, jobKey)

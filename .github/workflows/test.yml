@@ -14,7 +14,15 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            system: x86_64-linux
+          - runner: ubuntu-24.04-arm
+            system: aarch64-linux
+    runs-on: ${{ matrix.runner }}
 
     steps:
       - name: Check out repository
@@ -38,6 +46,10 @@ jobs:
         with:
           node-version: "24"
 
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+        with:
+          version: "10"
+
       - name: Install Codex CLI
         run: |
           npm install -g @openai/codex@0.157.1
@@ -52,38 +64,6 @@ jobs:
             */main.py
       - name: Check packaged manifests
         run: make check-manifests
-      - name: Warm uv script environments
-        env:
-          UV_NO_MANAGED_PYTHON: "1"
-        run: make install-test-deps
-      - name: Configure Git and Go for Private Modules
-        run: |
-          # 1. Tell Go not to use the public proxy/checksum DB for your org
-          go env -w GOPRIVATE=github.com/colony-2/*
-          
-          # 2. Force Git to use your PAT for HTTPS requests to GitHub
-          git config --global url."https://x-access-token:${{ secrets.READ_ALL_C2_REPOS }}@github.com/".insteadOf "https://github.com/"
-      - name: Run tests
-        env:
-          C2OPS_USE_SYSTEM_UV: "1"
-          UV_NO_MANAGED_PYTHON: "1"
-          UV_OFFLINE: "1"
-        run: make test
-
-  nix:
-    needs: test
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: ubuntu-24.04
-            system: x86_64-linux
-          - runner: ubuntu-24.04-arm
-            system: aarch64-linux
-    runs-on: ${{ matrix.runner }}
-    steps:
-      - uses: actions/checkout@v6
-
       - uses: cachix/install-nix-action@2126ae7fc54c9df00dd18f7f18754393182c73cd # v31.9.1
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
@@ -114,7 +94,7 @@ jobs:
                   'nix', 'eval', '--raw', f'.#packages.{system}.{name}.outPath'
               ], text=True)
               packages[name] = {
-                  'selector': f'nix:github:colony-2/c2ops/{revision}#{name}',
+                  'selector': f'nix:github:colony-2/c2ops/main#{name}',
                   'store_path': path,
               }
           Path('packages.json').write_text(json.dumps({
@@ -128,9 +108,7 @@ jobs:
         uses: cachix/cachix-action@38b082610b782e7e93e209c35fd730d399dee866 # v17
         with:
           name: ${{ vars.CACHIX_CACHE || 'colony2' }}
-          authToken: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && secrets.CACHIX_COLONY2_AUTHKEY || '' }}
-          pathsToPush: ${{ steps.packages.outputs.paths }}
-          skipPush: ${{ github.event_name == 'pull_request' || github.ref != 'refs/heads/main' }}
+          skipPush: true
 
       - name: Check metadata without building
         run: nix flake check --no-build --all-systems
@@ -138,7 +116,29 @@ jobs:
       - name: Build packages and check installed process contracts
         run: nix flake check -L
 
+      - name: Configure Git and Go for Private Modules
+        run: |
+          # 1. Tell Go not to use the public proxy/checksum DB for your org
+          go env -w GOPRIVATE=github.com/colony-2/*
+
+          # 2. Force Git to use your PAT for HTTPS requests to GitHub
+          git config --global url."https://x-access-token:${{ secrets.READ_ALL_C2_REPOS }}@github.com/".insteadOf "https://github.com/"
+      - name: Run tests
+        env:
+          UV_NO_MANAGED_PYTHON: "1"
+          C2OPS_TEST_FLAKE: path:${{ github.workspace }}
+        run: make test
+
       - uses: actions/upload-artifact@v4
         with:
           name: nix-packages-${{ matrix.system }}
           path: packages.json
+
+      - name: Publish tested packages
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: cachix/cachix-action@38b082610b782e7e93e209c35fd730d399dee866 # v17
+        with:
+          name: ${{ vars.CACHIX_CACHE || 'colony2' }}
+          authToken: ${{ secrets.CACHIX_COLONY2_AUTHKEY }}
+          skipAddingSubstituter: true
+          pathsToPush: ${{ steps.packages.outputs.paths }}

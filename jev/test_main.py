@@ -1,6 +1,7 @@
 import json
 import os
 import subprocess
+import sys
 import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -8,7 +9,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 import jsonschema
-import yaml
 
 import main
 
@@ -60,10 +60,12 @@ class JevTests(unittest.TestCase):
             },
             "api_key": "test-secret", "base_url": f"http://127.0.0.1:{self.server.server_port}",
         }
-        self.manifest = yaml.safe_load(Path("op.yaml").read_text())
+        self.manifest = json.loads(Path("op.json").read_text())
+        self.command = [sys.executable, str(Path(__file__).resolve().parents[1] / "scripts/op_test.py"),
+                        "run", "nix:github:colony-2/c2ops/main#jev"]
 
     def invoke(self):
-        return subprocess.run(self.manifest["command"], input=json.dumps(self.payload),
+        return subprocess.run(self.command, input=json.dumps(self.payload),
                               capture_output=True, text=True, timeout=60,
                               env={**os.environ, **self.manifest.get("env", {})})
 

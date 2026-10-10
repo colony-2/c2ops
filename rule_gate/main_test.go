@@ -10,7 +10,7 @@ import (
 )
 
 func TestRuleGateCLIEmitsPolicyFailureWithZeroExit(t *testing.T) {
-	cmd := exec.Command("go", "run", ".")
+	cmd := exec.Command("python3", "../scripts/op_test.py", "run", "nix:github:colony-2/c2ops/main#rule_gate")
 	cmd.Stdin = stringsReader(`{
 		"rules": [
 			{
@@ -39,7 +39,7 @@ func TestRuleGateCLIEmitsPolicyFailureWithZeroExit(t *testing.T) {
 }
 
 func TestRuleGateCLIInvalidInputExitsNonZero(t *testing.T) {
-	cmd := exec.Command("go", "run", ".")
+	cmd := exec.Command("python3", "../scripts/op_test.py", "run", "nix:github:colony-2/c2ops/main#rule_gate")
 	cmd.Stdin = stringsReader(`{"rules":[]}`)
 
 	out, err := cmd.CombinedOutput()

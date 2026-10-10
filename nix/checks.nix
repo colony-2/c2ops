@@ -22,7 +22,7 @@ in {
   pkgs.runCommand "c2ops-${name}-contract" {
     nativeBuildInputs = [ pkgs.python313 ];
   } ''
-    python ${../scripts/check-package.py} ${package} ${pkgs.writeText "${name}-manifest.json" (builtins.toJSON package.c2j)}
+    python ${../scripts/check-package.py} ${package} ${pkgs.writeText "${name}-manifest.json" (builtins.toJSON package.c2j)} nix:github:colony-2/c2ops/main#${name}
     touch "$out"
   ''
 ) packages

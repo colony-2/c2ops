@@ -11,7 +11,12 @@ import tempfile
 package = Path(sys.argv[1])
 manifest = json.loads((package / "share/c2j/op.json").read_text())
 assert manifest == json.loads(Path(sys.argv[2]).read_text()), "manifest mismatch"
+coordinate = sys.argv[3]
+assert coordinate.startswith("nix:github:colony-2/c2ops/main#"), coordinate
+attribute = coordinate.split("#", 1)[1]
+assert manifest["name"] == ("skill.run" if attribute == "skill-run" else attribute)
 command = manifest["command"]
+assert command[0] == f"bin/{attribute}", "coordinate selected the wrong executable"
 assert command[0].startswith("bin/") and ".." not in Path(command[0]).parts
 executable = package / command[0]
 assert executable.is_file() and os.access(executable, os.X_OK)

@@ -10,7 +10,7 @@ sequence:
       run: "printf 'fixture-token' > input.txt"
 
   - id: codex_apply
-    op: ./codex
+    op: nix:github:colony-2/c2ops/main#codex
     artifacts:
       input.txt: '${{ sequence.write_seed_artifact.artifacts["input.txt"] }}'
     inputs:

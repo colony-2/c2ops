@@ -18,29 +18,10 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
 )
-
-const uvVersion = "0.12.19"
-const useSystemUVEnv = "C2OPS_USE_SYSTEM_UV"
-
-type opManifest struct {
-	WorkingDirectory string            `yaml:"working_directory"`
-	Command          []string          `yaml:"command"`
-	Env              map[string]string `yaml:"env"`
-}
 
 type opEnvelope struct {
 	Output map[string]any `json:"output"`
-}
-
-type uvToolchain struct {
-	root      string
-	uvPath    string
-	homeDir   string
-	cacheDir  string
-	configDir string
-	isolated  bool
 }
 
 type openAIRequest struct {
@@ -58,12 +39,6 @@ type openAIServer struct {
 	handler  func(openAIRequest, int) (int, any)
 }
 
-var bootstrap struct {
-	once      sync.Once
-	toolchain uvToolchain
-	err       error
-}
-
 func TestPydanticOpIntegration(t *testing.T) {
 	t.Run("structured response with file context", func(t *testing.T) {
 		server := newOpenAIServer(t, func(req openAIRequest, _ int) (int, any) {
@@ -77,7 +52,7 @@ func TestPydanticOpIntegration(t *testing.T) {
 		})
 		defer server.Close()
 
-		env, stdout, stderr, err := runManifestOp(t, map[string]any{
+		env, stdout, stderr, err := runPackagedOp(t, map[string]any{
 			"default_provider": "openai",
 			"default_model":    "gpt-4.1",
 			"prompt":           "summarize the supplied file",
@@ -130,7 +105,7 @@ func TestPydanticOpIntegration(t *testing.T) {
 		defer server.Close()
 
 		workdir := t.TempDir()
-		env, stdout, stderr, err := runManifestOp(t, map[string]any{
+		env, stdout, stderr, err := runPackagedOp(t, map[string]any{
 			"default_provider":      "openai",
 			"default_model":         "gpt-4.1",
 			"prompt":                "create a note using the write_file tool",
@@ -242,30 +217,17 @@ func (s *openAIServer) Close() {
 	s.server.Close()
 }
 
-func runManifestOp(t *testing.T, input any, extraEnv map[string]string) (opEnvelope, string, string, error) {
+func runPackagedOp(t *testing.T, input any, extraEnv map[string]string) (opEnvelope, string, string, error) {
 	t.Helper()
 
-	toolchain := ensureUVToolchain(t)
-	manifest := loadManifest(t, filepath.Join(opDir(t), "op.yaml"))
 	payload, err := json.Marshal(input)
 	require.NoError(t, err)
-
-	workingDir := opDir(t)
-	if strings.TrimSpace(manifest.WorkingDirectory) != "" && manifest.WorkingDirectory != "." {
-		workingDir = filepath.Join(workingDir, manifest.WorkingDirectory)
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
-
-	command := append([]string(nil), manifest.Command...)
-	if len(command) > 0 && command[0] == "uv" {
-		command[0] = toolchain.uvPath
-	}
-	cmd := exec.CommandContext(ctx, command[0], command[1:]...)
-	cmd.Dir = workingDir
+	cmd := exec.CommandContext(ctx, "python3", filepath.Join(opDir(t), "..", "scripts", "op_test.py"),
+		"run", "nix:github:colony-2/c2ops/main#pydantic")
 	cmd.Stdin = bytes.NewReader(payload)
-	cmd.Env = manifestEnv(toolchain, manifest.Env, extraEnv)
+	cmd.Env = testEnv(extraEnv)
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -282,92 +244,7 @@ func runManifestOp(t *testing.T, input any, extraEnv map[string]string) (opEnvel
 	return env, stdout.String(), stderr.String(), err
 }
 
-func ensureUVToolchain(t *testing.T) uvToolchain {
-	t.Helper()
-
-	if shouldUseSystemUV() {
-		uvPath, err := exec.LookPath("uv")
-		require.NoError(t, err, "%s is set but uv is not on PATH", useSystemUVEnv)
-		return uvToolchain{uvPath: uvPath}
-	}
-
-	bootstrap.once.Do(func() {
-		root, err := os.MkdirTemp("", "pydantic-op-test-*")
-		if err != nil {
-			bootstrap.err = err
-			return
-		}
-
-		toolchain := uvToolchain{
-			root:      root,
-			homeDir:   filepath.Join(root, "home"),
-			cacheDir:  filepath.Join(root, "cache"),
-			configDir: filepath.Join(root, "config"),
-			isolated:  true,
-		}
-		bootstrap.err = os.MkdirAll(toolchain.homeDir, 0o755)
-		if bootstrap.err != nil {
-			return
-		}
-		bootstrap.err = os.MkdirAll(toolchain.cacheDir, 0o755)
-		if bootstrap.err != nil {
-			return
-		}
-		bootstrap.err = os.MkdirAll(toolchain.configDir, 0o755)
-		if bootstrap.err != nil {
-			return
-		}
-
-		venvDir := filepath.Join(root, "uv-venv")
-		pythonExe := "python3"
-		if runtime.GOOS == "windows" {
-			pythonExe = "python"
-		}
-
-		if _, err := runCommand(root, 5*time.Minute, nil, pythonExe, "-m", "venv", venvDir); err != nil {
-			bootstrap.err = err
-			return
-		}
-
-		pipPath := filepath.Join(venvBinDir(venvDir), executableName("pip"))
-		if _, err := runCommand(root, 5*time.Minute, nil, pipPath, "install", "--disable-pip-version-check", "-q", "uv=="+uvVersion); err != nil {
-			bootstrap.err = err
-			return
-		}
-
-		toolchain.uvPath = filepath.Join(venvBinDir(venvDir), executableName("uv"))
-		bootstrap.toolchain = toolchain
-	})
-
-	require.NoError(t, bootstrap.err)
-	return bootstrap.toolchain
-}
-
-func runCommand(workdir string, timeout time.Duration, env []string, name string, args ...string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.Dir = workdir
-	if env != nil {
-		cmd.Env = env
-	}
-
-	var output bytes.Buffer
-	cmd.Stdout = &output
-	cmd.Stderr = &output
-
-	err := cmd.Run()
-	if ctx.Err() == context.DeadlineExceeded {
-		return output.String(), fmt.Errorf("%s timed out: %w\n%s", name, ctx.Err(), output.String())
-	}
-	if err != nil {
-		return output.String(), fmt.Errorf("%s %v failed: %w\n%s", name, args, err, output.String())
-	}
-	return output.String(), nil
-}
-
-func manifestEnv(toolchain uvToolchain, manifestValues map[string]string, extraEnv map[string]string) []string {
+func testEnv(extraEnv map[string]string) []string {
 	envMap := map[string]string{}
 	for _, entry := range os.Environ() {
 		parts := strings.SplitN(entry, "=", 2)
@@ -375,47 +252,14 @@ func manifestEnv(toolchain uvToolchain, manifestValues map[string]string, extraE
 			envMap[parts[0]] = parts[1]
 		}
 	}
-
-	pathValue := envMap["PATH"]
-	envMap["PATH"] = filepath.Dir(toolchain.uvPath) + string(os.PathListSeparator) + pathValue
-	envMap["UV_NO_PROGRESS"] = "1"
-	envMap["PYTHONDONTWRITEBYTECODE"] = "1"
-	if toolchain.isolated {
-		envMap["HOME"] = toolchain.homeDir
-		envMap["XDG_CACHE_HOME"] = toolchain.cacheDir
-		envMap["XDG_CONFIG_HOME"] = toolchain.configDir
-		envMap["UV_CACHE_DIR"] = filepath.Join(toolchain.cacheDir, "uv")
-	}
-
-	for key, value := range manifestValues {
-		envMap[key] = value
-	}
 	for key, value := range extraEnv {
 		envMap[key] = value
 	}
-
 	env := make([]string, 0, len(envMap))
 	for key, value := range envMap {
 		env = append(env, fmt.Sprintf("%s=%s", key, value))
 	}
 	return env
-}
-
-func shouldUseSystemUV() bool {
-	value := strings.TrimSpace(strings.ToLower(os.Getenv(useSystemUVEnv)))
-	return value == "1" || value == "true" || value == "yes" || value == "on"
-}
-
-func loadManifest(t *testing.T, path string) opManifest {
-	t.Helper()
-
-	data, err := os.ReadFile(path)
-	require.NoError(t, err)
-
-	var manifest opManifest
-	require.NoError(t, yaml.Unmarshal(data, &manifest))
-	require.NotEmpty(t, manifest.Command)
-	return manifest
 }
 
 func opDir(t *testing.T) string {
@@ -424,20 +268,6 @@ func opDir(t *testing.T) string {
 	_, file, _, ok := runtime.Caller(0)
 	require.True(t, ok)
 	return filepath.Dir(file)
-}
-
-func venvBinDir(venvDir string) string {
-	if runtime.GOOS == "windows" {
-		return filepath.Join(venvDir, "Scripts")
-	}
-	return filepath.Join(venvDir, "bin")
-}
-
-func executableName(name string) string {
-	if runtime.GOOS == "windows" {
-		return name + ".exe"
-	}
-	return name
 }
 
 func localOpenAIEnv(server *openAIServer) map[string]string {

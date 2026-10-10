@@ -35,5 +35,12 @@
           pkgs = nixpkgs.legacyPackages.${system};
           packages = inputs.self.packages.${system};
         });
+      devShells = forAllSystems (system:
+        let pkgs = nixpkgs.legacyPackages.${system};
+        in {
+          default = pkgs.mkShell {
+            packages = with pkgs; [ go gitMinimal gnumake python312 uv nodejs_24 pnpm_10 ];
+          };
+        });
     };
 }

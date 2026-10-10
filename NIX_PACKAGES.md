@@ -11,9 +11,9 @@ to a c2j checkout. This repository's checks are described below.
 ## Worker setup
 
 Use a c2j build implementing [EXTENSION_OPS.md](./EXTENSION_OPS.md) and
-[EXECUTION_TOOLS.md](./EXECUTION_TOOLS.md). The guide was checked against c2j
-commit `3849f3a48140a8b1513ece9911a9a2ce7acd3e05`; the older c2j version in
-Codex's integration-test module does not exercise the Nix setup lifecycle.
+[EXECUTION_TOOLS.md](./EXECUTION_TOOLS.md). Codex's integration harness uses
+c2j `v0.0.64-0.20261010012403-3849f3a48140` and enables `tool_setup_version: 1`
+to exercise the Nix setup lifecycle.
 
 Enable `nix-command` and `flakes` in Nix, then configure the public cache:
 
@@ -28,13 +28,13 @@ Retain `cache.nixos.org` as a substituter for upstream runtime dependencies.
 The worker base still needs Nix, git, uv with Python, and pnpm with Node as
 described in the execution-tools guide. Kimi needs Node.js 24.15 or later.
 
-Pin a package selector to a commit whose **test workflow completed successfully**,
-including the Cachix action's upload step:
+Use the named `main` ref in package selectors. Wait for the **test workflow to
+complete successfully**, including Cachix upload, after `main` advances:
 
 ```yaml
 sequence:
   - id: code
-    op: nix:github:colony-2/c2ops/<commit>#codex
+    op: nix:github:colony-2/c2ops/main#codex
     inputs:
       prompt: Fix the failing test.
       worktree_path: "${{ context.environment.op.worktree_path }}"
@@ -45,10 +45,16 @@ Package attributes are `llm`, `llm2`, `codex`, `skill-run`, `gha`, `gha-many`,
 manifest name `skill.run`. The selector already identifies the op package; do
 not repeat it in `dependencies` or wrap it in `extension_execution`.
 
-Workers only substitute prebuilt outputs. An unpublished commit, a cache entry
+`main` is mutable: new live resolutions may select newer outputs, while c2j
+records the exact store path for an invocation and replays recorded results.
+There can be a setup failure between a push to `main` and its completed upload.
+`flake.lock` still pins package build dependencies; recipe authors need no commit
+IDs. CI records the source revision separately for diagnostics.
+
+Workers only substitute prebuilt outputs. An unpublished branch revision, a cache entry
 removed by garbage collection, an untrusted signing key, or the wrong platform
 fails during setup. Workers will not compile the package as a fallback. Rebuild
-and republish the same revision if its outputs have been evicted. Metadata still
+and republish the required output if it has been evicted. Metadata still
 needs access to this definition repository and the flake's evaluation inputs.
 
 ## What is packaged
@@ -88,8 +94,10 @@ sequence:
 
 ## CI and publishing
 
-[The existing test workflow](./.github/workflows/test.yml) runs the source tests,
-then uses native GitHub Actions runners for both Linux architectures. It uses
+[The existing test workflow](./.github/workflows/test.yml) builds packages and
+runs integration and unit tests on native GitHub Actions runners for both Linux
+architectures. Integration tests override the public coordinates with the current
+checkout; they cannot accidentally test the published branch instead. It uses
 `cachix/install-nix-action` to install Nix, `cachix/cachix-action` to publish, and
 `actions/upload-artifact` to record exact selectors and output paths.
 
@@ -109,9 +117,11 @@ One-time repository setup:
 The Cachix action pushes the 12 final package paths and their runtime closures,
 including outputs reused from a previous build. It does not upload every build
 input or compiler. Upstream NixOS cache entries are deduplicated by Cachix.
-Use the workflow's `nix-packages-<system>` artifacts to find the exact published
-revision and store paths. An artifact from a failed workflow is not publication
-confirmation; wait for the entire job, including the post-job upload, to succeed.
+Use the workflow's `nix-packages-<system>` artifacts to find public coordinates,
+the tested source revision, and exact store paths. An artifact from a failed
+workflow is not publication confirmation; wait for the entire job, including
+the post-job upload, to succeed. The upload action is registered only after all
+tests pass.
 
 For a manual publication on a native builder:
 
@@ -136,9 +146,9 @@ nix eval --json .#packages.aarch64-linux.codex.c2j
 
 The package checks compare installed and evaluation-time manifests and invoke
 every op with an empty PATH and invalid input from its read-only package
-directory. They also exercise a successful `rule_gate` invocation. Source tests
-use real pinned clients against mock providers; the package checks need no
-provider credentials. CI disables import-from-derivation during evaluation.
+directory. They also exercise a successful `rule_gate` invocation. Integration tests
+use the packaged processes and real pinned clients against mock providers; the
+package checks need no provider credentials. CI disables import-from-derivation during evaluation.
 
 Add new ops to `nix/ops.json`. Edit schemas in `op.yaml`, then regenerate `op.json`.
 The generator fails if a discovered manifest is absent from the catalog.
@@ -162,3 +172,40 @@ pinned nixpkgs revision in local/Git `op.yaml` dependency references and regener
 the manifests. Local/Git source execution remains available, with explicit tool
 declarations, but still performs Go compilation or uv script library setup at
 invocation time. Packaged execution avoids those steps.
+
+## Integration tests and local overrides
+
+All op process integration tests and recipe fixtures name public coordinates
+such as `nix:github:colony-2/c2ops/main#codex`. `scripts/op_test.py` shares their
+resolution rule. Set **`C2OPS_TEST_FLAKE`** to a flake reference without an
+attribute to replace only the flake part; the named op is preserved and unknown
+coordinates fail. The override is test-only and is not read by production ops.
+
+To build and test the checkout:
+
+```sh
+nix develop -c make test-local
+```
+
+This runs `nix flake check`, then sets `C2OPS_TEST_FLAKE=path:<checkout>` for
+`make test`. To select an already built checkout explicitly:
+
+```sh
+C2OPS_TEST_FLAKE=path:/absolute/path/to/c2ops make test
+```
+
+With the override unset, `make test` resolves public `main` packages and requires
+the configured Cachix cache. There is no fallback to `go run`, source manifests,
+or `uv run --script` for op invocations. The runner evaluates package metadata,
+realizes that exact output with builds disabled, checks the installed manifest,
+and runs its packaged command. Unit tests still import the implementations.
+
+Codex recipes run through the real c2j Nix resolution/setup lifecycle. Their
+harness overrides the flake reference and replaces the model client in a private
+tool binding directory after real dependency setup; the op executable, objects,
+and artifacts remain real. Successful fixtures assert that c2j prepared a Nix package.
+
+The test harness itself needs Go, Python, uv, Node, pnpm, and Git; `nix develop`
+provides them. Python unit-test libraries and the Codex/Kimi CLI test launchers
+may download their pinned tools. These harness dependencies are distinct from
+packaged op libraries, which are already in the Nix outputs.

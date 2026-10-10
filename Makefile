@@ -3,7 +3,7 @@ MAKEFLAGS += --no-print-directory
 
 OP_DIRS := $(sort $(patsubst %/op.yaml,%,$(wildcard */op.yaml)))
 
-.PHONY: ops build test install-test-deps manifests check-manifests nix-check
+.PHONY: ops build test install-test-deps manifests check-manifests nix-check test-local test-tools
 
 ops:
 	@for dir in $(OP_DIRS); do \
@@ -25,3 +25,11 @@ check-manifests:
 
 nix-check:
 	nix flake check -L
+
+test-tools:
+	python3 -m unittest discover -s scripts -p 'test_*.py'
+
+test: test-tools
+
+test-local: nix-check
+	C2OPS_TEST_FLAKE="path:$(CURDIR)" $(MAKE) test

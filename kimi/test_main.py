@@ -1,6 +1,7 @@
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import threading
 import unittest
@@ -9,7 +10,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 import jsonschema
-import yaml
 
 import main
 
@@ -23,7 +23,9 @@ class KimiTests(unittest.TestCase):
         self.worktree.mkdir()
         self.payload = {"prompt": "Remember the word apricot.", "worktree_path": str(self.worktree),
                         "workdir_path": str(self.root), "artifact_outbox_path": str(self.root / "outbox")}
-        self.manifest = yaml.safe_load(Path("op.yaml").read_text())
+        self.manifest = json.loads(Path("op.json").read_text())
+        self.command = [sys.executable, str(Path(__file__).resolve().parents[1] / "scripts/op_test.py"),
+                        "run", "nix:github:colony-2/c2ops/main#kimi"]
 
     def test_real_cli_session_and_artifacts(self):
         requests = []
@@ -64,7 +66,7 @@ class KimiTests(unittest.TestCase):
         jsonschema.validate(self.payload, self.manifest["input_schema"])
         for index in range(2):
             # Execute the real manifest; the test launcher supplies its declared CLI.
-            proc = subprocess.run(self.manifest["command"], input=json.dumps(self.payload),
+            proc = subprocess.run(self.command, input=json.dumps(self.payload),
                                   capture_output=True, text=True, timeout=90,
                                   env={**os.environ, **self.manifest.get("env", {})})
             self.assertEqual(proc.returncode, 0, proc.stderr + proc.stdout)

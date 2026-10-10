@@ -2,12 +2,12 @@ id: codex-object-branches
 version: "1"
 sequence:
   - id: start
-    op: ./codex
+    op: nix:github:colony-2/c2ops/main#codex
     inputs:
       prompt: |
         bash -lc 'set -e; test "$(cat "$CODEX_HOME/sessions/fixture-session.jsonl")" = original'
   - id: branch_b
-    op: ./codex/run_skill
+    op: nix:github:colony-2/c2ops/main#skill-run
     inputs:
       skill: checkpoint-test
       output:
@@ -17,13 +17,13 @@ sequence:
       prompt: |
         bash -lc 'set -e; test "$(cat "$CODEX_HOME/sessions/fixture-session.jsonl")" = original; printf branch-b > "$CODEX_HOME/sessions/fixture-session.jsonl"; printf "{}" > "{{ context.environment.op.outbox }}/result.json"'
   - id: branch_c
-    op: ./codex
+    op: nix:github:colony-2/c2ops/main#codex
     inputs:
       session: "${{ sequence.start.outputs.session }}"
       prompt: |
         bash -lc 'set -e; test "$(cat "$CODEX_HOME/sessions/fixture-session.jsonl")" = original; printf branch-c > "$CODEX_HOME/sessions/fixture-session.jsonl"'
   - id: continue_b
-    op: ./codex
+    op: nix:github:colony-2/c2ops/main#codex
     inputs:
       session: "${{ sequence.branch_b.outputs.session }}"
       prompt: |
