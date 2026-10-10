@@ -1,0 +1,113 @@
+{
+  "name": "codex",
+  "description": "Runs Codex via the selector-backed extension mechanism",
+  "command": [
+    "bin/codex"
+  ],
+  "timeout": "30m",
+  "dependencies": [
+    "pnpm:@openai/codex@0.157.1"
+  ],
+  "input_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "prompt"
+    ],
+    "properties": {
+      "prompt": {
+        "type": "string"
+      },
+      "session": {
+        "type": "object",
+        "x-c2j-object-type": "c2ops.codex.session/v1"
+      },
+      "model": {
+        "type": "string"
+      },
+      "env": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "string"
+        }
+      },
+      "skills": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "return_on": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "status_contract": {
+        "type": "object"
+      },
+      "idle_timeout": {
+        "type": "string",
+        "default": "5m"
+      },
+      "workdir_path": {
+        "type": "string",
+        "default": "{{ context.environment.op.workdir }}"
+      },
+      "worktree_path": {
+        "type": "string",
+        "default": "{{ context.environment.op.worktree_path }}"
+      },
+      "artifact_inbox_path": {
+        "type": "string",
+        "default": "{{ context.environment.op.inbox }}"
+      },
+      "artifact_outbox_path": {
+        "type": "string",
+        "default": "{{ context.environment.op.outbox }}"
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "required": [
+      "session"
+    ],
+    "properties": {
+      "session": {
+        "type": "object",
+        "x-c2j-object-type": "c2ops.codex.session/v1"
+      },
+      "status": {
+        "type": "string"
+      },
+      "sessionId": {
+        "type": "string"
+      },
+      "assistantSummary": {
+        "type": "string"
+      },
+      "incompleteReason": {
+        "type": "string"
+      },
+      "incompleteCategory": {
+        "type": "string"
+      },
+      "pendingDependencies": {
+        "type": "array",
+        "items": {
+          "type": "object"
+        }
+      },
+      "skills_installed": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "outcome": {
+        "type": "object"
+      }
+    }
+  }
+}

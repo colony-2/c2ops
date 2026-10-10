@@ -2,6 +2,10 @@ name: gha
 description: Runs the gha.run Go implementation through the extension mechanism
 command: ["go", "run", "."]
 timeout: 30m
+dependencies:
+  - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#go
+  - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#gitMinimal
+  - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#docker-client
 input_schema:
   type: object
   required: [workflow]
@@ -44,7 +48,7 @@ input_schema:
         persist_hash: "{{ context.git.hash }}"
         parent_hash: "{{ context.git.parent_hash }}"
         invoke_hash: "{{ context.invocation.hash }}"
-        worktree_path: "{{ context.environment.worktree_path }}"
+        worktree_path: "{{ context.environment.op.worktree_path }}"
       properties:
         base_repo:
           type: string
@@ -66,7 +70,7 @@ input_schema:
           default: "{{ context.invocation.hash }}"
         worktree_path:
           type: string
-          default: "{{ context.environment.worktree_path }}"
+          default: "{{ context.environment.op.worktree_path }}"
 output_schema:
   type: object
   properties:

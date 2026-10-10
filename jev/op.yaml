@@ -2,6 +2,9 @@ name: jev
 description: Evaluates state with TypeSafe Jev's typed System One questions
 command: ["uv", "run", "--script", "./main.py"]
 timeout: 5m
+dependencies:
+  - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#python313
+  - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#uv
 env:
   PYTHONUNBUFFERED: "1"
 input_schema:

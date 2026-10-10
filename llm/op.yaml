@@ -2,6 +2,9 @@ name: llm
 description: Runs the legacy llm_inference Go implementation through the extension mechanism
 command: ["go", "run", "."]
 timeout: 5m
+dependencies:
+  - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#go
+  - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#gitMinimal
 input_schema:
   type: object
   required: [provider, model, prompt]

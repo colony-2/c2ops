@@ -2,6 +2,10 @@ name: skill.run
 description: Runs one requested Codex skill with structured artifact validation
 command: ["go", "run", "."]
 timeout: 30m
+dependencies:
+  - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#go
+  - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#gitMinimal
+  - pnpm:@openai/codex@0.157.1
 input_schema:
   type: object
   additionalProperties: false

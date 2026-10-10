@@ -1,0 +1,82 @@
+{
+  "llm": {
+    "path": "llm",
+    "kind": "go",
+    "runtime": [
+      "gitMinimal"
+    ]
+  },
+  "llm2": {
+    "path": "llm2",
+    "kind": "go",
+    "runtime": [
+      "gitMinimal"
+    ]
+  },
+  "codex": {
+    "path": "codex",
+    "kind": "go",
+    "runtime": [
+      "gitMinimal"
+    ]
+  },
+  "skill-run": {
+    "path": "codex/run_skill",
+    "kind": "go",
+    "runtime": [
+      "gitMinimal"
+    ],
+    "module": "codex",
+    "subPackage": "run_skill"
+  },
+  "gha": {
+    "path": "gha",
+    "kind": "go",
+    "runtime": [
+      "gitMinimal",
+      "docker-client"
+    ]
+  },
+  "gha-many": {
+    "path": "gha-many",
+    "kind": "go",
+    "runtime": [
+      "gitMinimal",
+      "docker-client"
+    ]
+  },
+  "rule_gate": {
+    "path": "rule_gate",
+    "kind": "go",
+    "runtime": []
+  },
+  "pydantic": {
+    "path": "pydantic",
+    "kind": "python",
+    "runtime": []
+  },
+  "aider": {
+    "path": "aider",
+    "kind": "python",
+    "runtime": [
+      "gitMinimal"
+    ]
+  },
+  "litellm": {
+    "path": "litellm",
+    "kind": "python",
+    "runtime": []
+  },
+  "kimi": {
+    "path": "kimi",
+    "kind": "python",
+    "runtime": [
+      "gitMinimal"
+    ]
+  },
+  "jev": {
+    "path": "jev",
+    "kind": "python",
+    "runtime": []
+  }
+}

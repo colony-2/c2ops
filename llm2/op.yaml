@@ -2,6 +2,9 @@ name: llm2
 description: Runs the enhanced llm_inference2 Go implementation through the extension mechanism
 command: ["go", "run", "."]
 timeout: 5m
+dependencies:
+  - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#go
+  - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#gitMinimal
 input_schema:
   type: object
   required: [default_provider, default_model]
@@ -72,10 +75,10 @@ input_schema:
       type: string
     default_working_dir:
       type: string
-      default: "{{ context.environment.worktree_path }}"
+      default: "{{ context.environment.op.worktree_path }}"
     tool_working_dir:
       type: string
-      default: "{{ context.environment.worktree_path }}"
+      default: "{{ context.environment.op.worktree_path }}"
     enable_tool_execution:
       type: boolean
     max_tool_rounds:

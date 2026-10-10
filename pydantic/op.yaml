@@ -2,6 +2,9 @@ name: pydantic
 description: Runs llm_inference2-compatible requests through PydanticAI via uv
 command: ["uv", "run", "--script", "./main.py"]
 timeout: 5m
+dependencies:
+  - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#python313
+  - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#uv
 env:
   PYTHONUNBUFFERED: "1"
   PYDANTIC_AI_NO_BANNER: "1"
@@ -75,10 +78,10 @@ input_schema:
       type: string
     default_working_dir:
       type: string
-      default: "{{ context.environment.worktree_path }}"
+      default: "{{ context.environment.op.worktree_path }}"
     tool_working_dir:
       type: string
-      default: "{{ context.environment.worktree_path }}"
+      default: "{{ context.environment.op.worktree_path }}"
     enable_tool_execution:
       type: boolean
     max_tool_rounds:

@@ -1,0 +1,125 @@
+{
+  "name": "gha",
+  "description": "Runs the gha.run Go implementation through the extension mechanism",
+  "command": [
+    "bin/gha"
+  ],
+  "timeout": "30m",
+  "input_schema": {
+    "type": "object",
+    "required": [
+      "workflow"
+    ],
+    "properties": {
+      "workflow": {
+        "type": "string"
+      },
+      "with": {
+        "type": "object"
+      },
+      "env": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "string"
+        }
+      },
+      "secrets": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "string"
+        }
+      },
+      "backend": {
+        "type": "string"
+      },
+      "runner_image": {
+        "type": "string"
+      },
+      "container_architecture": {
+        "type": "string"
+      },
+      "timeout": {
+        "type": "string"
+      },
+      "continue_on_error": {
+        "type": "boolean"
+      },
+      "remote": {
+        "type": "object",
+        "properties": {
+          "push_to": {
+            "type": "string"
+          },
+          "ref_prefix": {
+            "type": "string"
+          }
+        }
+      },
+      "git_context": {
+        "type": "object",
+        "default": {
+          "base_repo": "{{ context.git.repo }}",
+          "base_ref": "{{ context.git.ref }}",
+          "resolved_base_hash": "{{ context.git.resolved_hash }}",
+          "persist_hash": "{{ context.git.hash }}",
+          "parent_hash": "{{ context.git.parent_hash }}",
+          "invoke_hash": "{{ context.invocation.hash }}",
+          "worktree_path": "{{ context.environment.op.worktree_path }}"
+        },
+        "properties": {
+          "base_repo": {
+            "type": "string",
+            "default": "{{ context.git.repo }}"
+          },
+          "base_ref": {
+            "type": "string",
+            "default": "{{ context.git.ref }}"
+          },
+          "resolved_base_hash": {
+            "type": "string",
+            "default": "{{ context.git.resolved_hash }}"
+          },
+          "persist_hash": {
+            "type": "string",
+            "default": "{{ context.git.hash }}"
+          },
+          "parent_hash": {
+            "type": "string",
+            "default": "{{ context.git.parent_hash }}"
+          },
+          "invoke_hash": {
+            "type": "string",
+            "default": "{{ context.invocation.hash }}"
+          },
+          "worktree_path": {
+            "type": "string",
+            "default": "{{ context.environment.op.worktree_path }}"
+          }
+        }
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "status": {
+        "type": "string"
+      },
+      "exit_code": {
+        "type": "integer"
+      },
+      "duration_seconds": {
+        "type": "integer"
+      },
+      "error_message": {
+        "type": "string"
+      },
+      "workflow": {
+        "type": "object"
+      },
+      "jobs": {
+        "type": "object"
+      }
+    }
+  }
+}

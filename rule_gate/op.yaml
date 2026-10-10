@@ -2,6 +2,8 @@ name: rule_gate
 description: Evaluate deterministic recipe policy rules
 command: ["go", "run", "."]
 timeout: 2m
+dependencies:
+  - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#go
 input_schema:
   type: object
   required: [rules]

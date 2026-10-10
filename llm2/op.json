@@ -1,0 +1,186 @@
+{
+  "name": "llm2",
+  "description": "Runs the enhanced llm_inference2 Go implementation through the extension mechanism",
+  "command": [
+    "bin/llm2"
+  ],
+  "timeout": "5m",
+  "input_schema": {
+    "type": "object",
+    "required": [
+      "default_provider",
+      "default_model"
+    ],
+    "properties": {
+      "default_provider": {
+        "type": "string"
+      },
+      "default_model": {
+        "type": "string"
+      },
+      "prompt": {
+        "type": "string"
+      },
+      "system_prompt": {
+        "type": "string"
+      },
+      "api_keys": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "string"
+        }
+      },
+      "temperature": {
+        "type": "number"
+      },
+      "max_tokens": {
+        "type": "integer"
+      },
+      "top_p": {
+        "type": "number"
+      },
+      "stop_sequences": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "enable_sandbox": {
+        "type": "boolean"
+      },
+      "allowed_paths": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "restricted_paths": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "default_file_handling": {
+        "type": "string"
+      },
+      "max_file_context_size": {
+        "type": "integer"
+      },
+      "files": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "content": {},
+            "type": {
+              "type": "string"
+            },
+            "mime_type": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "tools": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "name",
+            "description",
+            "parameters"
+          ],
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            },
+            "parameters": {}
+          }
+        }
+      },
+      "execute_tools": {
+        "type": "boolean"
+      },
+      "response_schema": {},
+      "file_handling": {
+        "type": "string"
+      },
+      "default_working_dir": {
+        "type": "string",
+        "default": "{{ context.environment.op.worktree_path }}"
+      },
+      "tool_working_dir": {
+        "type": "string",
+        "default": "{{ context.environment.op.worktree_path }}"
+      },
+      "enable_tool_execution": {
+        "type": "boolean"
+      },
+      "max_tool_rounds": {
+        "type": "integer"
+      },
+      "continue_on_tool_error": {
+        "type": "boolean"
+      },
+      "tool_timeout": {
+        "type": "string"
+      },
+      "metadata": {
+        "type": "object"
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "response": {
+        "type": "string"
+      },
+      "model": {
+        "type": "string"
+      },
+      "finish_reason": {
+        "type": "string"
+      },
+      "usage": {
+        "type": "object"
+      },
+      "tool_calls": {
+        "type": "array",
+        "items": {
+          "type": "object"
+        }
+      },
+      "tool_results": {
+        "type": "array",
+        "items": {
+          "type": "object"
+        }
+      },
+      "files_written": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "files_read": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "files_deleted": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

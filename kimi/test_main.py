@@ -63,7 +63,7 @@ class KimiTests(unittest.TestCase):
         }
         jsonschema.validate(self.payload, self.manifest["input_schema"])
         for index in range(2):
-            # Execute the real manifest, which supplies the pinned CLI on PATH.
+            # Execute the real manifest; the test launcher supplies its declared CLI.
             proc = subprocess.run(self.manifest["command"], input=json.dumps(self.payload),
                                   capture_output=True, text=True, timeout=90,
                                   env={**os.environ, **self.manifest.get("env", {})})

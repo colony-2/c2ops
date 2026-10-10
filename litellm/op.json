@@ -1,0 +1,64 @@
+{
+  "name": "litellm",
+  "description": "Runs llm_inference-compatible requests through LiteLLM via uv",
+  "command": [
+    "bin/litellm"
+  ],
+  "timeout": "5m",
+  "env": {
+    "PYTHONUNBUFFERED": "1"
+  },
+  "input_schema": {
+    "type": "object",
+    "required": [
+      "provider",
+      "model",
+      "prompt"
+    ],
+    "properties": {
+      "provider": {
+        "type": "string"
+      },
+      "model": {
+        "type": "string"
+      },
+      "prompt": {
+        "type": "string"
+      },
+      "system_prompt": {
+        "type": "string"
+      },
+      "temperature": {
+        "type": "number"
+      },
+      "max_tokens": {
+        "type": "integer"
+      },
+      "top_p": {
+        "type": "number"
+      },
+      "stop_sequences": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "response_schema": {}
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "response": {},
+      "model": {
+        "type": "string"
+      },
+      "finish_reason": {
+        "type": "string"
+      },
+      "usage": {
+        "type": "object"
+      }
+    }
+  }
+}

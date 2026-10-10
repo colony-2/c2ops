@@ -1,0 +1,210 @@
+{
+  "name": "skill.run",
+  "description": "Runs one requested Codex skill with structured artifact validation",
+  "command": [
+    "bin/skill-run"
+  ],
+  "timeout": "30m",
+  "dependencies": [
+    "pnpm:@openai/codex@0.157.1"
+  ],
+  "input_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "skill"
+    ],
+    "properties": {
+      "skill": {
+        "type": "string"
+      },
+      "skills": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "input": {
+        "type": "object"
+      },
+      "prompt": {
+        "type": "string"
+      },
+      "session": {
+        "type": "object",
+        "x-c2j-object-type": "c2ops.codex.session/v1"
+      },
+      "model": {
+        "type": "string"
+      },
+      "env": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "string"
+        }
+      },
+      "return_on": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "status_contract": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        }
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "format": {
+            "type": "string"
+          },
+          "schema": {
+            "type": "object"
+          },
+          "required_when_incomplete": {
+            "type": "boolean"
+          },
+          "validation": {
+            "type": "object",
+            "properties": {
+              "on_error": {
+                "type": "string"
+              },
+              "repair": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "max_attempts": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "idle_timeout": {
+        "type": "string",
+        "default": "5m"
+      },
+      "workdir_path": {
+        "type": "string",
+        "default": "{{ context.environment.op.workdir }}"
+      },
+      "worktree_path": {
+        "type": "string",
+        "default": "{{ context.environment.op.worktree_path }}"
+      },
+      "artifact_inbox_path": {
+        "type": "string",
+        "default": "{{ context.environment.op.inbox }}"
+      },
+      "artifact_outbox_path": {
+        "type": "string",
+        "default": "{{ context.environment.op.outbox }}"
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "required": [
+      "session"
+    ],
+    "properties": {
+      "session": {
+        "type": "object",
+        "x-c2j-object-type": "c2ops.codex.session/v1"
+      },
+      "status": {
+        "type": "string"
+      },
+      "sessionId": {
+        "type": "string"
+      },
+      "assistantSummary": {
+        "type": "string"
+      },
+      "incompleteReason": {
+        "type": "string"
+      },
+      "incompleteCategory": {
+        "type": "string"
+      },
+      "pendingDependencies": {
+        "type": "array",
+        "items": {
+          "type": "object"
+        }
+      },
+      "skills_installed": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "outcome": {
+        "type": "object"
+      },
+      "skill": {
+        "type": "string"
+      },
+      "raw_summary": {
+        "type": "string"
+      },
+      "output_source": {
+        "type": "string"
+      },
+      "output_path": {
+        "type": "string"
+      },
+      "raw_output": {
+        "type": "string"
+      },
+      "parsed_output": {},
+      "output_schema_valid": {
+        "type": "boolean"
+      },
+      "output_schema_errors": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "output_repair_attempts": {
+        "type": "integer"
+      },
+      "status_contract_path": {
+        "type": "string"
+      },
+      "status_contract_present": {
+        "type": "boolean"
+      },
+      "status_contract_valid": {
+        "type": "boolean"
+      },
+      "status_contract_json": {},
+      "status_contract_errors": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "diagnostics": {
+        "type": "object"
+      }
+    }
+  }
+}

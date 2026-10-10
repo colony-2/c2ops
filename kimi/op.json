@@ -1,0 +1,109 @@
+{
+  "name": "kimi",
+  "description": "Runs Kimi Code noninteractively with resumable sessions",
+  "command": [
+    "bin/kimi"
+  ],
+  "timeout": "30m",
+  "dependencies": [
+    "pnpm:@moonshot-ai/kimi-code@2.1.1"
+  ],
+  "env": {
+    "PYTHONUNBUFFERED": "1"
+  },
+  "input_schema": {
+    "type": "object",
+    "required": [
+      "prompt",
+      "worktree_path"
+    ],
+    "properties": {
+      "prompt": {
+        "type": "string",
+        "minLength": 1
+      },
+      "sessionId": {
+        "type": "string",
+        "pattern": "^[a-zA-Z0-9_-]{1,128}$"
+      },
+      "model": {
+        "type": "string"
+      },
+      "env": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "string"
+        }
+      },
+      "skills_dirs": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "timeout_seconds": {
+        "type": "number",
+        "exclusiveMinimum": 0,
+        "exclusiveMaximum": 1800,
+        "default": 1740
+      },
+      "workdir_path": {
+        "type": "string",
+        "default": "{{ context.environment.op.workdir }}"
+      },
+      "worktree_path": {
+        "type": "string",
+        "default": "{{ context.environment.op.worktree_path }}"
+      },
+      "artifact_outbox_path": {
+        "type": "string",
+        "default": "{{ context.environment.op.outbox }}"
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "required": [
+      "status",
+      "sessionId",
+      "assistantSummary",
+      "exitCode"
+    ],
+    "properties": {
+      "status": {
+        "type": "string",
+        "enum": [
+          "completed",
+          "error"
+        ]
+      },
+      "sessionId": {
+        "type": "string"
+      },
+      "assistantSummary": {
+        "type": "string"
+      },
+      "incompleteReason": {
+        "type": "string"
+      },
+      "incompleteCategory": {
+        "type": "string"
+      },
+      "pendingDependencies": {
+        "type": "array",
+        "items": {
+          "type": "object"
+        }
+      },
+      "skills_installed": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "exitCode": {
+        "type": "integer"
+      }
+    }
+  }
+}
