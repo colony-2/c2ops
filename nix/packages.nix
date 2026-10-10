@@ -32,7 +32,11 @@ let
       opPath = ../. + "/${op.path}";
       manifestPath = opPath + "/op.json";
       manifest = builtins.fromJSON (builtins.readFile manifestPath);
-      runtime = map (attr: pkgs.${attr}) op.runtime;
+      # pnpm's generated launchers call sed, readlink and uname before Node.
+      # Minimal worker images need not expose these tools on their ambient PATH.
+      runtime = map (attr: pkgs.${attr}) op.runtime
+        ++ lib.optionals (lib.any (lib.hasPrefix "pnpm:") (manifest.dependencies or [ ]))
+          [ pkgs.gnused pkgs.coreutils ];
       module = op.module or op.path;
       subPackage = op.subPackage or ".";
       binaryName = if subPackage == "." then builtins.baseNameOf module else subPackage;

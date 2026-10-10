@@ -27,6 +27,7 @@ func main() {
 func run() error {
 	manifest := flag.String("manifest", "", "packaged op manifest containing declared dependencies")
 	cwd := flag.String("cwd", "", "working directory for the test command")
+	diagnostics := flag.Bool("diagnostics", false, "write tool preparation diagnostics to stderr")
 	flag.Parse()
 	data, err := os.ReadFile(*manifest)
 	if err != nil {
@@ -44,7 +45,12 @@ func run() error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
-	environment, _, err := manager.Prepare(ctx, []toolenv.Scope{{ID: "op-test", Packages: spec.Dependencies}})
+	environment, diag, err := manager.Prepare(ctx, []toolenv.Scope{{ID: "op-test", Packages: spec.Dependencies}})
+	if *diagnostics {
+		if encodeErr := json.NewEncoder(os.Stderr).Encode(diag); encodeErr != nil {
+			return encodeErr
+		}
+	}
 	if err != nil {
 		return err
 	}

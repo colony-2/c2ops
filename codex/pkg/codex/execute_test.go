@@ -43,6 +43,27 @@ func TestVersionProbeIsBoundedBeforeIdleWatchdog(t *testing.T) {
 	}
 }
 
+func TestVersionProbePreservesStartupDiagnostics(t *testing.T) {
+	installFakeCodex(t, "#!/bin/sh\nprintf 'launcher output\\n'\nprintf 'native runtime unavailable\\n' >&2\nexit 1\n")
+	output, err := readCodexVersion(context.Background(), time.Second)
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 {
+		t.Fatalf("expected wrapped exit status 1, got %v", err)
+	}
+	runner, lookupErr := exec.LookPath("pnpm")
+	if lookupErr != nil {
+		t.Fatal(lookupErr)
+	}
+	for _, want := range []string{"native runtime unavailable", "launcher output", "--package=" + codexPackage, "--version", runner} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("missing %q in version diagnostic: %v", want, err)
+		}
+	}
+	if string(output) != "launcher output\n" {
+		t.Fatalf("stdout was lost: %q", output)
+	}
+}
+
 func TestExecutePreservesLogsOnOversizedOutput(t *testing.T) {
 	installFakeCodex(t, "#!/usr/bin/env bash\nset -euo pipefail\nprintf '%*s\\n' 8388608 ''\nprintf 'diagnostic\\n' >&2\n")
 	_, stdout, stderr, dir, err := Execute(context.Background(), testExecuteOptions(t))

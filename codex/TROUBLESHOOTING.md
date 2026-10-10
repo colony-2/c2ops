@@ -79,6 +79,38 @@ Progress records omit prompts, environment values, and CLI arguments. Raw
 and redact before sharing. Temporary capture paths are valid during execution;
 the wrapper copies captures to the artifact outbox before cleaning up.
 
+## Immediate version-check failure in the minimal Nix worker
+
+The October 10, 2026 report was reproduced on ARM64 using
+`ghcr.io/colony-2/base:build-38077543859-1` and the exact reported output,
+`/nix/store/czns5caf18is7dfcdlcsr0dy820mfwjp-c2ops-codex-0.1.0`.
+Both freshly prepared and reused `pnpm:@openai/codex@0.162.1` installations
+failed at `version.check` in about 3 ms. Calling the prepared dependency directly
+revealed the stderr hidden by the old version probe:
+
+```text
+.../node_modules/.bin/codex: line 30: sed: command not found
+.../node_modules/.bin/codex: line 50: cd: null directory
+```
+
+pnpm's shell launcher uses `sed` to determine its own directory. The worker
+image contains GNU sed in the Nix store, but does not expose it on PATH. Setup
+checks that the executable exists; it does not execute the launcher. Adding
+only GNU sed's bin directory to PATH made the unchanged package reach
+`version.ready` with CLI version `0.162.1`. This reproduction did not involve
+an executable-name collision or an incompatible ARM64 Codex binary.
+
+Packages with pnpm dependencies now bind GNU sed and coreutils on PATH. Failed
+version probes also report argv, resolved runner path, exit status, stdout and
+stderr. No CLI reinstall or version change is needed for this failure.
+
+The [worker regression](../scripts/check-codex-worker.py) runs the actual Codex
+and skill-run packages in that image with fresh and reused tool caches. It
+deliberately supplies an invalid checkpoint so execution stops immediately
+after a successful version probe, without a provider call. CI runs it on native
+ARM64 and AMD64 runners. Host-only live tests did not catch this because their
+environment already supplied `sed`; recipe fixtures also substitute the CLI.
+
 ## Known c2j v0.0.61 Shai stdin issue
 
 Source inspection shows a separate upstream problem:

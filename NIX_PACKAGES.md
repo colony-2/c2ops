@@ -27,6 +27,9 @@ to the Nix daemon/user that runs c2j, including inside worker containers.
 Retain `cache.nixos.org` as a substituter for upstream runtime dependencies.
 The worker base still needs Nix, git, uv with Python, and pnpm with Node as
 described in the execution-tools guide. Kimi needs Node.js 24.15 or later.
+Packages with pnpm dependencies also bind GNU sed and coreutils on PATH:
+pnpm's generated launchers need these before they can start Node. Having the
+utilities somewhere in the Nix store does not make them available to a launcher.
 
 pnpm 12 requires explicit decisions for dependency install scripts. Set this
 in the worker environment **before** c2j tool setup (not in op `inputs.env`):
@@ -211,6 +214,13 @@ providers, and verify that the Python library ops import the same nixpkgs
 Pydantic store path. Integration tests
 use the packaged processes and real pinned clients against mock providers; the
 package checks need no provider credentials. CI disables import-from-derivation during evaluation.
+
+`python3 scripts/check-codex-worker.py` additionally runs the built Codex and
+skill-run packages in the minimal worker container, using real declared CLI
+dependencies with fresh and reused caches. It checks `version.ready`, then
+deliberately rejects an invalid checkpoint before any provider request. CI runs
+this regression on both architectures. It requires Docker, Nix, Go, and prebuilt
+packages; set `C2OPS_TEST_FLAKE=path:$PWD` to test a local checkout.
 
 Add new ops to `nix/ops.json`. Edit schemas in `op.yaml`, then regenerate `op.json`.
 The generator fails if a discovered manifest is absent from the catalog.

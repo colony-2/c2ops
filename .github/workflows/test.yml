@@ -127,6 +127,11 @@ jobs:
           C2OPS_TEST_FLAKE: path:${{ github.workspace }}
         run: make test
 
+      - name: Check Codex launchers in the minimal worker image
+        env:
+          C2OPS_TEST_FLAKE: path:${{ github.workspace }}
+        run: python3 scripts/check-codex-worker.py
+
       - uses: actions/upload-artifact@v4
         with:
           name: nix-packages-${{ matrix.system }}

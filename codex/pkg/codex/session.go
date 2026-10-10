@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"net/url"
@@ -421,6 +422,16 @@ func readCodexVersion(ctx context.Context, timeout time.Duration) ([]byte, error
 	output, err := cmd.Output()
 	if ctx.Err() != nil {
 		return nil, fmt.Errorf("Codex version check: %w", ctx.Err())
+	}
+	if err != nil {
+		var stderr []byte
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			// Output retains bounded stderr even when the launcher fails before
+			// the native CLI starts. Preserve it instead of just "exit status 1".
+			stderr = exitErr.Stderr
+		}
+		return output, fmt.Errorf("command %q (resolved %q): %w; stdout: %q; stderr: %q", args, cmd.Path, err, output, stderr)
 	}
 	return output, err
 }
