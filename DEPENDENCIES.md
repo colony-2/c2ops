@@ -150,3 +150,50 @@ Public op coordinates follow `nix:github:colony-2/c2ops/main#<op>`. Integration
 tests use those same coordinates with `C2OPS_TEST_FLAKE=path:<checkout>` to test
 locally built packages. CI builds and tests each architecture before registering
 Cachix publication; failed tests do not publish packages.
+
+## Qualified CLI execution and dependency refresh — 2026-10-10
+
+Checked npm dist-tags, PyPI, Go module releases, and the configured Nix input
+branches. Updated direct dependencies to their latest stable releases:
+
+| Dependency | Version |
+| --- | --- |
+| Codex CLI | 0.162.1 |
+| Kimi CLI | 2.1.1 (already current) |
+| uv in CI | 0.13.0 |
+| pnpm in CI | 12.10.1 |
+| Aider | 0.86.2 (already current; Python 3.12) |
+| LiteLLM | 1.104.2 |
+| PydanticAI | 2.55.0 |
+| TypeSafe SDK | 0.7.4 |
+| Anthropic Go SDK | 1.80.0 |
+| OpenAI Go SDK v3 | 3.76.0 |
+| Google GenAI Go SDK | 1.73.0 |
+| modernc SQLite | 1.60.1 |
+| Shai (root module) | 0.0.14 |
+
+c2j remains on the latest main pseudoversion already pinned here; the newest
+release tag, v0.0.63, predates the required extension setup API. `flake.lock`
+already matches the current configured upstream branches. The Nix dev shell
+uses their packaged toolchain (uv 0.12.22 and pnpm 12.9.0); CI explicitly tests
+the newer upstream manager releases above. Python lockfiles were refreshed with
+`uv lock --upgrade`, respecting each library's supported dependency constraints.
+
+The earlier bare CLI calls were incomplete: manifest declarations existed, but
+Codex and Kimi still selected their executable by name. Both now use
+`pnpm --package=<exact-package> dlx <explicit-executable>`. c2j's qualified
+runner selects the prepared binary directly. Version checks use the same form.
+Tests prepare dependencies through c2j from `op.json`, with no `npm exec` launchers.
+Regression tests make bare CLI names fail and check package/manifest agreement.
+
+Python provider packages are imported libraries, already included in the Nix
+closure. `uv run --script` remains only for source development. No production
+op currently needs an external Python CLI; when one is added, declare
+`uv:<package>==<version>` and invoke `uvx --from <package>==<version> <command>`.
+
+The pnpm 12 cold-install test exposed `ERR_PNPM_IGNORED_BUILDS` for Kimi and
+node-pty. `nix/pnpm-build-policy.json` explicitly skips those two packages'
+install scripts; the noninteractive CLI's shell/session/artifact tests pass
+using its published assets. CI and the dev shell set `PNPM_CONFIG_ALLOW_BUILDS`
+from that file. Workers need the same policy before c2j setup, as documented in
+[Nix packages](./NIX_PACKAGES.md). This does not enable scripts globally.

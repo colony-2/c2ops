@@ -2,10 +2,12 @@
 
 Go-backed Codex op with immutable object sessions and outbox artifacts.
 
-Both manifests declare **`pnpm:@openai/codex@0.157.1`**, which c2j prepares and
-places on the invocation's PATH. Direct invocations require **Codex CLI 0.148.0
-or later**; both entrypoints enforce this minimum with no upper bound. See the
-[compatibility results](./CLI_COMPATIBILITY.md).
+Both manifests declare **`pnpm:@openai/codex@0.162.1`**. c2j prepares this
+package before execution. Version probing and execution both use
+`pnpm --package=@openai/codex@0.162.1 dlx codex <args>`, selecting the declared
+installation even if another `codex` is on PATH. Checkpoint producers must use
+**Codex CLI 0.148.0 or later**; both entrypoints enforce this minimum with no
+upper bound. See the [compatibility results](./CLI_COMPATIBILITY.md).
 
 **Breaking change:** resume with `session`, not `sessionId` or a
 `codex-home-state` artifact. Read [the migration guide](./MIGRATION_OBJECT_SESSIONS.md)

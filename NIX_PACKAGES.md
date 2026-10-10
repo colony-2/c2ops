@@ -28,6 +28,21 @@ Retain `cache.nixos.org` as a substituter for upstream runtime dependencies.
 The worker base still needs Nix, git, uv with Python, and pnpm with Node as
 described in the execution-tools guide. Kimi needs Node.js 24.15 or later.
 
+pnpm 12 requires explicit decisions for dependency install scripts. Set this
+in the worker environment **before** c2j tool setup (not in op `inputs.env`):
+
+```sh
+export PNPM_CONFIG_ALLOW_BUILDS='{"@moonshot-ai/kimi-code@2.1.1":false,"node-pty@1.1.0":false}'
+```
+
+This acknowledges and skips Kimi's global-install migration hook and the
+optional node-pty build scripts. The noninteractive op uses the published CLI
+assets; its real shell execution, session resume, and artifact tests pass with
+these scripts disabled. Other packages keep pnpm's default policy. If the worker
+already has an `allowBuilds` policy, merge these entries into it. CI and the dev
+shell read the same [configuration](./nix/pnpm-build-policy.json). See
+[pnpm's build settings](https://pnpm.io/settings#allowbuilds).
+
 Use the named `main` ref in package selectors. Wait for the **test workflow to
 complete successfully**, including Cachix upload, after `main` advances:
 
@@ -62,7 +77,7 @@ needs access to this definition repository and the flake's evaluation inputs.
 | Ops | Included in the Nix runtime closure | Additional c2j setup |
 | --- | --- | --- |
 | `llm`, `llm2` | Compiled Go op and Git | None |
-| `codex`, `skill-run` | Compiled Go op, SQLite implementation, Git | `pnpm:@openai/codex@0.157.1` |
+| `codex`, `skill-run` | Compiled Go op, SQLite implementation, Git | `pnpm:@openai/codex@0.162.1` |
 | `gha`, `gha-many` | Compiled Go op, Git, Docker client | Reachable Docker daemon for the local backend; credentials for the GitHub backend |
 | `rule_gate` | Compiled Go op | None |
 | `pydantic`, `litellm`, `jev` | Python 3.13 and locked Python libraries | Provider credentials |
@@ -75,6 +90,16 @@ uses Python 3.12 for its pinned NumPy dependency. No packaged op calls `go run`,
 the op's execution budget; those npm packages are **not** stored in Cachix.
 Their declared top-level versions are pinned; c2j does not provide a transitive
 pnpm lock service. Keep the worker tool cache persistent for reuse.
+
+Both clients use qualified calls that name the package and executable:
+
+```sh
+pnpm --package=@openai/codex@0.162.1 dlx codex --version
+pnpm --package=@moonshot-ai/kimi-code@2.1.1 dlx kimi --version
+```
+
+c2j dispatches these to retained binaries without installation or bare-name
+lookup during execution. The package version must match the manifest declaration.
 
 Nix runtime tools are bound in package wrappers. Packaged manifests must not
 contain `nix:` dependencies. `uv:` and `pnpm:` references are for CLI applications,
@@ -206,6 +231,7 @@ tool binding directory after real dependency setup; the op executable, objects,
 and artifacts remain real. Successful fixtures assert that c2j prepared a Nix package.
 
 The test harness itself needs Go, Python, uv, Node, pnpm, and Git; `nix develop`
-provides them. Python unit-test libraries and the Codex/Kimi CLI test launchers
-may download their pinned tools. These harness dependencies are distinct from
-packaged op libraries, which are already in the Nix outputs.
+provides them. Python unit-test libraries may be downloaded by uv. `scripts/with-tools.go`
+uses c2j to prepare the CLI dependencies declared in the installed manifest,
+for packaged process tests and the Codex test launcher. These harness dependencies
+are distinct from packaged op libraries, which are already in the Nix outputs.

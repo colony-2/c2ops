@@ -1,7 +1,7 @@
 # Jev op
 
 Evaluates state using [TypeSafe Jev](https://docs.typesafe.ai/introduction) through
-the official `typesafe-sdk==0.7.2` Python SDK. The Nix package includes Python and
+the official `typesafe-sdk==0.7.4` Python SDK. The Nix package includes Python and
 the locked SDK environment. Configure the [`colony2` cache](../NIX_PACKAGES.md)
 for the `main` coordinates below. Local source execution
 uses `uv run --script` and Python 3.12+.

@@ -1,7 +1,8 @@
 # Troubleshoot a hanging Codex op
 
 Applies to `codex` and `codex/run_skill`. Historical investigation baseline: c2j
-**v0.0.61**, Codex CLI **0.157.1** for the default tests. Production accepts
+**v0.0.61**, Codex CLI **0.157.1**. Current default tests use **0.162.1**.
+Production accepts
 **0.148.0 or later**. A dependency update alone does not establish
 the cause of a particular deployment's hang.
 
@@ -18,8 +19,7 @@ when using a sandbox:
 
 ```sh
 go version -m "$(command -v c2j)"
-command -v codex
-codex --version
+pnpm --package=@openai/codex@0.162.1 dlx codex --version
 # Must report: codex-cli <version>, with version >= 0.148.0
 ```
 

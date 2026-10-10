@@ -50,3 +50,7 @@ make test
 Tests run the actual pinned CLI against a local mock HTTP API, including session
 resumption, and check failure handling and artifact preservation. No provider
 credentials are required. npm needs network access on first use to fetch the CLI.
+
+CLI execution uses `pnpm --package=@moonshot-ai/kimi-code@2.1.1 dlx kimi <args>`,
+matching the manifest dependency. c2j dispatches this qualified form to the
+prepared installation; an unrelated `kimi` on PATH cannot select another version.
