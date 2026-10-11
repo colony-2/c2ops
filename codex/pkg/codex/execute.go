@@ -57,7 +57,9 @@ func Execute(ctx context.Context, opts Options) (Result, string, string, string,
 	}
 	debugArtifactStat("stderr-create", stderrPath)
 
-	collector := newOutputCollector(stdoutFile, stderrFile)
+	// Keep durable CLI logs while exposing progress and diagnostics to the
+	// parent runner during execution. Stdout remains the op's JSON protocol.
+	collector := newOutputCollector(stdoutFile, io.MultiWriter(stderrFile, os.Stderr))
 	progress(ctx, "exec.start", map[string]any{"stdout_path": stdoutPath, "stderr_path": stderrPath, "idle_timeout": activeOpts.IdleTimeout.String()})
 
 	runErr := runCodexExec(ctx, activeOpts, schemaPath, collector)

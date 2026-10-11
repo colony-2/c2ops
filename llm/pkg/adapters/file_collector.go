@@ -1,6 +1,7 @@
 package llmadapters
 
 import (
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -240,7 +241,7 @@ func (c *DefaultFileCollector) getGitFiles(repoPath string, opts GitCollectionOp
 		cmd.Dir = repoPath
 	}
 
-	output, err := cmd.Output()
+	output, err := gitCommandOutput(cmd)
 	if err != nil {
 		return nil, err
 	}
@@ -258,7 +259,10 @@ func (c *DefaultFileCollector) getGitFiles(repoPath string, opts GitCollectionOp
 	if opts.IncludeStaged {
 		cmd = exec.Command("git", "diff", "--cached", "--name-only")
 		cmd.Dir = repoPath
-		output, err = cmd.Output()
+		output, err = gitCommandOutput(cmd)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "git file collection: %v\n", err)
+		}
 		if err == nil {
 			lines = strings.Split(string(output), "\n")
 			for _, line := range lines {
@@ -274,7 +278,10 @@ func (c *DefaultFileCollector) getGitFiles(repoPath string, opts GitCollectionOp
 	if opts.IncludeUntracked {
 		cmd = exec.Command("git", "ls-files", "--others", "--exclude-standard")
 		cmd.Dir = repoPath
-		output, err = cmd.Output()
+		output, err = gitCommandOutput(cmd)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "git file collection: %v\n", err)
+		}
 		if err == nil {
 			lines = strings.Split(string(output), "\n")
 			for _, line := range lines {
@@ -297,4 +304,15 @@ func contains(slice []string, item string) bool {
 		}
 	}
 	return false
+}
+
+// gitCommandOutput keeps diagnostics out of the filename protocol, while
+// retaining child stderr in errors (Output otherwise only reports exit status).
+func gitCommandOutput(cmd *exec.Cmd) ([]byte, error) {
+	output, err := cmd.Output()
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && len(exitErr.Stderr) != 0 {
+		err = fmt.Errorf("%w: %s", err, strings.TrimSpace(string(exitErr.Stderr)))
+	}
+	return output, err
 }

@@ -1,15 +1,60 @@
 #!/usr/bin/env python3
 
+import codecs
+from contextlib import contextmanager
 import json
 import os
 import subprocess
 import sys
+import threading
 import uuid
 from pathlib import Path
 from typing import Any
 
 
 AIDER_REFERENCE = "github:colony-2/c2ops/main#aider-cli"
+
+
+@contextmanager
+def streamed_stderr():
+    """Tee child diagnostics to the parent while retaining the artifact text."""
+    read_fd, write_fd = os.pipe()
+    sink = os.fdopen(write_fd, "wb")
+    captured = []
+
+    def forward():
+        decoder = codecs.getincrementaldecoder("utf-8")("replace")
+        with os.fdopen(read_fd, "rb") as source:
+            while True:
+                chunk = source.read1(65536)
+                text = decoder.decode(chunk, final=not chunk)
+                captured.append(text)
+                try:
+                    sys.stderr.write(text)
+                    sys.stderr.flush()
+                except (OSError, ValueError):
+                    # A disconnected log reader must not stop pipe draining or
+                    # prevent the durable stderr artifact from being written.
+                    pass
+                if not chunk:
+                    break
+
+    reader = threading.Thread(target=forward, daemon=True)
+    reader.start()
+    try:
+        yield sink, captured, reader
+    finally:
+        sink.close()
+        reader.join()
+
+
+def execute(args, worktree, env):
+    with streamed_stderr() as (sink, captured, _):
+        with subprocess.Popen(args, cwd=worktree, env=env, stdout=subprocess.PIPE,
+                              stderr=sink, text=True) as proc:
+            sink.close()
+            stdout, _ = proc.communicate()
+    return subprocess.CompletedProcess(args, proc.returncode, stdout, "".join(captured))
 
 
 def aider_command() -> list[str]:
@@ -151,14 +196,7 @@ def main() -> int:
     env = dict(os.environ)
     env.update({str(key): str(value) for key, value in (payload.get("env") or {}).items()})
 
-    completed = subprocess.run(
-        args,
-        cwd=str(worktree),
-        env=env,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
+    completed = execute(args, str(worktree), env)
 
     stdout_text = completed.stdout or ""
     stderr_text = completed.stderr or ""
@@ -173,8 +211,6 @@ def main() -> int:
 
     if completed.returncode != 0:
         print(f"aider exited with status {completed.returncode}", file=sys.stderr)
-        if stderr_text.strip():
-            print(stderr_text.rstrip(), file=sys.stderr)
         return completed.returncode
     return 0
 

@@ -60,6 +60,13 @@ func TestVersionProbePreservesStartupDiagnostics(t *testing.T) {
 }
 
 func TestExecutePreservesLogsOnOversizedOutput(t *testing.T) {
+	parentLog, err := os.CreateTemp(t.TempDir(), "parent-stderr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	previousStderr := os.Stderr
+	os.Stderr = parentLog
+	defer func() { os.Stderr = previousStderr; parentLog.Close() }()
 	installFakeCodex(t, "#!/usr/bin/env bash\nset -euo pipefail\nprintf '%*s\\n' 8388608 ''\nprintf 'diagnostic\\n' >&2\n")
 	_, stdout, stderr, dir, err := Execute(context.Background(), testExecuteOptions(t))
 	defer cleanupArtifacts(stdout, stderr, dir)
@@ -71,6 +78,7 @@ func TestExecutePreservesLogsOnOversizedOutput(t *testing.T) {
 		t.Fatalf("stdout capture was lost: info=%v err=%v", info, statErr)
 	}
 	assertFileContent(t, stderr, "diagnostic\n")
+	assertFileContent(t, parentLog.Name(), "diagnostic\n")
 }
 
 func TestExecuteReturnsIdleTimeoutError(t *testing.T) {

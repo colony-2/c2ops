@@ -5,12 +5,16 @@
 # ///
 """Run Kimi Code's noninteractive CLI behind the extension op contract."""
 
+import codecs
+from contextlib import contextmanager
 import json
 import os
 import re
 import signal
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 
 
@@ -18,23 +22,66 @@ from pathlib import Path
 KIMI_PACKAGE = "@moonshot-ai/kimi-code@2.1.1"
 
 
+@contextmanager
+def streamed_stderr():
+    """Tee child diagnostics to the parent while retaining the artifact text."""
+    read_fd, write_fd = os.pipe()
+    sink = os.fdopen(write_fd, "wb")
+    captured = []
+
+    def forward():
+        decoder = codecs.getincrementaldecoder("utf-8")("replace")
+        with os.fdopen(read_fd, "rb") as source:
+            while True:
+                chunk = source.read1(65536)
+                text = decoder.decode(chunk, final=not chunk)
+                captured.append(text)
+                try:
+                    sys.stderr.write(text)
+                    sys.stderr.flush()
+                except (OSError, ValueError):
+                    # A disconnected log reader must not stop pipe draining or
+                    # prevent the durable stderr artifact from being written.
+                    pass
+                if not chunk:
+                    break
+
+    reader = threading.Thread(target=forward, daemon=True)
+    reader.start()
+    try:
+        yield sink, captured, reader
+    finally:
+        sink.close()
+        reader.join()
+
+
 def execute(args, worktree, env, timeout):
     # A coding CLI can spawn shells. Stop the entire process group on timeout.
-    with subprocess.Popen(args, stdin=subprocess.DEVNULL, cwd=worktree, env=env,
-                          stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                          text=True, start_new_session=(os.name == "posix")) as proc:
-        try:
-            stdout, stderr = proc.communicate(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            if os.name == "posix":
-                try:
-                    os.killpg(proc.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
-            else:
-                proc.kill()
-            stdout, stderr = proc.communicate()
-            raise subprocess.TimeoutExpired(args, timeout, output=stdout, stderr=stderr)
+    timed_out = False
+    with streamed_stderr() as (sink, captured, reader):
+        with subprocess.Popen(args, stdin=subprocess.DEVNULL, cwd=worktree, env=env,
+                              stdout=subprocess.PIPE, stderr=sink,
+                              text=True, start_new_session=(os.name == "posix")) as proc:
+            sink.close()
+            started = time.monotonic()
+            try:
+                stdout, _ = proc.communicate(timeout=timeout)
+                reader.join(max(0, timeout - (time.monotonic() - started)))
+                if reader.is_alive():
+                    raise subprocess.TimeoutExpired(args, timeout)
+            except subprocess.TimeoutExpired:
+                timed_out = True
+                if os.name == "posix":
+                    try:
+                        os.killpg(proc.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                else:
+                    proc.kill()
+                stdout, _ = proc.communicate()
+    stderr = "".join(captured)
+    if timed_out:
+        raise subprocess.TimeoutExpired(args, timeout, output=stdout, stderr=stderr)
     return subprocess.CompletedProcess(args, proc.returncode, stdout, stderr)
 
 
