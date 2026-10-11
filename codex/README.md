@@ -5,7 +5,7 @@ Go-backed Codex op with immutable object sessions and outbox artifacts.
 The Nix packages include the native **Codex CLI 0.161.0** from our pinned
 nixpkgs. Both entrypoints share one CLI store path and invoke it explicitly;
 no pnpm or Node setup is needed. Source/Git manifests declare
-`nix:github:colony-2/c2ops/main#codex-cli` and use the corresponding qualified
+`nix:github:colony-2/c2ops/published#codex-cli` and use the corresponding qualified
 `nix run` command. `C2OPS_CODEX_BIN` can explicitly override the binary for
 fixtures or compatibility experiments; the package wrapper defaults it to the
 native CLI's absolute path.
@@ -35,7 +35,7 @@ op: ./codex
 Nix package selector:
 
 ```yaml
-op: nix:github:colony-2/c2ops/main#codex
+op: nix:github:colony-2/c2ops/published#codex
 ```
 
 ## What It Does
@@ -68,7 +68,7 @@ Sandboxing is controlled by the reserved extension-op `sandbox` recipe input. Th
 ```yaml
 sequence:
   - id: code_task
-    op: nix:github:colony-2/c2ops/main#codex
+    op: nix:github:colony-2/c2ops/published#codex
     inputs:
       prompt: Fix the failing tests in this repository.
       worktree_path: "{{ context.environment.op.worktree_path }}"
@@ -93,7 +93,7 @@ This module also exposes a nested selector-backed op for running one requested
 skill:
 
 ```yaml
-op: nix:github:colony-2/c2ops/main#skill-run
+op: nix:github:colony-2/c2ops/published#skill-run
 ```
 
 `run_skill` uses the same Codex execution path as this op, but generates the

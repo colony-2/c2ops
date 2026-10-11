@@ -13,7 +13,7 @@ op: ./llm
 Nix package selector:
 
 ```yaml
-op: nix:github:colony-2/c2ops/main#llm
+op: nix:github:colony-2/c2ops/published#llm
 ```
 
 ## What It Does
@@ -36,7 +36,7 @@ op: nix:github:colony-2/c2ops/main#llm
 ```yaml
 sequence:
   - id: ask
-    op: nix:github:colony-2/c2ops/main#llm
+    op: nix:github:colony-2/c2ops/published#llm
     inputs:
       provider: openai
       model: gpt-4.1-mini

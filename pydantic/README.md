@@ -13,7 +13,7 @@ op: ./pydantic
 Nix package selector:
 
 ```yaml
-op: nix:github:colony-2/c2ops/main#pydantic
+op: nix:github:colony-2/c2ops/published#pydantic
 ```
 
 ## What It Does
@@ -121,7 +121,7 @@ Git-backed recipe example:
 ```yaml
 sequence:
   - id: plan_change
-    op: nix:github:colony-2/c2ops/main#pydantic
+    op: nix:github:colony-2/c2ops/published#pydantic
     inputs:
       default_provider: openai
       default_model: gpt-4.1

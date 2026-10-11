@@ -7,13 +7,14 @@ describes c2j's explicit dependency scopes and setup lifecycle.
 
 ## Calling a published op
 
-Use the package reference directly in `op:`. These coordinates follow `main`;
-wait for its CI build and Cachix upload to complete after each update:
+Use the package reference directly in `op:`. These coordinates follow
+`published`, which advances only after both Linux architectures pass tests,
+finish uploading, and pass download-only installation checks:
 
 ```yaml
 sequence:
   - id: evaluate
-    op: nix:github:colony-2/c2ops/main#rule_gate
+    op: nix:github:colony-2/c2ops/published#rule_gate
     inputs:
       rules:
         - id: ready

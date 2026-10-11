@@ -13,7 +13,7 @@ op: ./litellm
 Nix package selector:
 
 ```yaml
-op: nix:github:colony-2/c2ops/main#litellm
+op: nix:github:colony-2/c2ops/published#litellm
 ```
 
 ## What It Does
@@ -52,7 +52,7 @@ If `model` is already fully qualified, it is passed through unchanged. Otherwise
 ```yaml
 sequence:
   - id: ask_model
-    op: nix:github:colony-2/c2ops/main#litellm
+    op: nix:github:colony-2/c2ops/published#litellm
     inputs:
       provider: openai
       model: gpt-4.1-mini
@@ -64,7 +64,7 @@ Git-backed recipe example:
 ```yaml
 sequence:
   - id: ask_model
-    op: nix:github:colony-2/c2ops/main#litellm
+    op: nix:github:colony-2/c2ops/published#litellm
     inputs:
       provider: openai
       model: gpt-4.1-mini
@@ -76,7 +76,7 @@ Structured output example:
 ```yaml
 sequence:
   - id: ask_model
-    op: nix:github:colony-2/c2ops/main#litellm
+    op: nix:github:colony-2/c2ops/published#litellm
     inputs:
       provider: anthropic
       model: claude-sonnet-4-5

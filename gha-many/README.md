@@ -13,7 +13,7 @@ op: ./gha-many
 Nix package selector:
 
 ```yaml
-op: nix:github:colony-2/c2ops/main#gha-many
+op: nix:github:colony-2/c2ops/published#gha-many
 ```
 
 ## What It Does
@@ -34,7 +34,7 @@ op: nix:github:colony-2/c2ops/main#gha-many
 ```yaml
 sequence:
   - id: ci_matrix
-    op: nix:github:colony-2/c2ops/main#gha-many
+    op: nix:github:colony-2/c2ops/published#gha-many
     inputs:
       workflows:
         - workflow: .github/workflows/ci.yml

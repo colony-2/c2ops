@@ -46,13 +46,13 @@ already has an `allowBuilds` policy, merge these entries into it. CI and the dev
 shell read the same [configuration](./nix/pnpm-build-policy.json). See
 [pnpm's build settings](https://pnpm.io/settings#allowbuilds).
 
-Use the named `main` ref in package selectors. Wait for the **test workflow to
-complete successfully**, including Cachix upload, after `main` advances:
+Use the named **`published`** ref in package selectors. CI advances this branch
+only after both architectures finish testing, uploading, and verifying downloads:
 
 ```yaml
 sequence:
   - id: code
-    op: nix:github:colony-2/c2ops/main#codex
+    op: nix:github:colony-2/c2ops/published#codex
     inputs:
       prompt: Fix the failing test.
       worktree_path: "${{ context.environment.op.worktree_path }}"
@@ -63,17 +63,27 @@ Package attributes are `llm`, `llm2`, `codex`, `skill-run`, `gha`, `gha-many`,
 manifest name `skill.run`. The selector already identifies the op package; do
 not repeat it in `dependencies` or wrap it in `extension_execution`.
 
-`main` is mutable: new live resolutions may select newer outputs, while c2j
-records the exact store path for an invocation and replays recorded results.
-There can be a setup failure between a push to `main` and its completed upload.
-`flake.lock` still pins package build dependencies; recipe authors need no commit
-IDs. CI records the source revision separately for diagnostics.
+`published` is mutable: new resolutions may select newer verified outputs, while
+c2j records the exact store path for an invocation and replays recorded results.
+When a new commit is building or its publication fails, `published` stays on the
+previous available release. Nix and c2j caches may continue using an older
+resolved revision until refreshed; promotion does not replace running jobs.
+
+`main` is a development reference and may select binaries before they are uploaded.
+For reproducibility, use `nix:github:colony-2/c2ops/<verified-commit-sha>#codex`,
+taking the SHA from a successfully promoted workflow's artifacts. Commit pins
+identify an exact revision but still require its outputs to be retained.
+`flake.lock` pins build dependencies for both moving and commit references.
 
 Workers only substitute prebuilt outputs. An unpublished branch revision, a cache entry
 removed by garbage collection, an untrusted signing key, or the wrong platform
 fails during setup. Workers will not compile the package as a fallback. Rebuild
 and republish the required output if it has been evicted. Metadata still
 needs access to this definition repository and the flake's evaluation inputs.
+
+Nix caches missing-output lookups. If retrying an output that has since been
+uploaded, `--option narinfo-cache-negative-ttl 0` forces a fresh cache lookup.
+See [Nix's negative lookup cache setting](https://nix.dev/manual/nix/stable/command-ref/conf-file.html#conf-narinfo-cache-negative-ttl).
 
 ## What is packaged
 
@@ -130,7 +140,7 @@ packaged ops include the same CLI derivations, so publishing the op closures
 also covers these helpers. Source Codex uses the manifest-declared coordinate:
 
 ```sh
-nix run github:colony-2/c2ops/main#codex-cli -- --version
+nix run github:colony-2/c2ops/published#codex-cli -- --version
 ```
 
 Kimi's declared npm CLI is prepared by c2j before execution and is not stored in
@@ -167,7 +177,28 @@ runs integration and unit tests on native GitHub Actions runners for both Linux
 architectures. Integration tests override the public coordinates with the current
 checkout; they cannot accidentally test the published branch instead. It uses
 `cachix/install-nix-action` to install Nix, `cachix/cachix-action` to publish, and
-`actions/upload-artifact` to record exact selectors and output paths.
+`actions/upload-artifact` / `actions/download-artifact` to transfer exact selectors
+and output paths. Everything runs in this single workflow:
+
+1. `test`: build and test on AMD64 and ARM64, then upload through the Cachix
+   action's post-job phase. Record all 12 op outputs plus `codex-cli` and `aider-cli`.
+2. `verify`: wait for **both complete test jobs**, then use a separate native
+   matrix to download every recorded runtime closure into an empty Nix store.
+   Only `cache.nixos.org` and the configured Cachix cache are used. Signature
+   verification stays enabled; local and remote builds are disabled, including
+   a rejecting build hook for derivations with `preferLocalBuild`. Retain verified
+   op closures using per-revision Cachix pins before allowing promotion.
+3. `promote`: wait for both verification jobs, then fast-forward `published` to
+   the exact tested SHA. It creates the branch on the first successful publication.
+   Older late-finishing runs and reruns leave a newer `published` untouched.
+   The branch update uses a normal, non-forced Git push, which also guards races.
+
+Only the promotion job receives `contents: write`. It is serialized, and the
+workflow's push trigger accepts only `main`, so promotion does not start another
+publication cycle. Pull requests and dispatches on other branches cannot publish
+or promote. A failed build, upload, download, signature check, or pin leaves
+`published` unchanged. A verification job that succeeds while its sibling fails
+may leave pins for that unpromoted candidate; those can be removed later.
 
 One-time repository setup:
 
@@ -181,15 +212,34 @@ One-time repository setup:
 4. Push the packaging revision to `main`, or dispatch the workflow on `main`.
    Main builds fail explicitly if the write token is missing. Pull requests
    build and validate without receiving the write token or publishing outputs.
+5. Allow the workflow token to create and fast-forward `published`. Repository
+   branch rules must permit this CI update; protect the branch against manual
+   force pushes and deletion. Bootstrap finishes only when the promotion job
+   succeeds, so wait for that first run before using `published` in workers.
 
-The Cachix action pushes the 12 final package paths and their runtime closures,
+The Cachix action pushes the 12 op outputs, the two CLI outputs, and their runtime closures,
 including outputs reused from a previous build. It does not upload every build
 input or compiler. Upstream NixOS cache entries are deduplicated by Cachix.
 Use the workflow's `nix-packages-<system>` artifacts to find public coordinates,
 the tested source revision, and exact store paths. An artifact from a failed
-workflow is not publication confirmation; wait for the entire job, including
-the post-job upload, to succeed. The upload action is registered only after all
-tests pass.
+workflow is not publication confirmation; wait for `promote` to succeed. The
+upload action is registered only after all tests pass.
+
+### Retention
+
+CI creates [Cachix pins](https://docs.cachix.org/pins) named
+`c2ops-<revision>-<system>-<op>` for each verified op closure. The native CLI
+dependencies are retained through their owning ops. These pins keep earlier
+releases available and are not automatically pruned by this workflow. Pinning
+does not duplicate shared store paths or increase the cache's storage quota.
+
+Manage the retention horizon in the Cachix dashboard: keep the current
+`published` revision, any commit-pinned recipes still in use, and previous
+revisions needed by queued or already-resolved jobs. Removing their pins makes
+those outputs eligible for cache garbage collection and may break later installs.
+Monitor cache capacity and retire unused release pins explicitly.
+
+### Manual publication
 
 For a manual publication on a native builder:
 
@@ -199,8 +249,8 @@ nix build .#rule_gate
 cachix push colony2 ./result
 ```
 
-Publish every selected package on each supported architecture before deploying
-its reference. Cachix credentials come from the environment or CLI configuration.
+This uploads an individual output; dispatch the workflow on `main` to verify and
+advance `published`. Cachix credentials come from the environment or CLI configuration.
 
 ## Development and updates
 
@@ -227,6 +277,13 @@ with first and repeated invocations and package-manager commands disabled. It ch
 deliberately rejects an invalid checkpoint before any provider request. CI runs
 this regression on both architectures. It requires Docker, Nix, and prebuilt
 packages; set `C2OPS_TEST_FLAKE=path:$PWD` to test a local checkout.
+
+`make test-tools` includes promotion tests against disposable Git repositories.
+CI also sets `C2OPS_TEST_NIX_PUBLICATION=1` to exercise real signed cache imports,
+missing dependencies, signature rejection, and Cachix pinning against a local
+test server. To run those checks locally, install Nix and Cachix, then run
+`C2OPS_TEST_NIX_PUBLICATION=1 make test-tools`. No remote cache writes are made
+by these tests.
 
 Add new ops to `nix/ops.json`. Edit schemas in `op.yaml`, then regenerate `op.json`.
 The generator fails if a discovered manifest is absent from the catalog.
@@ -259,7 +316,7 @@ invocation time. Aider's source wrapper uses its declared Nix CLI through
 ## Integration tests and local overrides
 
 All op process integration tests and recipe fixtures name public coordinates
-such as `nix:github:colony-2/c2ops/main#codex`. `scripts/op_test.py` shares their
+such as `nix:github:colony-2/c2ops/published#codex`. `scripts/op_test.py` shares their
 resolution rule. Set **`C2OPS_TEST_FLAKE`** to a flake reference without an
 attribute to replace only the flake part; the named op is preserved and unknown
 coordinates fail. The override is test-only and is not read by production ops.

@@ -10,7 +10,7 @@ the cause of a particular deployment's hang.
 
 Upgrade the deployed c2j worker as well as submission tools. This repository's
 `codex/go.mod` controls its linked library and fixture tests; it cannot replace
-an already running worker. Use `nix:github:colony-2/c2ops/main#codex` (or
+an already running worker. Use `nix:github:colony-2/c2ops/published#codex` (or
 `#skill-run`) after CI has published its packages. Check the resolved store path
 in setup diagnostics; see [Nix packages](../NIX_PACKAGES.md) for worker setup.
 
@@ -19,7 +19,7 @@ when using a sandbox:
 
 ```sh
 go version -m "$(command -v c2j)"
-nix run github:colony-2/c2ops/main#codex-cli -- --version
+nix run github:colony-2/c2ops/published#codex-cli -- --version
 # Must report: codex-cli <version>, with version >= 0.148.0
 ```
 

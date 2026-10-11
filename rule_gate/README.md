@@ -13,7 +13,7 @@ op: ./rule_gate
 Nix package selector:
 
 ```yaml
-op: nix:github:colony-2/c2ops/main#rule_gate
+op: nix:github:colony-2/c2ops/published#rule_gate
 ```
 
 ## What It Does
@@ -97,7 +97,7 @@ rules:
 ```yaml
 sequence:
   - id: final_gate
-    op: nix:github:colony-2/c2ops/main#rule_gate
+    op: nix:github:colony-2/c2ops/published#rule_gate
     artifacts:
       reviews/review-pack.json: ${{ states.review.artifacts["reviews/review-pack.json"] }}
     inputs:

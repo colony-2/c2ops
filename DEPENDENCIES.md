@@ -146,10 +146,11 @@ update procedures. These packages require c2j's new Nix/dependency lifecycle;
 the test harness now uses c2j `v0.0.64-0.20261010012403-3849f3a48140` and
 JobDB `v0.0.28` to exercise it. These remain test-only Go dependencies.
 
-Public op coordinates follow `nix:github:colony-2/c2ops/main#<op>`. Integration
+Public op coordinates follow `nix:github:colony-2/c2ops/published#<op>`. Integration
 tests use those same coordinates with `C2OPS_TEST_FLAKE=path:<checkout>` to test
 locally built packages. CI builds and tests each architecture before registering
-Cachix publication; failed tests do not publish packages.
+Cachix publication; failed tests do not publish packages. The same workflow
+verifies downloads on both architectures before advancing `published`.
 
 ## Qualified CLI execution and dependency refresh — 2026-10-10
 
@@ -245,7 +246,7 @@ native AMD64 execution remains covered by CI.
 
 Codex and skill-run now use the shared `pkgs.codex` derivation from our locked
 nixpkgs (0.161.0). Packaged ops bind its absolute executable path and have no
-pnpm dependency; source/Git ops declare `nix:github:colony-2/c2ops/main#codex-cli`.
+pnpm dependency; source/Git ops declare `nix:github:colony-2/c2ops/published#codex-cli`.
 No new flake input or package expression is needed. CI publishes the CLI as part
 of both op closures, reusing the upstream cache where available.
 

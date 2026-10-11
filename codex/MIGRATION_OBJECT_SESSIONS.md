@@ -17,7 +17,7 @@ object sessions and package setup. See the [troubleshooting guide](./TROUBLESHOO
 historical v0.0.61 Shai limitations.
 
 The Nix ops include the native Codex CLI in their runtime closure. Source/Git
-manifests declare `nix:github:colony-2/c2ops/main#codex-cli`; c2j prepares that
+manifests declare `nix:github:colony-2/c2ops/published#codex-cli`; c2j prepares that
 package for qualified `nix run` invocation. Both paths require **Codex CLI
 0.148.0 or later**; older or unparseable versions are rejected.
 
@@ -31,12 +31,12 @@ Use a c2j worker implementing the [Nix package contract](../EXTENSION_OPS.md)
 and configure the [`colony2` cache](../NIX_PACKAGES.md). Packaged ops include the
 Go executable and SQLite implementation; workers do not need Go or `sqlite3`.
 Source selectors still need Go 1.26 or later and access to the module dependencies.
-Use the `main` coordinates after their CI build and Cachix upload complete:
+Use the `published` coordinates, which follow the latest verified publication:
 
 ```yaml
-op: nix:github:colony-2/c2ops/main#codex
+op: nix:github:colony-2/c2ops/published#codex
 # or:
-op: nix:github:colony-2/c2ops/main#skill-run
+op: nix:github:colony-2/c2ops/published#skill-run
 ```
 
 c2j supplies `C2J_OBJECT_OUTBOX` automatically. Do not set it in recipe `env`, and
@@ -70,13 +70,13 @@ id: codex-session-example
 version: "1"
 sequence:
   - id: investigate
-    op: nix:github:colony-2/c2ops/main#codex
+    op: nix:github:colony-2/c2ops/published#codex
     inputs:
       prompt: Investigate the failing tests and explain the cause.
       env:
         CODEX_API_KEY: "${{ secrets.openai_api_key }}"
   - id: fix
-    op: nix:github:colony-2/c2ops/main#codex
+    op: nix:github:colony-2/c2ops/published#codex
     inputs:
       prompt: Apply the fix and run the relevant tests.
       session: "${{ sequence.investigate.outputs.session }}"
@@ -109,7 +109,7 @@ continue from `codex` into `run_skill`, or from `run_skill` back into `codex`:
 
 ```yaml
 - id: implement
-  op: nix:github:colony-2/c2ops/main#skill-run
+  op: nix:github:colony-2/c2ops/published#skill-run
   inputs:
     skill: implement-fix
     session: "${{ sequence.investigate.outputs.session }}"
@@ -151,7 +151,7 @@ inputs:
   session: "${{ inputs.session }}"
 sequence:
   - id: continue_work
-    op: nix:github:colony-2/c2ops/main#codex
+    op: nix:github:colony-2/c2ops/published#codex
     inputs:
       prompt: Continue the investigation from the saved conversation.
       session: "${{ inputs.session }}"

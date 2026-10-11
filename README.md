@@ -10,18 +10,24 @@ artifact capture, and intentionally quiet probes.
 
 ## Recipe Form
 
-Use an explicit package selector on the `main` branch. CI publishes its packages
-to Cachix; wait for the workflow to finish after an update to `main`:
+Use an explicit package selector on the **`published` branch**. CI advances it
+only after tests, Cachix uploads, and download-only checks pass on both AMD64
+and ARM64. While a new `main` commit is building or fails, `published` continues
+to select the previous available release:
 
 ```yaml
 sequence:
   - id: step
-    op: nix:github:colony-2/c2ops/main#llm
+    op: nix:github:colony-2/c2ops/published#llm
     inputs:
       provider: openai
       model: gpt-4.1-mini
       prompt: Say hello.
 ```
+
+`main` may select binaries that are not uploaded yet. For reproducibility, replace
+`published` with a verified commit SHA from the workflow artifacts. See
+[publication and retention](./NIX_PACKAGES.md#ci-and-publishing).
 
 Local source selector for development (requires a Go toolchain):
 
@@ -39,18 +45,18 @@ sequence:
 
 | Op | Short description | Local selector | Nix package selector |
 | --- | --- | --- | --- |
-| `llm` | Legacy Go-backed one-shot LLM op, compatible with the original `llm_inference` shape. | `./llm` | `nix:github:colony-2/c2ops/main#llm` |
-| `llm2` | Legacy Go-backed richer LLM op with files, tools, and structured output, compatible with `llm_inference2`. | `./llm2` | `nix:github:colony-2/c2ops/main#llm2` |
-| `codex` | Go-backed Codex op with resumable sessions and outbox artifacts. | `./codex` | `nix:github:colony-2/c2ops/main#codex` |
-| `skill.run` | Codex-backed op that runs one requested skill and validates its structured output artifact. | `./codex/run_skill` | `nix:github:colony-2/c2ops/main#skill-run` |
-| `gha` | Go-backed op for running one GitHub Actions workflow. | `./gha` | `nix:github:colony-2/c2ops/main#gha` |
-| `gha-many` | Go-backed op for running multiple GitHub Actions workflows in one invocation. | `./gha-many` | `nix:github:colony-2/c2ops/main#gha-many` |
-| `pydantic` | Python-backed alternative to `llm2`, implemented with PydanticAI. | `./pydantic` | `nix:github:colony-2/c2ops/main#pydantic` |
-| `aider` | Python-backed alternative to `codex`, implemented with Aider behind a `codex`-like contract. | `./aider` | `nix:github:colony-2/c2ops/main#aider` |
-| `litellm` | Python-backed alternative to `llm`, implemented with LiteLLM. | `./litellm` | `nix:github:colony-2/c2ops/main#litellm` |
-| `kimi` | Kimi Code CLI with resumable sessions and execution artifacts. | `./kimi` | `nix:github:colony-2/c2ops/main#kimi` |
-| `jev` | TypeSafe System One evaluation with typed questions and probabilities. | `./jev` | `nix:github:colony-2/c2ops/main#jev` |
-| `rule_gate` | Deterministic recipe policy checks. | `./rule_gate` | `nix:github:colony-2/c2ops/main#rule_gate` |
+| `llm` | Legacy Go-backed one-shot LLM op, compatible with the original `llm_inference` shape. | `./llm` | `nix:github:colony-2/c2ops/published#llm` |
+| `llm2` | Legacy Go-backed richer LLM op with files, tools, and structured output, compatible with `llm_inference2`. | `./llm2` | `nix:github:colony-2/c2ops/published#llm2` |
+| `codex` | Go-backed Codex op with resumable sessions and outbox artifacts. | `./codex` | `nix:github:colony-2/c2ops/published#codex` |
+| `skill.run` | Codex-backed op that runs one requested skill and validates its structured output artifact. | `./codex/run_skill` | `nix:github:colony-2/c2ops/published#skill-run` |
+| `gha` | Go-backed op for running one GitHub Actions workflow. | `./gha` | `nix:github:colony-2/c2ops/published#gha` |
+| `gha-many` | Go-backed op for running multiple GitHub Actions workflows in one invocation. | `./gha-many` | `nix:github:colony-2/c2ops/published#gha-many` |
+| `pydantic` | Python-backed alternative to `llm2`, implemented with PydanticAI. | `./pydantic` | `nix:github:colony-2/c2ops/published#pydantic` |
+| `aider` | Python-backed alternative to `codex`, implemented with Aider behind a `codex`-like contract. | `./aider` | `nix:github:colony-2/c2ops/published#aider` |
+| `litellm` | Python-backed alternative to `llm`, implemented with LiteLLM. | `./litellm` | `nix:github:colony-2/c2ops/published#litellm` |
+| `kimi` | Kimi Code CLI with resumable sessions and execution artifacts. | `./kimi` | `nix:github:colony-2/c2ops/published#kimi` |
+| `jev` | TypeSafe System One evaluation with typed questions and probabilities. | `./jev` | `nix:github:colony-2/c2ops/published#jev` |
+| `rule_gate` | Deterministic recipe policy checks. | `./rule_gate` | `nix:github:colony-2/c2ops/published#rule_gate` |
 
 The manifest name `skill.run` is packaged under the flake attribute `skill-run`.
 Use selectors directly in `op:`; bare names such as `codex` or `skill.run` do not
@@ -65,7 +71,7 @@ Use for simple prompt-in / response-out calls.
 ```yaml
 sequence:
   - id: ask
-    op: nix:github:colony-2/c2ops/main#llm
+    op: nix:github:colony-2/c2ops/published#llm
     inputs:
       provider: openai
       model: gpt-4.1-mini
@@ -79,7 +85,7 @@ Use for richer LLM flows that need files, tools, or structured output.
 ```yaml
 sequence:
   - id: plan
-    op: nix:github:colony-2/c2ops/main#llm2
+    op: nix:github:colony-2/c2ops/published#llm2
     inputs:
       default_provider: openai
       default_model: gpt-4.1
@@ -93,7 +99,7 @@ Use for Codex-driven coding loops with resumable sessions.
 ```yaml
 sequence:
   - id: code_task
-    op: nix:github:colony-2/c2ops/main#codex
+    op: nix:github:colony-2/c2ops/published#codex
     inputs:
       prompt: Fix the failing tests in this repository.
       worktree_path: "{{ context.environment.op.worktree_path }}"
@@ -108,7 +114,7 @@ artifact.
 ```yaml
 sequence:
   - id: intake
-    op: nix:github:colony-2/c2ops/main#skill-run
+    op: nix:github:colony-2/c2ops/published#skill-run
     inputs:
       skill: c2-ticket-intake
       output:
@@ -125,7 +131,7 @@ Use for a single workflow run.
 ```yaml
 sequence:
   - id: ci
-    op: nix:github:colony-2/c2ops/main#gha
+    op: nix:github:colony-2/c2ops/published#gha
     inputs:
       workflow: .github/workflows/ci.yml
 ```
@@ -137,7 +143,7 @@ Use when you want to run several workflows and collect the results together.
 ```yaml
 sequence:
   - id: ci_matrix
-    op: nix:github:colony-2/c2ops/main#gha-many
+    op: nix:github:colony-2/c2ops/published#gha-many
     inputs:
       workflows:
         - workflow: .github/workflows/ci.yml
@@ -151,7 +157,7 @@ Use when you want an `llm2`-style interface on top of PydanticAI.
 ```yaml
 sequence:
   - id: plan
-    op: nix:github:colony-2/c2ops/main#pydantic
+    op: nix:github:colony-2/c2ops/published#pydantic
     inputs:
       default_provider: openai
       default_model: gpt-4.1
@@ -165,7 +171,7 @@ Use when you want an Aider-backed coding op with `codex`-style inputs and output
 ```yaml
 sequence:
   - id: code_task
-    op: nix:github:colony-2/c2ops/main#aider
+    op: nix:github:colony-2/c2ops/published#aider
     inputs:
       prompt: Fix the failing tests in this repository.
       model: sonnet
@@ -181,7 +187,7 @@ Use when you want an `llm`-style interface on top of LiteLLM.
 ```yaml
 sequence:
   - id: ask
-    op: nix:github:colony-2/c2ops/main#litellm
+    op: nix:github:colony-2/c2ops/published#litellm
     inputs:
       provider: openai
       model: gpt-4.1-mini

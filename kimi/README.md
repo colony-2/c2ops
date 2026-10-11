@@ -4,12 +4,12 @@ Runs the maintained [Kimi Code CLI](https://github.com/MoonshotAI/kimi-code), pi
 at `@moonshot-ai/kimi-code@2.1.1`. The manifest explicitly declares
 `pnpm:@moonshot-ai/kimi-code@2.1.1`; c2j prepares the CLI before execution.
 The Nix package includes Python and Git. The worker base supplies pnpm and
-Node.js 24.15+. Configure the [`colony2` cache](../NIX_PACKAGES.md) for the `main` coordinates below.
+Node.js 24.15+. Configure the [`colony2` cache](../NIX_PACKAGES.md) for the `published` coordinates below.
 
 ```yaml
 sequence:
   - id: code_task
-    op: nix:github:colony-2/c2ops/main#kimi
+    op: nix:github:colony-2/c2ops/published#kimi
     inputs:
       prompt: Fix the failing tests in this repository.
       worktree_path: "{{ context.environment.op.worktree_path }}"

@@ -13,7 +13,7 @@ op: ./aider
 Nix package selector:
 
 ```yaml
-op: nix:github:colony-2/c2ops/main#aider
+op: nix:github:colony-2/c2ops/published#aider
 ```
 
 ## What It Does
@@ -88,7 +88,7 @@ Git-backed recipe example:
 ```yaml
 sequence:
   - id: apply_fix
-    op: nix:github:colony-2/c2ops/main#aider
+    op: nix:github:colony-2/c2ops/published#aider
     inputs:
       prompt: Fix the failing unit tests in this repository.
       model: sonnet
