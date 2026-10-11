@@ -49,9 +49,14 @@ def main():
             launcher.chmod(0o755)
         # Transfer this checkout's built closures, not the published main output.
         nix("copy", "--to", (bundle / "cache").as_uri(), *paths)
+        # A newer reader may initialize extra cache metadata directories (e.g.
+        # build-trace-v2) even during import. Only this disposable cache needs
+        # write access; keep the launchers and other fixtures read-only.
         container = checked(
             "docker", "run", "-d", "--rm", "--network=none", "--entrypoint", "/bin/sh",
-            "-v", f"{bundle}:/fixture:ro", IMAGE, "-c", "sleep infinity",
+            "-v", f"{bundle}:/fixture:ro",
+            "-v", f"{bundle / 'cache'}:/fixture/cache:rw",
+            IMAGE, "-c", "sleep infinity",
             capture_output=True,
         ).stdout.strip()
         try:
