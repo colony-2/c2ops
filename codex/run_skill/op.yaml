@@ -26,6 +26,18 @@ input_schema:
       x-c2j-object-type: c2ops.codex.session/v1
     model:
       type: string
+    api:
+      type: object
+      description: Optional external Responses API; credentials stay in the worker environment.
+      additionalProperties: false
+      required: [base_url]
+      properties:
+        base_url:
+          type: string
+          description: API base URL including any prefix such as /v1, without /responses.
+        api_key_env:
+          type: string
+          description: Name of the environment variable containing the proxy access key (defaults to C2OPS_CODEX_API_KEY).
     env:
       type: object
       additionalProperties:

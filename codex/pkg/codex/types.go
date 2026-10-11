@@ -33,6 +33,7 @@ type Options struct {
 	Prompt    string
 	SessionID string
 	Model     string
+	API       *APIConfig
 	ExtraEnv  map[string]string
 
 	IdleTimeout time.Duration

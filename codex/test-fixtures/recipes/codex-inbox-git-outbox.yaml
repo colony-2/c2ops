@@ -14,6 +14,10 @@ sequence:
     artifacts:
       input.txt: '${{ sequence.write_seed_artifact.artifacts["input.txt"] }}'
     inputs:
+      # The fixture CLI is stubbed; this exercises the public manifest and input
+      # decoding without contacting an external service. Other recipes omit api.
+      api:
+        base_url: https://proxy.example.com/v1
       workdir_path: "{{ context.environment.op.workdir }}"
       worktree_path: "{{ context.environment.op.worktree_path }}"
       artifact_inbox_path: "{{ context.environment.op.inbox }}"

@@ -263,8 +263,12 @@ func prepareDirectCodexHome(opts Options) error {
 	if err := installSkillSourcesIfExists(opts); err != nil {
 		return err
 	}
-	if err := seedCodexCredentialsIfNeeded(opts.HostCodexHome, opts.CodexHome); err != nil {
-		return err
+	// External providers own authentication. Do not import subscription tokens
+	// or host configuration that could select another provider or login method.
+	if opts.API == nil {
+		if err := seedCodexCredentialsIfNeeded(opts.HostCodexHome, opts.CodexHome); err != nil {
+			return err
+		}
 	}
 	return nil
 }

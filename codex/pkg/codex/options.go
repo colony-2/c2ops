@@ -19,6 +19,11 @@ const (
 )
 
 func (o *Options) validate() error {
+	api, err := normalizeAPI(o.API, o.ExtraEnv)
+	if err != nil {
+		return err
+	}
+	o.API = api
 	if strings.TrimSpace(o.Prompt) == "" {
 		return errEmptyPrompt
 	}

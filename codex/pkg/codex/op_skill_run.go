@@ -33,6 +33,7 @@ type SkillRunInput struct {
 	Prompt             string                 `json:"prompt,omitempty"`
 	Session            *SessionInput          `json:"session,omitempty"`
 	Model              string                 `json:"model,omitempty"`
+	API                *APIConfig             `json:"api,omitempty"`
 	Env                map[string]string      `json:"env,omitempty"`
 	ReturnOn           []string               `json:"return_on,omitempty"`
 	StatusContract     StatusContractRef      `json:"status_contract,omitempty"`
@@ -250,6 +251,7 @@ func execInputForSkillRun(input SkillRunInput) ExecOpInput {
 	return ExecOpInput{
 		Session:            input.Session,
 		Model:              input.Model,
+		API:                input.API,
 		Env:                input.Env,
 		Skills:             copyStrings(input.Skills),
 		ReturnOn:           copyStrings(input.ReturnOn),

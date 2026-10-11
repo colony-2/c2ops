@@ -196,6 +196,7 @@ type mockCodexAPI struct {
 	mu       sync.Mutex
 	turns    []mockCodexTurn
 	requests []map[string]any
+	headers  []http.Header
 }
 
 func newMockCodexAPI(t *testing.T, turns []mockCodexTurn) *mockCodexAPI {
@@ -230,6 +231,7 @@ func (api *mockCodexAPI) handleResponses(w http.ResponseWriter, r *http.Request)
 	api.mu.Lock()
 	idx := len(api.requests)
 	api.requests = append(api.requests, request)
+	api.headers = append(api.headers, r.Header.Clone())
 	if idx >= len(api.turns) {
 		api.mu.Unlock()
 		http.Error(w, fmt.Sprintf("unexpected Codex API request %d", idx+1), http.StatusInternalServerError)

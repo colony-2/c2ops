@@ -22,6 +22,7 @@ type ExecOpInput struct {
 	Prompt             string            `json:"prompt" validate:"required"`
 	Session            *SessionInput     `json:"session,omitempty"`
 	Model              string            `json:"model,omitempty"`
+	API                *APIConfig        `json:"api,omitempty"`
 	Env                map[string]string `json:"env,omitempty"`
 	Skills             []string          `json:"skills,omitempty"`
 	ReturnOn           []string          `json:"return_on,omitempty"`
@@ -195,6 +196,7 @@ func runCodexActivityPrepared(
 		CodexHome:           input.execution.home,
 		SessionID:           input.execution.id,
 		Model:               strings.TrimSpace(input.Model),
+		API:                 input.API,
 		ExtraEnv:            input.Env,
 		IdleTimeout:         idleTimeout,
 		WorkDirRoot:         paths.Workdir,

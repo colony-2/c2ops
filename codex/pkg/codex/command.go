@@ -30,6 +30,9 @@ func buildCommand(opts Options, schemaContainerPath string) []string {
 		"--output-schema",
 		schemaContainerPath,
 	)
+	if opts.API != nil {
+		cmd = append(cmd, opts.API.commandArgs()...)
+	}
 	if strings.TrimSpace(opts.Model) != "" {
 		cmd = append(cmd, "--model", opts.Model)
 	}
