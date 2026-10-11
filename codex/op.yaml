@@ -29,7 +29,7 @@ input_schema:
           description: API base URL including any prefix such as /v1, without /responses.
         api_key_env:
           type: string
-          description: Name of the environment variable containing the proxy access key (defaults to C2OPS_CODEX_API_KEY).
+          description: Optional environment variable containing a bearer token. Omit for an endpoint without authentication.
     env:
       type: object
       additionalProperties:

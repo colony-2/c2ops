@@ -11,7 +11,6 @@ import (
 )
 
 func TestExternalAPIValidation(t *testing.T) {
-	t.Setenv(defaultAPIKeyEnv, "worker-proxy-key")
 	t.Setenv("CUSTOM_PROXY_KEY", "custom-proxy-key")
 	for _, tc := range []struct {
 		name string
@@ -20,7 +19,7 @@ func TestExternalAPIValidation(t *testing.T) {
 		err  string
 	}{
 		{name: "default mode"},
-		{name: "default key", api: &APIConfig{BaseURL: " https://proxy.example/v1/ "}},
+		{name: "no key", api: &APIConfig{BaseURL: " https://proxy.example/v1/ "}},
 		{name: "custom key", api: &APIConfig{BaseURL: "http://localhost:8317/v1", APIKeyEnv: "CUSTOM_PROXY_KEY"}},
 		{name: "input environment", api: &APIConfig{BaseURL: "https://proxy.example/v1", APIKeyEnv: "INPUT_ONLY_KEY"}, env: map[string]string{"INPUT_ONLY_KEY": "input-key"}},
 		{name: "empty API", api: &APIConfig{}, err: "api.base_url"},
@@ -32,7 +31,7 @@ func TestExternalAPIValidation(t *testing.T) {
 		{name: "malformed URL", api: &APIConfig{BaseURL: "https://proxy.example/%secret"}, err: "api.base_url"},
 		{name: "invalid env name", api: &APIConfig{BaseURL: "https://proxy.example/v1", APIKeyEnv: "key=secret"}, err: "api.api_key_env"},
 		{name: "missing key", api: &APIConfig{BaseURL: "https://proxy.example/v1", APIKeyEnv: "MISSING_PROXY_KEY"}, env: map[string]string{"MISSING_PROXY_KEY": ""}, err: "set MISSING_PROXY_KEY"},
-		{name: "empty override", api: &APIConfig{BaseURL: "https://proxy.example/v1"}, env: map[string]string{defaultAPIKeyEnv: " "}, err: "set " + defaultAPIKeyEnv},
+		{name: "empty override", api: &APIConfig{BaseURL: "https://proxy.example/v1", APIKeyEnv: "CUSTOM_PROXY_KEY"}, env: map[string]string{"CUSTOM_PROXY_KEY": " "}, err: "set CUSTOM_PROXY_KEY"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got, err := normalizeAPI(tc.api, tc.env)
@@ -46,7 +45,7 @@ func TestExternalAPIValidation(t *testing.T) {
 				require.Nil(t, got)
 				return
 			}
-			require.NotEmpty(t, got.APIKeyEnv)
+			require.Equal(t, tc.api.APIKeyEnv, got.APIKeyEnv)
 			require.Equal(t, strings.TrimRight(strings.TrimSpace(tc.api.BaseURL), "/"), got.BaseURL)
 		})
 	}
@@ -76,9 +75,9 @@ func TestExternalAPIDoesNotImportSubscriptionFiles(t *testing.T) {
 }
 
 func TestExternalAPICommandKeepsKeyOutOfArguments(t *testing.T) {
-	t.Setenv(defaultAPIKeyEnv, "private-proxy-key")
+	t.Setenv("C2OPS_CODEX_API_KEY", "private-proxy-key")
 	opts := testExecuteOptions(t)
-	opts.API = &APIConfig{BaseURL: "https://proxy.example/v1/"}
+	opts.API = &APIConfig{BaseURL: "https://proxy.example/v1/", APIKeyEnv: "C2OPS_CODEX_API_KEY"}
 	opts.SessionID = "resume-id"
 	require.NoError(t, opts.validate())
 	cmd := buildCommand(opts, "/schema.json")

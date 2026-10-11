@@ -42,7 +42,6 @@ var registerFixtureOpsOnce sync.Once
 func TestRecipeFixtures(t *testing.T) {
 	ensureFixtureOps()
 	t.Setenv("C2OPS_CODEX_BIN", installStubCodex(t))
-	t.Setenv("C2OPS_CODEX_API_KEY", "fixture-proxy-key")
 
 	testFiles, err := filepath.Glob(filepath.Join(fixturesRootDir(t), "recipes", "*.test.yaml"))
 	require.NoError(t, err)

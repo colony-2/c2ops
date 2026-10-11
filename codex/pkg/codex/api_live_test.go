@@ -3,6 +3,7 @@ package codex
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -11,12 +12,37 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestExternalAPIWithoutAuthentication(t *testing.T) {
+	requireCodexCLI(t)
+	for _, ambientKeys := range []bool{false, true} {
+		t.Run(fmt.Sprint("ambient-keys-", ambientKeys), func(t *testing.T) {
+			for _, name := range []string{"OPENAI_API_KEY", "CODEX_API_KEY", "C2OPS_CODEX_API_KEY"} {
+				value := ""
+				if ambientKeys {
+					value = "must-not-send-this-key"
+				}
+				t.Setenv(name, value)
+			}
+			api := newMockCodexAPI(t, []mockCodexTurn{{Summary: "no authentication needed"}})
+			defer api.Close()
+			opts := testExecuteOptions(t)
+			opts.API = &APIConfig{BaseURL: api.URL() + "/v1"}
+			opts.Model = "gpt-5.3-codex"
+			result, stdout, stderr, artifacts, err := Execute(context.Background(), opts)
+			defer cleanupArtifacts(stdout, stderr, artifacts)
+			require.NoError(t, err)
+			require.Equal(t, StatusCompleted, result.Status, result.ErrorMessage)
+			assertProxyRequests(t, api, "", 1)
+		})
+	}
+}
+
 // Runs in the normal CLI-backed suite on both CI architectures. No provider
 // account, subscription login, or external network service is needed.
 func TestExternalAPIRunAndResumeSkillWithRepair(t *testing.T) {
 	requireCodexCLI(t)
 	t.Setenv("C2J_OBJECT_OUTBOX", t.TempDir())
-	t.Setenv(defaultAPIKeyEnv, "first-proxy-key")
+	t.Setenv("C2OPS_CODEX_API_KEY", "first-proxy-key")
 	hostHome := filepath.Join(t.TempDir(), "missing-codex-home")
 	t.Setenv("CODEX_HOME", hostHome)
 	firstAPI := newMockCodexAPI(t, []mockCodexTurn{{Summary: "remember proxy-memory-42"}})
@@ -24,7 +50,7 @@ func TestExternalAPIRunAndResumeSkillWithRepair(t *testing.T) {
 	first := testExecuteOptions(t)
 	output, err := Run(context.Background(), ExecOpInput{
 		Prompt: "Remember proxy-memory-42.", Model: "gpt-5.3-codex",
-		API:         &APIConfig{BaseURL: firstAPI.URL() + "/v1/"},
+		API:         &APIConfig{BaseURL: firstAPI.URL() + "/v1/", APIKeyEnv: "C2OPS_CODEX_API_KEY"},
 		WorkdirPath: first.WorkDirRoot, WorktreePath: first.WorktreeRoot,
 		ArtifactInboxPath: first.ArtifactInbox, ArtifactOutboxPath: first.ArtifactOutbox,
 		IdleTimeout: "15s",
@@ -92,7 +118,11 @@ func assertProxyRequests(t *testing.T, api *mockCodexAPI, key string, count int)
 	require.Len(t, api.requests, count)
 	for i, request := range api.requests {
 		require.Equal(t, "gpt-5.3-codex", request["model"])
-		require.Equal(t, "Bearer "+key, api.headers[i].Get("Authorization"))
+		if key == "" {
+			require.NotContains(t, api.headers[i], "Authorization")
+		} else {
+			require.Equal(t, "Bearer "+key, api.headers[i].Get("Authorization"))
+		}
 		require.Empty(t, api.headers[i].Get("ChatGPT-Account-Id"))
 	}
 }

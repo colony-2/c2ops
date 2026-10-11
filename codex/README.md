@@ -73,21 +73,25 @@ inputs:
   model: gpt-5.3-codex # Select a model available through your proxy.
   api:
     base_url: https://codex-proxy.example.com/v1
-    api_key_env: CODEX_PROXY_KEY
 ```
 
-Provision `CODEX_PROXY_KEY` in the **c2j worker's environment** through your
-container/executor secret configuration. It is a client key issued by the proxy;
-the proxy holds the subscription credentials and handles their refresh. The
-worker needs neither a subscription `auth.json` nor a Codex `config.toml`.
-The op references the key by environment variable name and does not put its
-value in command arguments or generated configuration. Keep the key out of
-recipe inputs; `env` overrides inherited environment values when explicitly set.
+The URL alone is sufficient for an endpoint without authentication. The op sends
+no Authorization header when `api_key_env` is omitted, even if OpenAI or proxy
+keys happen to be present in the worker environment. The proxy holds the
+subscription credentials and handles their refresh; the worker needs neither a
+subscription `auth.json` nor a Codex `config.toml`.
+
+If your proxy requires a client key, add `api_key_env: CODEX_PROXY_KEY` under
+`api` and provision `CODEX_PROXY_KEY` in the **c2j worker's environment** through
+your container/executor secret configuration. The op references the key by
+environment variable name and does not put its value in command arguments or
+generated configuration. Keep the key out of recipe inputs; `env` overrides
+inherited environment values when explicitly set.
 
 `api.base_url` is the API root, typically ending in `/v1`; Codex appends
 `/responses`. HTTP and HTTPS are supported. Credentials, query strings, and
-fragments in the URL are rejected. `api.api_key_env` defaults to
-`C2OPS_CODEX_API_KEY` and must name a nonempty environment variable. External
+fragments in the URL are rejected. When supplied, `api.api_key_env` must name a
+nonempty environment variable; there is no default credential variable. External
 mode uses Responses streaming over HTTP/SSE, with WebSockets disabled.
 
 With `api` set, the op skips importing the worker's Codex authentication and
@@ -98,9 +102,10 @@ the existing behavior of loading credentials/configuration from the worker's
 `CODEX_HOME` (or `$HOME/.codex`).
 
 The regular `make -C codex test` suite exercises external mode using the packaged
-Codex CLI and a local mock Responses server, including bearer authentication,
-tool execution, and session resume through `skill-run`. CI runs this suite on
-both AMD64 and ARM64. It does not log into a subscription or require a live proxy.
+Codex CLI and a local mock Responses server, including requests with and without
+bearer authentication, tool execution, and session resume through `skill-run`.
+CI runs this suite on both AMD64 and ARM64. It does not log into a subscription
+or require a live proxy.
 
 ## Sandbox
 

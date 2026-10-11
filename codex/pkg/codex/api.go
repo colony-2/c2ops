@@ -9,10 +9,8 @@ import (
 	"strings"
 )
 
-const defaultAPIKeyEnv = "C2OPS_CODEX_API_KEY"
-
-// APIConfig selects an external Responses API. It references a credential by
-// environment variable name so recipes and command arguments need no secret.
+// APIConfig selects an external Responses API, optionally authenticating with
+// a credential referenced by environment variable name.
 type APIConfig struct {
 	BaseURL   string `json:"base_url"`
 	APIKeyEnv string `json:"api_key_env,omitempty"`
@@ -34,7 +32,7 @@ func normalizeAPI(input *APIConfig, env map[string]string) (*APIConfig, error) {
 	}
 	api.APIKeyEnv = strings.TrimSpace(api.APIKeyEnv)
 	if api.APIKeyEnv == "" {
-		api.APIKeyEnv = defaultAPIKeyEnv
+		return &api, nil
 	}
 	if !envNamePattern.MatchString(api.APIKeyEnv) {
 		return nil, fmt.Errorf("api.api_key_env must be an environment variable name")
@@ -52,8 +50,12 @@ func normalizeAPI(input *APIConfig, env map[string]string) (*APIConfig, error) {
 func (api APIConfig) commandArgs() []string {
 	// Keep the key in the environment, never in argv or persisted config. SSE
 	// works with Responses-compatible proxies without requiring WebSocket support.
+	provider := `model_providers.c2ops_external={name="External API",wire_api="responses",requires_openai_auth=false,supports_websockets=false,base_url=` + strconv.Quote(api.BaseURL)
+	if api.APIKeyEnv != "" {
+		provider += `,env_key=` + strconv.Quote(api.APIKeyEnv)
+	}
 	return []string{
 		"-c", `model_provider="c2ops_external"`,
-		"-c", `model_providers.c2ops_external={name="External API",wire_api="responses",requires_openai_auth=false,supports_websockets=false,base_url=` + strconv.Quote(api.BaseURL) + `,env_key=` + strconv.Quote(api.APIKeyEnv) + `}`,
+		"-c", provider + "}",
 	}
 }
