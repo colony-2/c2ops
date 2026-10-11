@@ -30,6 +30,9 @@ in {
     ${lib.optionalString (name == "aider") ''
       HOME=$(mktemp -d) timeout 30 ${lib.getExe packages.aider-cli} --version
     ''}
+    ${lib.optionalString (builtins.elem name [ "codex" "skill-run" ]) ''
+      HOME=$(mktemp -d) timeout 30 ${lib.getExe packages.codex-cli} --version
+    ''}
     touch "$out"
   ''
 ) (lib.getAttrs (builtins.attrNames (builtins.fromJSON (builtins.readFile ./ops.json))) packages)

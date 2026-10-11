@@ -6,7 +6,7 @@ build:
 	go build ./...
 
 install-test-deps:
-	go run ../scripts/with-tools.go --manifest op.json
+	python3 ../scripts/with-codex.py
 
 test:
-	go run ../scripts/with-tools.go --manifest op.json -- go test -count=1 ./...
+	python3 ../scripts/with-codex.py -- go test -count=1 ./...

@@ -71,6 +71,7 @@ let
         install -Dm644 ${manifestPath} "$out/share/c2j/op.json"
       '' + (if op.kind == "go" then ''
         makeWrapper ${goBinary}/bin/${binaryName} "$out/bin/${name}" \
+          ${lib.optionalString (module == "codex") "--set-default C2OPS_CODEX_BIN ${lib.getExe pkgs.codex}"} \
           --prefix PATH : ${lib.escapeShellArg (lib.makeBinPath runtime)}
       '' else ''
         install -Dm644 ${opPath + "/main.py"} "$out/libexec/main.py"
@@ -93,7 +94,8 @@ let
       };
     };
 in (lib.mapAttrs mkOp catalog) // {
-  # A CLI dependency for source/Git Aider ops, not a JSON-speaking c2j op.
-  # It is also in the packaged Aider op's closure, so CI publishes it there.
+  # CLI dependencies for source/Git ops, not JSON-speaking c2j ops.
+  # They are also in the packaged ops' closures, so CI publishes them there.
+  codex-cli = pkgs.codex;
   aider-cli = aiderPackage;
 }

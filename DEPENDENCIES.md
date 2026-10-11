@@ -240,3 +240,17 @@ Validation on ARM64: all five Python op integration suites and all Python
 package/manifest checks passed. The rebuilt Aider package also passed 460
 upstream tests (one skipped). Metadata evaluation passed for both architectures;
 native AMD64 execution remains covered by CI.
+
+## Native Codex runtime — 2026-10-10
+
+Codex and skill-run now use the shared `pkgs.codex` derivation from our locked
+nixpkgs (0.161.0). Packaged ops bind its absolute executable path and have no
+pnpm dependency; source/Git ops declare `nix:github:colony-2/c2ops/main#codex-cli`.
+No new flake input or package expression is needed. CI publishes the CLI as part
+of both op closures, reusing the upstream cache where available.
+
+The normal Codex test target resolves the native CLI from `C2OPS_TEST_FLAKE`
+and includes the full Run-to-RunSkill checkpoint compatibility test. The
+minimal-worker regression disables ambient CLI/package-manager commands and
+network access. The optional historical version matrix still uses explicitly
+selected npm releases, through the same explicit binary override.

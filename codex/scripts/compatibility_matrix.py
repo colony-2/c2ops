@@ -87,18 +87,14 @@ def main():
             # Every invocation delegates to the verified CLI by default.
             shim = Path(temp) / directory
             shim.mkdir()
-            declared = next(ref.removeprefix("pnpm:") for ref in json.loads((ROOT / "op.json").read_text())["dependencies"]
-                            if ref.startswith("pnpm:@openai/codex@"))
-            script = ("#!/bin/sh\n"
-                      f'[ "$1" = {shlex.quote("--package=" + declared)} ] && [ "$2" = dlx ] && [ "$3" = codex ] || exit 127\n'
-                      "shift 3\n")
+            script = "#!/bin/sh\n"
             if args.spoof_version:
                 script += ("if [ \"$#\" -eq 1 ] && [ \"$1\" = --version ]; then\n"
                            f"  printf '%s\\n' {shlex.quote('codex-cli ' + args.spoof_version)}\n  exit 0\nfi\n")
-            (shim / "pnpm").write_text(script + "exec " + shlex.join([
+            (shim / "codex").write_text(script + "exec " + shlex.join([
                 shutil.which("pnpm", path=env["PATH"]), *command[1:]]) + ' "$@"\n')
-            (shim / "pnpm").chmod(0o755)
-            return shim, version_line
+            (shim / "codex").chmod(0o755)
+            return shim / "codex", version_line
 
         resume_shim = None
         if args.resume_version:
@@ -108,13 +104,13 @@ def main():
             result = {"version": version, "tests": {}}
             try:
                 shim, result["actual_version"] = provision(version, version)
-                test_env = dict(env, PATH=str(shim) + os.pathsep + env["PATH"], C2OPS_CODEX_COMPAT="1")
+                test_env = dict(env, C2OPS_CODEX_BIN=str(shim), C2OPS_CODEX_COMPAT="1")
                 test_env["C2OPS_CODEX_COMPAT_VERSION"] = args.spoof_version or version
                 test_env["C2OPS_CODEX_COMPAT_RESUME_VERSION"] = args.spoof_version or args.resume_version or version
                 if resume_shim:
-                    test_env["C2OPS_CODEX_COMPAT_RESUME_PATH"] = str(resume_shim)
+                    test_env["C2OPS_CODEX_COMPAT_RESUME_BIN"] = str(resume_shim)
                 else:
-                    test_env.pop("C2OPS_CODEX_COMPAT_RESUME_PATH", None)
+                    test_env.pop("C2OPS_CODEX_COMPAT_RESUME_BIN", None)
                 # Discard any caller-selected live model for a deterministic mock.
                 test_env.pop("C2OPS_CODEX_LIVE_MODEL", None)
                 for name in ([TESTS[-1]] if resume_shim else TESTS):

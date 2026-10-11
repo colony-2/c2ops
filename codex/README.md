@@ -2,12 +2,17 @@
 
 Go-backed Codex op with immutable object sessions and outbox artifacts.
 
-Both manifests declare **`pnpm:@openai/codex@0.162.1`**. c2j prepares this
-package before execution. Version probing and execution both use
-`pnpm --package=@openai/codex@0.162.1 dlx codex <args>`, selecting the declared
-installation even if another `codex` is on PATH. Checkpoint producers must use
-**Codex CLI 0.148.0 or later**; both entrypoints enforce this minimum with no
-upper bound. See the [compatibility results](./CLI_COMPATIBILITY.md).
+The Nix packages include the native **Codex CLI 0.161.0** from our pinned
+nixpkgs. Both entrypoints share one CLI store path and invoke it explicitly;
+no pnpm or Node setup is needed. Source/Git manifests declare
+`nix:github:colony-2/c2ops/main#codex-cli` and use the corresponding qualified
+`nix run` command. `C2OPS_CODEX_BIN` can explicitly override the binary for
+fixtures or compatibility experiments; the package wrapper defaults it to the
+native CLI's absolute path.
+
+Checkpoint producers must use **Codex CLI 0.148.0 or later**; both entrypoints
+enforce this minimum with no upper bound. See the
+[compatibility results](./CLI_COMPATIBILITY.md).
 
 **Breaking change:** resume with `session`, not `sessionId` or a
 `codex-home-state` artifact. Read [the migration guide](./MIGRATION_OBJECT_SESSIONS.md)

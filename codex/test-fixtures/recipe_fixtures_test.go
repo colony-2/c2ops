@@ -24,7 +24,6 @@ import (
 	extops "github.com/colony-2/c2j/pkg/ops/extensions"
 	"github.com/colony-2/c2j/pkg/recipe"
 	"github.com/colony-2/c2j/pkg/swfutil"
-	"github.com/colony-2/c2j/pkg/toolenv"
 	"github.com/colony-2/c2j/pkg/worker/commandop"
 	"github.com/colony-2/c2j/pkg/worker/compiler"
 	workerops "github.com/colony-2/c2j/pkg/worker/ops"
@@ -42,7 +41,7 @@ var registerFixtureOpsOnce sync.Once
 
 func TestRecipeFixtures(t *testing.T) {
 	ensureFixtureOps()
-	stubCodex := installStubCodex(t)
+	t.Setenv("C2OPS_CODEX_BIN", installStubCodex(t))
 
 	testFiles, err := filepath.Glob(filepath.Join(fixturesRootDir(t), "recipes", "*.test.yaml"))
 	require.NoError(t, err)
@@ -78,8 +77,6 @@ func TestRecipeFixtures(t *testing.T) {
 						gitCtx.ParentRef,
 						registry,
 						deps,
-						t.TempDir(),
-						stubCodex,
 					)
 
 					if tc.WantErr {
@@ -129,7 +126,14 @@ func installStubCodex(t *testing.T) string {
 set -euo pipefail
 if [[ ${1:-} == --version ]]; then echo codex-cli 0.157.1; exit 0; fi
 prompt="${@: -1}"
-cmd="$(printf '%s\n' "$prompt" | sed -n "s/^bash -lc '\\(.*\\)'$/\\1/p" | head -n 1)"
+cmd=""
+command_pattern="^bash -lc '(.*)'$"
+while IFS= read -r line; do
+  if [[ $line =~ $command_pattern ]]; then
+    cmd="${BASH_REMATCH[1]}"
+    break
+  fi
+done <<< "$prompt"
 if [[ -z "${cmd}" ]]; then
   echo "missing fixture command in prompt" >&2
   exit 1
@@ -396,15 +400,13 @@ func buildRecipeRegistry(
 }
 
 type artifactCapture struct {
-	mu           sync.Mutex
-	names        map[string]bool
-	nixPackages  map[string]bool
-	bindingsRoot string
-	stubCodex    string
+	mu          sync.Mutex
+	names       map[string]bool
+	nixPackages map[string]bool
 }
 
-func newArtifactCapture(bindingsRoot, stubCodex string) *artifactCapture {
-	return &artifactCapture{names: make(map[string]bool), nixPackages: make(map[string]bool), bindingsRoot: bindingsRoot, stubCodex: stubCodex}
+func newArtifactCapture() *artifactCapture {
+	return &artifactCapture{names: make(map[string]bool), nixPackages: make(map[string]bool)}
 }
 
 func (c *artifactCapture) add(artifacts []jobdb.Artifact) {
@@ -441,23 +443,7 @@ func (c *capturingTaskWorker) Run(ctx jobworkflow.TaskContext, input jobdb.TaskD
 		var setup workerops.ToolSetupResult
 		if readErr == nil && json.Unmarshal(data, &setup) == nil && setup.Extension != nil &&
 			setup.Extension.Nix != nil && setup.Ready() {
-			// Keep real dependency preparation, but replace the downstream model
-			// client in a private binding directory. Never modify c2j's shared cache.
-			if setup.Environment == nil {
-				return nil, fmt.Errorf("Codex fixture is missing its prepared tool environment")
-			}
-			bindings, bindErr := c.fixtureBindings(setup.Environment)
-			if bindErr != nil {
-				return nil, bindErr
-			}
-			setup.Environment.Path = bindings
-			if !setup.Ready() {
-				return nil, fmt.Errorf("fixture tool environment is not ready")
-			}
-			output, err = jobdb.NewTaskData(setup)
-			if err != nil {
-				return nil, err
-			}
+			// Observe real Nix setup; the explicit CLI override supplies the fixture client.
 			c.capture.mu.Lock()
 			c.capture.nixPackages[setup.Extension.Nix.StorePath] = true
 			c.capture.mu.Unlock()
@@ -469,52 +455,6 @@ func (c *capturingTaskWorker) Run(ctx jobworkflow.TaskContext, input jobdb.TaskD
 		}
 	}
 	return output, err
-}
-
-func (c *capturingTaskWorker) fixtureBindings(prepared *toolenv.Environment) (string, error) {
-	entries, err := os.ReadDir(prepared.Path)
-	if err != nil {
-		return "", err
-	}
-	dir, err := os.MkdirTemp(c.capture.bindingsRoot, "tools-")
-	if err != nil {
-		return "", err
-	}
-	for _, entry := range entries {
-		if entry.Name() == "codex" || entry.Name() == "pnpm" {
-			continue
-		}
-		if err := os.Symlink(filepath.Join(prepared.Path, entry.Name()), filepath.Join(dir, entry.Name())); err != nil {
-			return "", err
-		}
-	}
-	// Retain c2j's real qualified dispatcher, replacing only the prepared
-	// client's absolute target. Poison the bare name to catch PATH regressions.
-	client := ""
-	for _, tool := range prepared.Tools {
-		if strings.HasPrefix(tool.Reference, "pnpm:@openai/codex@") {
-			client = filepath.Join(tool.Bin, "codex")
-		}
-	}
-	if client == "" {
-		return "", fmt.Errorf("missing prepared Codex package")
-	}
-	runner, err := os.ReadFile(filepath.Join(prepared.Path, "pnpm"))
-	if err != nil {
-		return "", err
-	}
-	quote := func(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'" }
-	patched := strings.ReplaceAll(string(runner), quote(client), quote(c.capture.stubCodex))
-	if patched == string(runner) {
-		return "", fmt.Errorf("prepared dispatcher did not bind the declared Codex client")
-	}
-	if err := os.WriteFile(filepath.Join(dir, "pnpm"), []byte(patched), 0o755); err != nil {
-		return "", err
-	}
-	if err := os.WriteFile(filepath.Join(dir, "codex"), []byte("#!/bin/sh\necho 'unexpected bare codex invocation' >&2\nexit 127\n"), 0o755); err != nil {
-		return "", err
-	}
-	return dir, nil
 }
 
 func wrapTaskWorkers(workers map[string]jobworkflow.TaskWorker, capture *artifactCapture) map[string]jobworkflow.TaskWorker {
@@ -534,7 +474,6 @@ func executeRecipeWithArtifacts(
 	gitRef string,
 	recipeRegistry workflow.RecipeProjectProvider,
 	deps coreops.ServiceDependencies2,
-	bindingsRoot, stubCodex string,
 ) (map[string]interface{}, []string, []string, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -558,7 +497,7 @@ func executeRecipeWithArtifacts(
 		return nil, nil, nil, err
 	}
 
-	capture := newArtifactCapture(bindingsRoot, stubCodex)
+	capture := newArtifactCapture()
 	workset.TaskWorkers = wrapTaskWorkers(workset.TaskWorkers, capture)
 
 	taskWorkers := make([]jobworkflow.TaskWorker, 0, len(workset.TaskWorkers))

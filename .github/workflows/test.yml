@@ -127,7 +127,7 @@ jobs:
           C2OPS_TEST_FLAKE: path:${{ github.workspace }}
         run: make test
 
-      - name: Check Codex launchers in the minimal worker image
+      - name: Check native Codex in the minimal worker image
         env:
           C2OPS_TEST_FLAKE: path:${{ github.workspace }}
         run: python3 scripts/check-codex-worker.py

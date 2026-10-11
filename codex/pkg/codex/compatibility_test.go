@@ -11,11 +11,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Opt-in experiment: the matrix runner supplies real CLI releases. Production
-// version checks and checkpoint metadata are exercised unless spoofing is explicit.
+// The normal Nix test runner supplies the packaged CLI; the optional version
+// matrix can supply other releases. Both exercise production checkpoint code.
 func TestCompatibilityRunAndRunSkill(t *testing.T) {
 	if os.Getenv("C2OPS_CODEX_COMPAT") != "1" {
-		t.Skip("run with scripts/compatibility_matrix.py")
+		t.Skip("run with make test or scripts/compatibility_matrix.py")
 	}
 	api := newMockCodexAPI(t, []mockCodexTurn{
 		{Summary: "stored compatibility-memory-42"},
@@ -43,8 +43,8 @@ func TestCompatibilityRunAndRunSkill(t *testing.T) {
 	require.NoError(t, os.RemoveAll(first.WorkDirRoot))
 	second := liveExecuteOptions(t, api)
 	t.Setenv("CODEX_HOME", second.HostCodexHome)
-	if resumePath := os.Getenv("C2OPS_CODEX_COMPAT_RESUME_PATH"); resumePath != "" {
-		t.Setenv("PATH", resumePath+string(os.PathListSeparator)+os.Getenv("PATH"))
+	if resumeBinary := os.Getenv("C2OPS_CODEX_COMPAT_RESUME_BIN"); resumeBinary != "" {
+		t.Setenv("C2OPS_CODEX_BIN", resumeBinary)
 	}
 	createLocalSkill(t, second.WorktreeRoot, "compat-smoke")
 	skillOutput, err := RunSkill(context.Background(), SkillRunInput{

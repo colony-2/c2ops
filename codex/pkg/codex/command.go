@@ -2,15 +2,22 @@ package codex
 
 import (
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 )
 
 // Keep this package coordinate aligned with both Codex manifests.
-const codexPackage = "@openai/codex@0.162.1"
+const codexPackage = "github:colony-2/c2ops/main#codex-cli"
 
 func codexCommand(args ...string) []string {
-	return append([]string{"pnpm", "--package=" + codexPackage, "dlx", "codex"}, args...)
+	// Packaged ops bind the native CLI's exact store path. Source ops use the
+	// qualified runner for their manifest-declared package. Tests can explicitly
+	// override the binary without relying on an ambient executable named codex.
+	if binary := os.Getenv("C2OPS_CODEX_BIN"); binary != "" {
+		return append([]string{binary}, args...)
+	}
+	return append([]string{"nix", "run", codexPackage, "--"}, args...)
 }
 
 func buildCommand(opts Options, schemaContainerPath string) []string {

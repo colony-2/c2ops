@@ -1,7 +1,7 @@
 # Troubleshoot a hanging Codex op
 
 Applies to `codex` and `codex/run_skill`. Historical investigation baseline: c2j
-**v0.0.61**, Codex CLI **0.157.1**. Current default tests use **0.162.1**.
+**v0.0.61**, Codex CLI **0.157.1**. Current default tests use native nixpkgs Codex **0.161.0**.
 Production accepts
 **0.148.0 or later**. A dependency update alone does not establish
 the cause of a particular deployment's hang.
@@ -19,7 +19,7 @@ when using a sandbox:
 
 ```sh
 go version -m "$(command -v c2j)"
-pnpm --package=@openai/codex@0.162.1 dlx codex --version
+nix run github:colony-2/c2ops/main#codex-cli -- --version
 # Must report: codex-cli <version>, with version >= 0.148.0
 ```
 
@@ -104,8 +104,9 @@ Packages with pnpm dependencies now bind GNU sed and coreutils on PATH. Failed
 version probes also report argv, resolved runner path, exit status, stdout and
 stderr. No CLI reinstall or version change is needed for this failure.
 
-The [worker regression](../scripts/check-codex-worker.py) runs the actual Codex
-and skill-run packages in that image with fresh and reused tool caches. It
+Codex and skill-run now use a native Nix CLI and no longer need pnpm.
+The [worker regression](../scripts/check-codex-worker.py) runs both actual
+packages in that image with ambient CLI/package-manager commands disabled. It
 deliberately supplies an invalid checkpoint so execution stops immediately
 after a successful version probe, without a provider call. CI runs it on native
 ARM64 and AMD64 runners. Host-only live tests did not catch this because their

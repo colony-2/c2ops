@@ -3,7 +3,6 @@ package codex
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -50,11 +49,7 @@ func TestVersionProbePreservesStartupDiagnostics(t *testing.T) {
 	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 {
 		t.Fatalf("expected wrapped exit status 1, got %v", err)
 	}
-	runner, lookupErr := exec.LookPath("pnpm")
-	if lookupErr != nil {
-		t.Fatal(lookupErr)
-	}
-	for _, want := range []string{"native runtime unavailable", "launcher output", "--package=" + codexPackage, "--version", runner} {
+	for _, want := range []string{"native runtime unavailable", "launcher output", "--version", os.Getenv("C2OPS_CODEX_BIN")} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("missing %q in version diagnostic: %v", want, err)
 		}
@@ -134,12 +129,9 @@ func installFakeCodex(t *testing.T, script string) {
 	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
 		t.Fatalf("write fake codex: %v", err)
 	}
-	// Match the native qualified form; a bare codex lookup must fail.
-	launcher := fmt.Sprintf("#!/bin/sh\n[ \"$1\" = %s ] && [ \"$2\" = dlx ] && [ \"$3\" = codex ] || exit 127\nshift 3\nexec %s \"$@\"\n",
-		shellQuote("--package="+codexPackage), shellQuote(path))
-	if err := os.WriteFile(filepath.Join(binDir, "pnpm"), []byte(launcher), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	// Use the same explicit binary override as the Nix wrapper. A bare codex
+	// lookup must fail, even when a command with that name exists on PATH.
+	t.Setenv("C2OPS_CODEX_BIN", path)
 	if err := os.WriteFile(filepath.Join(binDir, "codex"), []byte("#!/bin/sh\necho 'unexpected bare codex invocation' >&2\nexit 127\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise real packaged Codex launchers in the minimal production worker image."""
+"""Check native Codex ops without ambient CLIs or package managers."""
 
 import json
 import os
@@ -7,7 +7,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 
-from op_test import ROOT, nix, reference
+from op_test import PUBLIC_FLAKE, nix, reference
 
 # Keep the regression environment that exposed the missing launcher utilities.
 IMAGE = "ghcr.io/colony-2/base:build-38077543859-1"
@@ -26,18 +26,31 @@ def main():
             "p: { manifest = p.c2j; store_path = p.outPath; }",
             reference(coordinate).removeprefix("nix:"),
         ))
+    flake = os.environ.get("C2OPS_TEST_FLAKE", PUBLIC_FLAKE)
+    cli = json.loads(nix("eval", "--json", "--apply",
+                         "p: { path = p.outPath; version = p.version; }", f"{flake}#codex-cli"))
     paths = [package["store_path"] for package in packages.values()]
     nix("build", "--no-link", "--max-jobs", "0", "--builders", "", *paths)
 
+    for package in packages.values():
+        if package["manifest"].get("dependencies"):
+            raise AssertionError("packaged Codex must not require external tool setup")
+        closure = nix("path-info", "--recursive", package["store_path"]).splitlines()
+        if cli["path"] not in closure:
+            raise AssertionError("both ops must include the same native Codex derivation")
+
     with tempfile.TemporaryDirectory(prefix="c2ops-worker-check-") as directory:
         bundle = Path(directory)
-        checked("go", "build", "-o", str(bundle / "with-tools"),
-                "../scripts/with-tools.go", cwd=ROOT / "codex",
-                env={**os.environ, "CGO_ENABLED": "0"})
+        poison = bundle / "poison"
+        poison.mkdir()
+        for name in ("codex", "pnpm", "node", "npm", "npx", "nix"):
+            launcher = poison / name
+            launcher.write_text("#!/bin/sh\necho 'unexpected ambient CLI or package manager' >&2\nexit 127\n")
+            launcher.chmod(0o755)
         # Transfer this checkout's built closures, not the published main output.
         nix("copy", "--to", (bundle / "cache").as_uri(), *paths)
         container = checked(
-            "docker", "run", "-d", "--rm", "--entrypoint", "/bin/sh",
+            "docker", "run", "-d", "--rm", "--network=none", "--entrypoint", "/bin/sh",
             "-v", f"{bundle}:/fixture:ro", IMAGE, "-c", "sleep infinity",
             capture_output=True,
         ).stdout.strip()
@@ -59,9 +72,8 @@ def main():
             for name, package in packages.items():
                 store = package["store_path"]
                 manifest = package["manifest"]
-                cli = manifest["dependencies"][0]
-                expected_version = cli.rsplit("@", 1)[1]
-                for outcome in ("prepared", "reused"):
+                expected_version = cli["version"]
+                for outcome in ("first", "repeated"):
                     # Invalid checkpoint deliberately stops after the real version
                     # probe, before credentials or a provider request are needed.
                     request = {
@@ -72,20 +84,11 @@ def main():
                     if name == "skill-run":
                         request["skill"] = "version-probe"
                     result = run(
-                        "env", f"C2J_TOOL_CACHE_DIR=/tmp/{name}/tools",
+                        "env", "PATH=/fixture/poison",
                         f"C2J_OBJECT_OUTBOX=/tmp/{name}/objects",
-                        "/fixture/with-tools", "--diagnostics",
-                        "--manifest", f"{store}/share/c2j/op.json", "--cwd", store,
-                        "--", f"{store}/{manifest['command'][0]}",
+                        f"{store}/{manifest['command'][0]}",
                         *manifest["command"][1:], input=json.dumps(request),
                     )
-                    diagnostics = [json.loads(line) for line in result.stderr.splitlines()
-                                   if line.startswith('{"')]
-                    if not diagnostics or not any(
-                        tool["reference"] == cli and tool["outcome"] == outcome
-                        for diagnostic in diagnostics for tool in diagnostic.get("tools", [])
-                    ):
-                        raise AssertionError(f"expected {outcome} dependency: {result.stderr}")
                     phases = [json.loads(line.split(": ", 1)[1])
                               for line in result.stderr.splitlines()
                               if line.startswith('codex-op: {')]
@@ -95,7 +98,7 @@ def main():
                                        and phase.get("version") == expected_version
                                        for phase in phases)):
                         raise AssertionError(f"{name} ({outcome}) failed: {result.stderr}")
-                    print(f"{name}: {outcome} cache, Codex {expected_version}, packaged version probe passed", flush=True)
+                    print(f"{name}: {outcome} invocation, native Codex {expected_version}, packaged version probe passed", flush=True)
         finally:
             checked("docker", "rm", "-f", container, stdout=subprocess.DEVNULL)
 

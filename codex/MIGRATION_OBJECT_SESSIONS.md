@@ -16,10 +16,10 @@ workers as well as recipe submission/validation tools. The integration harness n
 object sessions and package setup. See the [troubleshooting guide](./TROUBLESHOOTING.md) for
 historical v0.0.61 Shai limitations.
 
-The manifests declare `pnpm:@openai/codex@0.157.1`. With the new dependency
-lifecycle, c2j prepares that CLI and binds it to the invocation's PATH before
-execution. Direct invocations still need **Codex CLI 0.148.0 or later** available;
-older or unparseable versions are rejected.
+The Nix ops include the native Codex CLI in their runtime closure. Source/Git
+manifests declare `nix:github:colony-2/c2ops/main#codex-cli`; c2j prepares that
+package for qualified `nix run` invocation. Both paths require **Codex CLI
+0.148.0 or later**; older or unparseable versions are rejected.
 
 Checkpoints record the actual producer CLI version. A consumer can use a
 different CLI version at or above the minimum; the checkpoint format and files

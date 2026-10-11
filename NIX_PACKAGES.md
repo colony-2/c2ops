@@ -80,7 +80,7 @@ needs access to this definition repository and the flake's evaluation inputs.
 | Ops | Included in the Nix runtime closure | Additional c2j setup |
 | --- | --- | --- |
 | `llm`, `llm2` | Compiled Go op and Git | None |
-| `codex`, `skill-run` | Compiled Go op, SQLite implementation, Git | `pnpm:@openai/codex@0.162.1` |
+| `codex`, `skill-run` | Compiled Go op, SQLite implementation, Git, native Codex 0.161.0 | None |
 | `gha`, `gha-many` | Compiled Go op, Git, Docker client | Reachable Docker daemon for the local backend; credentials for the GitHub backend |
 | `rule_gate` | Compiled Go op | None |
 | `pydantic` | Python 3.14, PydanticAI Slim 2.31.0 and OpenAI/Anthropic/Google provider libraries | Provider credentials |
@@ -118,25 +118,31 @@ them in our cache. Our wrappers, composed environments, compatibility packages,
 and any dependencies unavailable upstream still need publishing. Workers must retain
 both substituters. See [Cachix's upstream-cache behavior](https://docs.cachix.org/faq).
 
-No packaged op calls `go run`, `uv run`, or `npm exec`. Codex and Kimi's declared
-CLIs are prepared by c2j before the op's execution budget; those npm packages
-are **not** stored in Cachix.
+No packaged op calls `go run`, `uv run`, or `npm exec`. Codex and skill-run
+share nixpkgs' native Codex package through an explicit absolute executable
+path. Their installed manifests need no external tool dependencies. The
+`C2OPS_CODEX_BIN` environment override is available for fixtures and CLI
+compatibility experiments; normally the wrapper supplies its Nix store path.
 
-The flake also exports `aider-cli`, a normal CLI package for source/Git Aider
-dependencies. It is not a JSON-speaking op. The packaged Aider op references the
-same CLI, so its closure includes everything needed to publish this helper.
-Their declared top-level versions are pinned; c2j does not provide a transitive
-pnpm lock service. Keep the worker tool cache persistent for reuse.
-
-Both clients use qualified calls that name the package and executable:
+The flake also exports `codex-cli` and `aider-cli`, normal CLI packages for
+source/Git op dependencies. They are not JSON-speaking ops. Their respective
+packaged ops include the same CLI derivations, so publishing the op closures
+also covers these helpers. Source Codex uses the manifest-declared coordinate:
 
 ```sh
-pnpm --package=@openai/codex@0.162.1 dlx codex --version
+nix run github:colony-2/c2ops/main#codex-cli -- --version
+```
+
+Kimi's declared npm CLI is prepared by c2j before execution and is not stored in
+Cachix. It uses a qualified call:
+
+```sh
 pnpm --package=@moonshot-ai/kimi-code@2.1.1 dlx kimi --version
 ```
 
-c2j dispatches these to retained binaries without installation or bare-name
-lookup during execution. The package version must match the manifest declaration.
+c2j dispatches these qualified calls to retained binaries without installation
+or bare-name lookup during execution. Kimi's top-level version is pinned; c2j
+does not provide a transitive pnpm lock service. Retain its tool cache for reuse.
 
 Nix runtime tools are bound in package wrappers. Packaged manifests must not
 contain `nix:` dependencies. `uv:` and `pnpm:` references are for CLI applications,
@@ -216,10 +222,10 @@ use the packaged processes and real pinned clients against mock providers; the
 package checks need no provider credentials. CI disables import-from-derivation during evaluation.
 
 `python3 scripts/check-codex-worker.py` additionally runs the built Codex and
-skill-run packages in the minimal worker container, using real declared CLI
-dependencies with fresh and reused caches. It checks `version.ready`, then
+skill-run packages in the minimal worker container, using the native CLI in their closures
+with first and repeated invocations and package-manager commands disabled. It checks `version.ready`, then
 deliberately rejects an invalid checkpoint before any provider request. CI runs
-this regression on both architectures. It requires Docker, Nix, Go, and prebuilt
+this regression on both architectures. It requires Docker, Nix, and prebuilt
 packages; set `C2OPS_TEST_FLAKE=path:$PWD` to test a local checkout.
 
 Add new ops to `nix/ops.json`. Edit schemas in `op.yaml`, then regenerate `op.json`.
