@@ -94,6 +94,32 @@ fragments in the URL are rejected. When supplied, `api.api_key_env` must name a
 nonempty environment variable; there is no default credential variable. External
 mode uses Responses streaming over HTTP/SSE, with WebSockets disabled.
 
+To read the base URL from the worker environment, use a command step and reference
+its output. The c2j version used here has no built-in `env()` template function;
+putting `$CLIPROXY_BASE_URL` directly in `base_url` does not expand it.
+
+```yaml
+sequence:
+  - id: proxy_url
+    op: command_execution
+    inputs:
+      run: |
+        printf '%s' "${CLIPROXY_BASE_URL:?Set CLIPROXY_BASE_URL on the worker}"
+
+  - id: code_task
+    op: nix:github:colony-2/c2ops/published#codex
+    inputs:
+      prompt: Fix the failing tests in this repository.
+      api:
+        base_url: "${{ sequence.proxy_url.outputs.stdout }}"
+        api_key_env: CLIPROXY_API_KEY
+```
+
+Set `CLIPROXY_BASE_URL` (for example, `http://192.168.1.122:8317/v1`) and
+`CLIPROXY_API_KEY` in the worker environment. Keep your existing `model` input
+on the Codex step. Only the URL goes through step outputs; the key is read
+directly from the environment by Codex.
+
 With `api` set, the op skips importing the worker's Codex authentication and
 configuration files. The same settings apply to skill output repair. Pass `api`
 again when resuming a session; the current invocation supplies the endpoint and
