@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 
-AIDER_REFERENCE = "github:colony-2/c2ops/main#aider-cli"
+AIDER_REFERENCE = "github:colony-2/c2ops/published#aider-cli"
 
 
 @contextmanager

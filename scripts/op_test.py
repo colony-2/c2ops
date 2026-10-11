@@ -9,7 +9,7 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-PUBLIC_FLAKE = "github:colony-2/c2ops/main"
+PUBLIC_FLAKE = "github:colony-2/c2ops/published"
 
 
 def reference(coordinate):

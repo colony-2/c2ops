@@ -5,7 +5,7 @@ timeout: 30m
 dependencies:
   - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#python314
   - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#gitMinimal
-  - nix:github:colony-2/c2ops/main#aider-cli
+  - nix:github:colony-2/c2ops/published#aider-cli
 env:
   PYTHONUNBUFFERED: "1"
 input_schema:

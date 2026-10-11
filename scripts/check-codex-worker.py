@@ -20,7 +20,7 @@ def checked(*args, **kwargs):
 def main():
     packages = {}
     for name in ("codex", "skill-run"):
-        coordinate = f"nix:github:colony-2/c2ops/main#{name}"
+        coordinate = f"nix:github:colony-2/c2ops/published#{name}"
         packages[name] = json.loads(nix(
             "eval", "--json", "--apply",
             "p: { manifest = p.c2j; store_path = p.outPath; }",
@@ -47,7 +47,7 @@ def main():
             launcher = poison / name
             launcher.write_text("#!/bin/sh\necho 'unexpected ambient CLI or package manager' >&2\nexit 127\n")
             launcher.chmod(0o755)
-        # Transfer this checkout's built closures, not the published main output.
+        # Transfer this checkout's built closures, not the published branch output.
         nix("copy", "--to", (bundle / "cache").as_uri(), *paths)
         # A newer reader may initialize extra cache metadata directories (e.g.
         # build-trace-v2) even during import. Only this disposable cache needs

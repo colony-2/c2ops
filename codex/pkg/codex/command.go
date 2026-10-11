@@ -8,7 +8,7 @@ import (
 )
 
 // Keep this package coordinate aligned with both Codex manifests.
-const codexPackage = "github:colony-2/c2ops/main#codex-cli"
+const codexPackage = "github:colony-2/c2ops/published#codex-cli"
 
 func codexCommand(args ...string) []string {
 	// Packaged ops bind the native CLI's exact store path. Source ops use the

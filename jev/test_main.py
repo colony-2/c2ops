@@ -62,7 +62,7 @@ class JevTests(unittest.TestCase):
         }
         self.manifest = json.loads(Path("op.json").read_text())
         self.command = [sys.executable, str(Path(__file__).resolve().parents[1] / "scripts/op_test.py"),
-                        "run", "nix:github:colony-2/c2ops/main#jev"]
+                        "run", "nix:github:colony-2/c2ops/published#jev"]
 
     def invoke(self):
         return subprocess.run(self.command, input=json.dumps(self.payload),

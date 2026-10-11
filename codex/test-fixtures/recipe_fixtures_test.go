@@ -202,7 +202,7 @@ func fixtureRecipeYAML(t *testing.T, path string) []byte {
 		switch node := value.(type) {
 		case map[string]any:
 			if coordinate, ok := node["op"].(string); ok && coordinate != "command_execution" {
-				require.True(t, strings.HasPrefix(coordinate, "nix:github:colony-2/c2ops/main#"), "fixture must use a public op coordinate: %s", coordinate)
+				require.True(t, strings.HasPrefix(coordinate, "nix:github:colony-2/c2ops/published#"), "fixture must use a public op coordinate: %s", coordinate)
 				output, err := exec.Command("python3", filepath.Join(opRootDir(t), "..", "scripts", "op_test.py"),
 					"reference", coordinate).CombinedOutput()
 				require.NoError(t, err, string(output))

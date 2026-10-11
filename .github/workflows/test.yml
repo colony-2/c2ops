@@ -80,27 +80,7 @@ jobs:
         id: packages
         env:
           NIX_SYSTEM: ${{ matrix.system }}
-        run: |
-          python3 - <<'PY'
-          import json, os, subprocess
-          from pathlib import Path
-          system = os.environ['NIX_SYSTEM']
-          revision = os.environ['GITHUB_SHA']
-          packages = {}
-          for name in json.loads(Path('nix/ops.json').read_text()):
-              path = subprocess.check_output([
-                  'nix', 'eval', '--raw', f'.#packages.{system}.{name}.outPath'
-              ], text=True)
-              packages[name] = {
-                  'selector': f'nix:github:colony-2/c2ops/main#{name}',
-                  'store_path': path,
-              }
-          Path('packages.json').write_text(json.dumps({
-              'revision': revision, 'system': system, 'packages': packages
-          }, indent=2) + '\n')
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
-              output.write('paths=' + ' '.join(p['store_path'] for p in packages.values()) + '\n')
-          PY
+        run: python3 scripts/publication.py record --system "$NIX_SYSTEM" --revision "$GITHUB_SHA"
 
       - name: Configure Cachix
         uses: cachix/cachix-action@38b082610b782e7e93e209c35fd730d399dee866 # v17
@@ -125,6 +105,7 @@ jobs:
         env:
           UV_NO_MANAGED_PYTHON: "1"
           C2OPS_TEST_FLAKE: path:${{ github.workspace }}
+          C2OPS_TEST_NIX_PUBLICATION: "1"
         run: make test
 
       - name: Check native Codex in the minimal worker image
@@ -145,3 +126,62 @@ jobs:
           authToken: ${{ secrets.CACHIX_COLONY2_AUTHKEY }}
           skipAddingSubstituter: true
           pathsToPush: ${{ steps.packages.outputs.paths }}
+
+  # needs waits for both architectures, including Cachix's post-job uploads.
+  verify:
+    needs: test
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            system: x86_64-linux
+          - runner: ubuntu-24.04-arm
+            system: aarch64-linux
+    runs-on: ${{ matrix.runner }}
+    env:
+      NIX_SYSTEM: ${{ matrix.system }}
+      CACHIX_CACHE: ${{ vars.CACHIX_CACHE || 'colony2' }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v4
+        with:
+          name: nix-packages-${{ matrix.system }}
+      - uses: cachix/install-nix-action@2126ae7fc54c9df00dd18f7f18754393182c73cd # v31.9.1
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+      - uses: cachix/cachix-action@38b082610b782e7e93e209c35fd730d399dee866 # v17
+        with:
+          name: ${{ env.CACHIX_CACHE }}
+          skipPush: true
+      - name: Verify complete downloads into an empty store with builds disabled
+        run: >-
+          python3 scripts/publication.py verify
+          --system "$NIX_SYSTEM" --revision "$GITHUB_SHA"
+          --store "$RUNNER_TEMP/c2ops-publication-store" --cache "$CACHIX_CACHE"
+      - name: Retain verified op closures and their CLI dependencies
+        env:
+          CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_COLONY2_AUTHKEY }}
+        run: >-
+          python3 scripts/publication.py pin
+          --system "$NIX_SYSTEM" --revision "$GITHUB_SHA"
+          --store "$RUNNER_TEMP/c2ops-publication-store" --cache "$CACHIX_CACHE"
+
+  promote:
+    needs: verify
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    concurrency:
+      group: c2ops-published
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Advance published to the exact verified commit
+        run: python3 scripts/promote-published.py "$GITHUB_SHA"

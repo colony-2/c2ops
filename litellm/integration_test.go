@@ -185,7 +185,7 @@ func runPackagedOp(t *testing.T, input any, extraEnv map[string]string) (opEnvel
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "python3", filepath.Join(opDir(t), "..", "scripts", "op_test.py"),
-		"run", "nix:github:colony-2/c2ops/main#litellm")
+		"run", "nix:github:colony-2/c2ops/published#litellm")
 	cmd.Stdin = bytes.NewReader(payload)
 	cmd.Env = testEnv(extraEnv)
 

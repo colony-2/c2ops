@@ -25,7 +25,7 @@ class KimiTests(unittest.TestCase):
                         "workdir_path": str(self.root), "artifact_outbox_path": str(self.root / "outbox")}
         self.manifest = json.loads(Path("op.json").read_text())
         self.command = [sys.executable, str(Path(__file__).resolve().parents[1] / "scripts/op_test.py"),
-                        "run", "nix:github:colony-2/c2ops/main#kimi"]
+                        "run", "nix:github:colony-2/c2ops/published#kimi"]
 
     def test_cli_call_matches_declared_package(self):
         with patch.object(main, "execute", return_value=subprocess.CompletedProcess([], 1, "", "test")) as execute:
