@@ -24,19 +24,28 @@
       },
       "api": {
         "type": "object",
-        "description": "Optional external Responses API; credentials stay in the worker environment.",
+        "description": "Optional external Responses API; used only when both URL and credentials are supplied.",
         "additionalProperties": false,
         "required": [
           "base_url"
         ],
         "properties": {
           "base_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "API base URL including /v1, without /responses. Null or empty retains the default provider."
+          },
+          "api_key": {
             "type": "string",
-            "description": "API base URL including any prefix such as /v1, without /responses."
+            "x-secret": true,
+            "minLength": 1,
+            "description": "Proxy client key from context.secrets; omit with orValue(null) to retain the default provider."
           },
           "api_key_env": {
             "type": "string",
-            "description": "Optional environment variable containing a bearer token. Omit for an endpoint without authentication."
+            "description": "Legacy alternative to api_key, naming a worker environment variable containing a bearer token."
           }
         }
       },

@@ -3,7 +3,6 @@ package codex
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -12,27 +11,26 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestExternalAPIWithoutAuthentication(t *testing.T) {
+func TestExternalAPIMissingConfigOrSecretUsesDefaultProvider(t *testing.T) {
 	requireCodexCLI(t)
-	for _, ambientKeys := range []bool{false, true} {
-		t.Run(fmt.Sprint("ambient-keys-", ambientKeys), func(t *testing.T) {
-			for _, name := range []string{"OPENAI_API_KEY", "CODEX_API_KEY", "C2OPS_CODEX_API_KEY"} {
-				value := ""
-				if ambientKeys {
-					value = "must-not-send-this-key"
-				}
-				t.Setenv(name, value)
-			}
-			api := newMockCodexAPI(t, []mockCodexTurn{{Summary: "no authentication needed"}})
-			defer api.Close()
-			opts := testExecuteOptions(t)
-			opts.API = &APIConfig{BaseURL: api.URL() + "/v1"}
-			opts.Model = "gpt-5.3-codex"
+	for _, payload := range []string{
+		`{"base_url":null,"api_key":"unused-secret"}`,
+		`{"base_url":"http://127.0.0.1:1/v1"}`,
+		`{"base_url":null}`,
+	} {
+		t.Run(payload, func(t *testing.T) {
+			provider := newMockCodexAPI(t, []mockCodexTurn{{Summary: "default provider preserved"}})
+			defer provider.Close()
+			opts := liveExecuteOptions(t, provider)
+			require.NoError(t, json.Unmarshal([]byte(payload), &opts.API))
 			result, stdout, stderr, artifacts, err := Execute(context.Background(), opts)
 			defer cleanupArtifacts(stdout, stderr, artifacts)
 			require.NoError(t, err)
 			require.Equal(t, StatusCompleted, result.Status, result.ErrorMessage)
-			assertProxyRequests(t, api, "", 1)
+			assertProxyRequests(t, provider, "dummy", 1)
+			logs, err := os.ReadFile(stderr)
+			require.NoError(t, err)
+			require.NotContains(t, string(logs), "unused-secret")
 		})
 	}
 }
@@ -42,7 +40,8 @@ func TestExternalAPIWithoutAuthentication(t *testing.T) {
 func TestExternalAPIRunAndResumeSkillWithRepair(t *testing.T) {
 	requireCodexCLI(t)
 	t.Setenv("C2J_OBJECT_OUTBOX", t.TempDir())
-	t.Setenv("C2OPS_CODEX_API_KEY", "first-proxy-key")
+	firstKey := "first-proxy-key"
+	t.Setenv(resolvedAPIKeyEnv, "stale-ambient-key")
 	hostHome := filepath.Join(t.TempDir(), "missing-codex-home")
 	t.Setenv("CODEX_HOME", hostHome)
 	firstAPI := newMockCodexAPI(t, []mockCodexTurn{{Summary: "remember proxy-memory-42"}})
@@ -50,7 +49,7 @@ func TestExternalAPIRunAndResumeSkillWithRepair(t *testing.T) {
 	first := testExecuteOptions(t)
 	output, err := Run(context.Background(), ExecOpInput{
 		Prompt: "Remember proxy-memory-42.", Model: "gpt-5.3-codex",
-		API:         &APIConfig{BaseURL: firstAPI.URL() + "/v1/", APIKeyEnv: "C2OPS_CODEX_API_KEY"},
+		API:         &APIConfig{BaseURL: firstAPI.URL() + "/v1/", APIKey: &firstKey},
 		WorkdirPath: first.WorkDirRoot, WorktreePath: first.WorktreeRoot,
 		ArtifactInboxPath: first.ArtifactInbox, ArtifactOutboxPath: first.ArtifactOutbox,
 		IdleTimeout: "15s",
@@ -73,7 +72,7 @@ func TestExternalAPIRunAndResumeSkillWithRepair(t *testing.T) {
 	require.NoError(t, os.MkdirAll(hostHome, 0700))
 	require.NoError(t, os.WriteFile(filepath.Join(hostHome, "config.toml"), []byte("invalid host config"), 0600))
 	require.NoError(t, os.WriteFile(filepath.Join(hostHome, "auth.json"), []byte("subscription-secret"), 0600))
-	t.Setenv("RESUMED_PROXY_KEY", "second-proxy-key")
+	secondKey := "second-proxy-key"
 	secondAPI := newMockCodexAPI(t, []mockCodexTurn{
 		{Summary: "output needs repair"},
 		{Command: `test ! -e "$CODEX_HOME/auth.json" && test ! -e "$CODEX_HOME/config.toml" && printf '%s' '{"summary":"proxy-memory-42"}' > ../outbox/proxy-result.json`},
@@ -85,7 +84,7 @@ func TestExternalAPIRunAndResumeSkillWithRepair(t *testing.T) {
 	skillOutput, err := RunSkill(context.Background(), SkillRunInput{
 		Skill: "proxy-smoke", Session: hydrateSession(t, store, ref),
 		Prompt: "Recall the remembered fact and write proxy-result.json.", Model: "gpt-5.3-codex",
-		API:         &APIConfig{BaseURL: secondAPI.URL() + "/v1", APIKeyEnv: "RESUMED_PROXY_KEY"},
+		API:         &APIConfig{BaseURL: secondAPI.URL() + "/v1", APIKey: &secondKey},
 		WorkdirPath: second.WorkDirRoot, WorktreePath: second.WorktreeRoot,
 		ArtifactInboxPath: second.ArtifactInbox, ArtifactOutboxPath: second.ArtifactOutbox,
 		IdleTimeout: "15s",

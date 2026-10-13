@@ -49,7 +49,7 @@ op: nix:github:colony-2/c2ops/published#codex
 - `prompt`
 - `session` (optional `c2ops.codex.session/v1` reference)
 - `model`
-- `api` (optional external Responses API: `base_url`, `api_key_env`)
+- `api` (optional external Responses API: `base_url`, `api_key`; legacy `api_key_env`)
 - `env`
 - `skills`
 - `idle_timeout`
@@ -64,74 +64,61 @@ op: nix:github:colony-2/c2ops/published#codex
 
 Both `codex` and `skill-run` can send model requests to an external
 [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) server or another
-Responses-compatible endpoint:
+Responses-compatible endpoint. With c2j v0.0.69 or later, provision these tenant
+settings through JobDB:
 
-```yaml
-op: nix:github:colony-2/c2ops/published#codex
-inputs:
-  prompt: Fix the failing tests in this repository.
-  model: gpt-5.3-codex # Select a model available through your proxy.
-  api:
-    base_url: https://codex-proxy.example.com/v1
-```
-
-The URL alone is sufficient for an endpoint without authentication. The op sends
-no Authorization header when `api_key_env` is omitted, even if OpenAI or proxy
-keys happen to be present in the worker environment. The proxy holds the
-subscription credentials and handles their refresh; the worker needs neither a
-subscription `auth.json` nor a Codex `config.toml`.
-
-If your proxy requires a client key, add `api_key_env: CODEX_PROXY_KEY` under
-`api` and provision `CODEX_PROXY_KEY` in the **c2j worker's environment** through
-your container/executor secret configuration. The op references the key by
-environment variable name and does not put its value in command arguments or
-generated configuration. Keep the key out of recipe inputs; `env` overrides
-inherited environment values when explicitly set.
-
-`api.base_url` is the API root, typically ending in `/v1`; Codex appends
-`/responses`. HTTP and HTTPS are supported. Credentials, query strings, and
-fragments in the URL are rejected. When supplied, `api.api_key_env` must name a
-nonempty environment variable; there is no default credential variable. External
-mode uses Responses streaming over HTTP/SSE, with WebSockets disabled.
-
-To read the base URL from the worker environment, use a command step and reference
-its output. The c2j version used here has no built-in `env()` template function;
-putting `$CLIPROXY_BASE_URL` directly in `base_url` does not expand it.
+- Config `codex_api_base_url`: the API root, such as `http://192.168.1.122:8317/v1`.
+- Secret `codex_api_key`: the proxy's client API key.
 
 ```yaml
 sequence:
-  - id: proxy_url
-    op: command_execution
-    inputs:
-      run: |
-        printf '%s' "${CLIPROXY_BASE_URL:?Set CLIPROXY_BASE_URL on the worker}"
-
   - id: code_task
     op: nix:github:colony-2/c2ops/published#codex
     inputs:
       prompt: Fix the failing tests in this repository.
       api:
-        base_url: "${{ sequence.proxy_url.outputs.stdout }}"
-        api_key_env: CLIPROXY_API_KEY
+        base_url: '${{ context.config.?codex_api_base_url.orValue(null) }}'
+        api_key: '${{ context.secrets.?codex_api_key.orValue(null) }}'
 ```
 
-Set `CLIPROXY_BASE_URL` (for example, `http://192.168.1.122:8317/v1`) and
-`CLIPROXY_API_KEY` in the worker environment. Keep your existing `model` input
-on the Codex step. Only the URL goes through step outputs; the key is read
-directly from the environment by Codex.
+Keep your existing `model` input. The same `api` inputs work with `skill-run`.
+See the [complete example](examples/proxy-config.yaml).
 
-With `api` set, the op skips importing the worker's Codex authentication and
-configuration files. The same settings apply to skill output repair. Pass `api`
-again when resuming a session; the current invocation supplies the endpoint and
-key. Workspace commands still execute inside the worker. Omitting `api` retains
-the existing behavior of loading credentials/configuration from the worker's
-`CODEX_HOME` (or `$HOME/.codex`).
+**The override activates only when both settings are available.** Missing config
+resolves to null; a missing optional secret omits `api_key`. If either is absent,
+the op retains its normal Codex provider and authentication setup, including
+loading the worker's `CODEX_HOME` (or `$HOME/.codex`) files. Null or empty URL
+config also retains that behavior. An empty secret is invalid; a settings-provider
+outage still fails the task rather than silently changing providers.
 
-The regular `make -C codex test` suite exercises external mode using the packaged
-Codex CLI and a local mock Responses server, including requests with and without
-bearer authentication, tool execution, and session resume through `skill-run`.
-CI runs this suite on both AMD64 and ARM64. It does not log into a subscription
-or require a live proxy.
+c2j resolves these references inside the consuming task. The manifest marks
+`api_key` with `x-secret`; put a secret reference there, never a literal key.
+The op passes the resolved key through the Codex child process environment,
+not command arguments or generated configuration. The proxy holds subscription
+credentials and handles their refresh; in external mode the worker needs neither
+subscription `auth.json` nor Codex `config.toml`.
+
+Codex appends `/responses` to `api.base_url`. HTTP and HTTPS are supported;
+credentials, query strings, and fragments in the URL are rejected. The op sets
+`wire_api="responses"`, disables OpenAI-specific authentication and WebSockets,
+and uses Responses streaming over HTTP/SSE. No additional provider settings are
+needed in the recipe.
+
+For compatibility, `api_key_env` can name a nonempty worker environment variable
+instead of supplying `api_key`. Do not supply both. An explicitly named but
+missing environment variable is an error. Prefer the secret reference above for
+new recipes.
+
+With the override active, the op skips importing the worker's Codex authentication
+and configuration files. The same settings apply to skill output repair. Pass
+`api` again when resuming a session; the current invocation supplies the endpoint
+and key. Workspace commands still execute inside the worker.
+
+The regular `make -C codex test` suite checks c2j reference resolution against both
+manifests and runs the packaged Codex CLI against local mock Responses servers.
+It covers authentication, default behavior when either setting is absent, tool
+execution, skill repair, and session resume. CI runs this suite on both AMD64 and
+ARM64 without a subscription login or live proxy.
 
 ## Sandbox
 

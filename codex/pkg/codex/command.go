@@ -54,6 +54,9 @@ func buildEnv(opts Options) map[string]string {
 	if strings.TrimSpace(opts.CodexHome) != "" {
 		env["CODEX_HOME"] = opts.CodexHome
 	}
+	if opts.API != nil && opts.API.APIKey != nil {
+		env[resolvedAPIKeyEnv] = *opts.API.APIKey
+	}
 	return env
 }
 

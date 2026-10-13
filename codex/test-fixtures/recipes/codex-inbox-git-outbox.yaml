@@ -15,7 +15,8 @@ sequence:
       input.txt: '${{ sequence.write_seed_artifact.artifacts["input.txt"] }}'
     inputs:
       # The fixture CLI is stubbed; this exercises the public manifest and input
-      # decoding without contacting an external service. Other recipes omit api.
+      # decoding and missing-credential fallback without contacting an external
+      # service. The reference materialization tests cover config and secrets.
       api:
         base_url: https://proxy.example.com/v1
       workdir_path: "{{ context.environment.op.workdir }}"

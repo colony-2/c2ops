@@ -12,6 +12,8 @@ import (
 
 func TestExternalAPIValidation(t *testing.T) {
 	t.Setenv("CUSTOM_PROXY_KEY", "custom-proxy-key")
+	key := "resolved-secret"
+	emptyKey := ""
 	for _, tc := range []struct {
 		name string
 		api  *APIConfig
@@ -20,15 +22,19 @@ func TestExternalAPIValidation(t *testing.T) {
 	}{
 		{name: "default mode"},
 		{name: "no key", api: &APIConfig{BaseURL: " https://proxy.example/v1/ "}},
+		{name: "resolved secret", api: &APIConfig{BaseURL: "https://proxy.example/v1", APIKey: &key}},
+		{name: "secret without URL", api: &APIConfig{APIKey: &key}},
+		{name: "empty secret", api: &APIConfig{BaseURL: "https://proxy.example/v1", APIKey: &emptyKey}, err: "must be nonempty"},
+		{name: "conflicting credentials", api: &APIConfig{BaseURL: "https://proxy.example/v1", APIKey: &key, APIKeyEnv: "CUSTOM_PROXY_KEY"}, err: "cannot both be set"},
 		{name: "custom key", api: &APIConfig{BaseURL: "http://localhost:8317/v1", APIKeyEnv: "CUSTOM_PROXY_KEY"}},
 		{name: "input environment", api: &APIConfig{BaseURL: "https://proxy.example/v1", APIKeyEnv: "INPUT_ONLY_KEY"}, env: map[string]string{"INPUT_ONLY_KEY": "input-key"}},
-		{name: "empty API", api: &APIConfig{}, err: "api.base_url"},
-		{name: "relative URL", api: &APIConfig{BaseURL: "/v1"}, err: "api.base_url"},
-		{name: "wrong scheme", api: &APIConfig{BaseURL: "file:///tmp/api"}, err: "api.base_url"},
-		{name: "URL credentials", api: &APIConfig{BaseURL: "https://user:secret@proxy.example/v1"}, err: "api.base_url"},
-		{name: "query", api: &APIConfig{BaseURL: "https://proxy.example/v1?key=secret"}, err: "api.base_url"},
-		{name: "fragment", api: &APIConfig{BaseURL: "https://proxy.example/v1#secret"}, err: "api.base_url"},
-		{name: "malformed URL", api: &APIConfig{BaseURL: "https://proxy.example/%secret"}, err: "api.base_url"},
+		{name: "empty API", api: &APIConfig{}},
+		{name: "relative URL", api: &APIConfig{BaseURL: "/v1", APIKey: &key}, err: "api.base_url"},
+		{name: "wrong scheme", api: &APIConfig{BaseURL: "file:///tmp/api", APIKey: &key}, err: "api.base_url"},
+		{name: "URL credentials", api: &APIConfig{BaseURL: "https://user:secret@proxy.example/v1", APIKey: &key}, err: "api.base_url"},
+		{name: "query", api: &APIConfig{BaseURL: "https://proxy.example/v1?key=secret", APIKey: &key}, err: "api.base_url"},
+		{name: "fragment", api: &APIConfig{BaseURL: "https://proxy.example/v1#secret", APIKey: &key}, err: "api.base_url"},
+		{name: "malformed URL", api: &APIConfig{BaseURL: "https://proxy.example/%secret", APIKey: &key}, err: "api.base_url"},
 		{name: "invalid env name", api: &APIConfig{BaseURL: "https://proxy.example/v1", APIKeyEnv: "key=secret"}, err: "api.api_key_env"},
 		{name: "missing key", api: &APIConfig{BaseURL: "https://proxy.example/v1", APIKeyEnv: "MISSING_PROXY_KEY"}, env: map[string]string{"MISSING_PROXY_KEY": ""}, err: "set MISSING_PROXY_KEY"},
 		{name: "empty override", api: &APIConfig{BaseURL: "https://proxy.example/v1", APIKeyEnv: "CUSTOM_PROXY_KEY"}, env: map[string]string{"CUSTOM_PROXY_KEY": " "}, err: "set CUSTOM_PROXY_KEY"},
@@ -41,11 +47,12 @@ func TestExternalAPIValidation(t *testing.T) {
 				return
 			}
 			require.NoError(t, err)
-			if tc.api == nil {
+			if tc.api == nil || tc.api.BaseURL == "" || (tc.api.APIKey == nil && tc.api.APIKeyEnv == "") {
 				require.Nil(t, got)
 				return
 			}
 			require.Equal(t, tc.api.APIKeyEnv, got.APIKeyEnv)
+			require.Equal(t, tc.api.APIKey, got.APIKey)
 			require.Equal(t, strings.TrimRight(strings.TrimSpace(tc.api.BaseURL), "/"), got.BaseURL)
 		})
 	}
@@ -60,7 +67,7 @@ func TestExternalAPIDoesNotImportSubscriptionFiles(t *testing.T) {
 		opts := testExecuteOptions(t)
 		opts.HostCodexHome = host
 		if external {
-			opts.API = &APIConfig{BaseURL: "https://proxy.example/v1"}
+			opts.API = &APIConfig{BaseURL: "https://proxy.example/v1", APIKey: apiTestKey("test-key")}
 		}
 		require.NoError(t, prepareDirectCodexHome(opts))
 		for _, name := range codexCredentialFileNames {
@@ -98,6 +105,6 @@ func TestExternalAPIInputs(t *testing.T) {
 	require.NoError(t, json.Unmarshal(payload, &skillInput))
 	require.Equal(t, execInput.API, execInputForSkillRun(skillInput).API)
 	for _, input := range []any{&execInput, &skillInput} {
-		require.Error(t, json.Unmarshal([]byte(`{"api":{"base_url":"https://proxy.example/v1","api_key":"secret"}}`), input))
+		require.Error(t, json.Unmarshal([]byte(`{"api":{"base_url":"https://proxy.example/v1","unknown":"secret"}}`), input))
 	}
 }

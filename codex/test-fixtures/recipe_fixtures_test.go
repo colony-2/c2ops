@@ -24,6 +24,7 @@ import (
 	extops "github.com/colony-2/c2j/pkg/ops/extensions"
 	"github.com/colony-2/c2j/pkg/recipe"
 	"github.com/colony-2/c2j/pkg/swfutil"
+	coretask "github.com/colony-2/c2j/pkg/task"
 	"github.com/colony-2/c2j/pkg/worker/commandop"
 	"github.com/colony-2/c2j/pkg/worker/compiler"
 	workerops "github.com/colony-2/c2j/pkg/worker/ops"
@@ -438,14 +439,17 @@ func (c *capturingTaskWorker) Name() string {
 
 func (c *capturingTaskWorker) Run(ctx jobworkflow.TaskContext, input jobdb.TaskData) (jobdb.TaskData, error) {
 	output, err := c.inner.Run(ctx, input)
-	if err == nil && output != nil && c.inner.Name() == workerops.ToolSetupTaskType {
+	if err == nil && output != nil {
 		data, readErr := output.GetData()
-		var setup workerops.ToolSetupResult
-		if readErr == nil && json.Unmarshal(data, &setup) == nil && setup.Extension != nil &&
-			setup.Extension.Nix != nil && setup.Ready() {
-			// Observe real Nix setup; the explicit CLI override supplies the fixture client.
+		var envelope coretask.OutputEnvelope
+		var invocation workerops.ActivityInvocationOutput
+		if readErr == nil && json.Unmarshal(data, &envelope) == nil &&
+			envelope.Kind == coretask.OutputKindActivityInvocationOutput && envelope.DecodePayload(&invocation) == nil && invocation.Extension != nil &&
+			invocation.Extension.Nix != nil && invocation.Setup != nil && invocation.Setup.Error == "" {
+			// c2j prepares tools inside the consuming activity. Observe its
+			// successful Nix setup; the CLI override supplies the fixture client.
 			c.capture.mu.Lock()
-			c.capture.nixPackages[setup.Extension.Nix.StorePath] = true
+			c.capture.nixPackages[invocation.Extension.Nix.StorePath] = true
 			c.capture.mu.Unlock()
 		}
 	}
@@ -518,12 +522,11 @@ func executeRecipeWithArtifacts(
 	control.Engine = engine
 
 	jobKey, err := control.StartJob(ctx, workflowctl.StartJob{
-		ToolSetupVersion: 1,
-		TenantId:         "default",
-		RecipeName:       recipeDef.GetMetadata().ID,
-		Inputs:           inputs,
-		JobContext:       jobCtx,
-		GitRef:           gitRef,
+		TenantId:   "default",
+		RecipeName: recipeDef.GetMetadata().ID,
+		Inputs:     inputs,
+		JobContext: jobCtx,
+		GitRef:     gitRef,
 	})
 	if err != nil {
 		return nil, nil, nil, err
