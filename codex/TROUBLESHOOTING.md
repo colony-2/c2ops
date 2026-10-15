@@ -1,4 +1,4 @@
-# Troubleshoot a hanging Codex op
+# Troubleshoot Codex ops
 
 Applies to `codex` and `codex/run_skill`. Historical investigation baseline: c2j
 **v0.0.61**, Codex CLI **0.157.1**. Current default tests use native nixpkgs Codex **0.161.0**.
@@ -34,6 +34,72 @@ and module-network access if either stalls. Recipe `inputs.env` configures the
 Codex child; it cannot fix PATH or module access needed to start the wrapper or
 its preliminary version probe.
 
+## Diagnose a custom API 401
+
+Both ops write an `exec.config` record to the **`codex-progress.jsonl` output
+artifact** after preparing the private Codex home and before starting the CLI.
+It remains in the outbox when the CLI returns 401 or the op fails; it is also
+copied to parent stderr. Artifact upload/visibility on failed tasks is controlled
+by the c2j runner. Inspect the local outbox if the failed task's artifacts are not
+available through your UI.
+
+```sh
+jq 'select(.phase == "exec.config")' codex-progress.jsonl
+```
+
+For a custom URL with a secret input, the record includes:
+
+```json
+{
+  "phase": "exec.config",
+  "mode": "external_api",
+  "reason": "url_and_credentials_available",
+  "provider": "c2ops_external",
+  "base_url": "https://proxy.example/v1",
+  "wire_api": "responses",
+  "requires_openai_auth": false,
+  "supports_websockets": false,
+  "credential_source": "api.api_key",
+  "credential_env": "C2OPS_CODEX_RESOLVED_API_KEY",
+  "credential_present": true,
+  "model_override": "gpt-5.3-codex",
+  "resuming": false,
+  "auth_json_present": false,
+  "config_toml_present": false
+}
+```
+
+- `mode: external_api` identifies the wrapper's external provider override.
+  Check `base_url` against the intended proxy API root, including `/v1` where
+  required. Codex appends `/responses`.
+- `credential_source` is `api.api_key`, `input.env`, or `worker_environment` in
+  external mode. `credential_env` is the variable name passed to Codex;
+  `credential_present` confirms a nonempty value is available, **not that the
+  proxy accepts it**. An explicit `api_key_env` takes precedence over `api_key`.
+- `mode: default` means no external provider override was passed. `reason`
+  distinguishes `missing_base_url`, `missing_api_key`,
+  `missing_base_url_and_api_key`, and `api_not_supplied_or_disabled`.
+  `input_presence` records which API fields reached the op, as booleans.
+  Check config `codex_api_base_url`, secret `codex_api_key`, recipe overrides,
+  and the worker's reference-default support.
+- `auth_json_present` and `config_toml_present` indicate regular files in the
+  prepared private home at launch. Their contents are never recorded. In default
+  mode, provider/authentication are delegated to Codex; this record does not
+  inspect its merged configuration or establish whether credentials are valid.
+- `model_override` is the model input passed by the op; an empty string means
+  Codex chooses it from its configuration/defaults. The earlier `version.ready`
+  record contains the actual CLI version. `exec.running` confirms launch.
+
+Every execution, including a skill repair, appends its own configuration record.
+No key values, hashes, prompts, full environment, or full command arguments are
+included. The URL and model are public diagnostic fields. A 401 with the expected
+URL and `credential_present: true` still requires checking the proxy's client key
+and authentication configuration; these diagnostics cannot determine the
+server's reason for rejecting the request.
+
+If `exec.config` is absent, check the last phase below and verify that the
+resolved c2ops package includes this diagnostic change.
+
 ## Find the last completed phase
 
 After input decoding and path normalization, the wrapper writes
@@ -60,6 +126,7 @@ host invocation directory.
 | `session.restore` | A supplied checkpoint is being checked/copied and SQLite paths relocated. Check filesystem availability and checkpoint size. |
 | `skills.prepare` | Git skill sources are being fetched. Check network/authentication; the preparation context has a two-minute deadline. |
 | `exec.start` | Captures are open; includes `stdout_path`, `stderr_path`, and the configured idle timeout. Home preparation/process launch follows. |
+| `exec.config` | Home preparation finished; inspect the provider mode, credential source, and URL. Process launch follows. |
 | `exec.running` / `exec.wait` | CLI started. Wait records appear every 30 seconds with PID, elapsed/idle seconds and stdout/stderr byte counts. Inspect the capture paths. |
 | `exec.finished` | CLI wait completed; output sanitization/parsing and artifact publication follow. `failed` refers to process execution, not the final op outcome. |
 | `skill.validate` / `skill.repair` | `run_skill` validates output or starts a repair attempt. Each repair has its own execution records. |

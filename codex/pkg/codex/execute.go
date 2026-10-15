@@ -21,6 +21,7 @@ var codexCredentialFileNames = []string{
 // Execute runs Codex in non-interactive mode and returns the normalized result.
 // The caller is responsible for managing the returned stdoutPath, stderrPath, and artifactDir.
 func Execute(ctx context.Context, opts Options) (Result, string, string, string, error) {
+	requestedAPI := opts.API
 	if err := opts.validate(); err != nil {
 		return Result{}, "", "", "", err
 	}
@@ -62,7 +63,7 @@ func Execute(ctx context.Context, opts Options) (Result, string, string, string,
 	collector := newOutputCollector(stdoutFile, io.MultiWriter(stderrFile, os.Stderr))
 	progress(ctx, "exec.start", map[string]any{"stdout_path": stdoutPath, "stderr_path": stderrPath, "idle_timeout": activeOpts.IdleTimeout.String()})
 
-	runErr := runCodexExec(ctx, activeOpts, schemaPath, collector)
+	runErr := runCodexExec(ctx, activeOpts, requestedAPI, schemaPath, collector)
 	progress(ctx, "exec.finished", map[string]any{"failed": runErr != nil})
 	if sanitizeErr := sanitizeCodexHomeOutput(activeOpts); sanitizeErr != nil {
 		if runErr == nil {
@@ -108,10 +109,11 @@ func Execute(ctx context.Context, opts Options) (Result, string, string, string,
 	return result, stdoutPath, stderrPath, artifactDir, nil
 }
 
-func runCodexExec(ctx context.Context, opts Options, schemaPath string, collector *outputCollector) error {
+func runCodexExec(ctx context.Context, opts Options, requestedAPI *APIConfig, schemaPath string, collector *outputCollector) error {
 	if err := prepareDirectCodexHome(opts); err != nil {
 		return fmt.Errorf("prepare codex home: %w", err)
 	}
+	progress(ctx, "exec.config", executionConfig(opts, requestedAPI))
 	cmdArgs := buildCommand(opts, schemaPath)
 	cmd := exec.Command(cmdArgs[0], cmdArgs[1:]...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}

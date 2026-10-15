@@ -15,7 +15,7 @@ func TestProgressIsReadableWhileCLIIsRunning(t *testing.T) {
 	installFakeCodex(t, `#!/usr/bin/env bash
 set -euo pipefail
 test -s "$PROGRESS_FILE"
-grep -q 'exec.start' "$PROGRESS_FILE"
+grep -q 'exec.config' "$PROGRESS_FILE"
 printf '%s\n' '{"type":"session.created","session_id":"test-session"}'
 printf '%s\n' '{"type":"item.completed","item":{"item_type":"assistant_message","text":"{\"status\":\"completed\",\"assistantSummary\":\"done\"}"}}'
 `)
@@ -40,5 +40,5 @@ printf '%s\n' '{"type":"item.completed","item":{"item_type":"assistant_message",
 		require.NoError(t, json.Unmarshal([]byte(line), &entry))
 		phases = append(phases, entry["phase"].(string))
 	}
-	require.Equal(t, []string{"invocation.start", "exec.start", "exec.running", "exec.finished"}, phases)
+	require.Equal(t, []string{"invocation.start", "exec.start", "exec.config", "exec.running", "exec.finished"}, phases)
 }

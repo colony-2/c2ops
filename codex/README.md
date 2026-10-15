@@ -18,9 +18,12 @@ enforce this minimum with no upper bound. See the
 `codex-home-state` artifact. Read [the migration guide](./MIGRATION_OBJECT_SESSIONS.md)
 for required runtime versions, recipe changes, and session forwarding.
 
-For a hanging invocation, see [troubleshooting](./TROUBLESHOOTING.md). Both Codex
+For authentication failures or hangs, see [troubleshooting](./TROUBLESHOOTING.md). Both Codex
 ops write live phase and activity records to `codex-progress.jsonl` in the
-artifact outbox, with a copy on process stderr.
+artifact outbox, with a copy on process stderr. Its `exec.config` record shows the
+launch mode, proxy URL, credential source/presence, model override, and fallback
+reason without recording keys. It is written before launch and retained on 401
+failures; see [custom API diagnostics](./TROUBLESHOOTING.md#diagnose-a-custom-api-401).
 
 ## Selector
 

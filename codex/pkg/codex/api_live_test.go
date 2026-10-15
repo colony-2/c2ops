@@ -4,9 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"io/fs"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -59,6 +62,10 @@ func TestExternalAPIRunAndResumeSkillWithRepair(t *testing.T) {
 	require.NotNil(t, output.Session)
 	require.NoDirExists(t, hostHome, "external mode needs no host auth or config")
 	assertProxyRequests(t, firstAPI, "first-proxy-key", 1)
+	firstConfig := readConfigEvents(t, first.ArtifactOutbox)
+	require.Len(t, firstConfig, 1)
+	require.Equal(t, "external_api", firstConfig[0]["mode"])
+	require.Equal(t, firstAPI.URL()+"/v1", firstConfig[0]["base_url"])
 	assertNoProxyKeys(t, first.ArtifactOutbox, os.Getenv("C2J_OBJECT_OUTBOX"))
 
 	store := checkpointStore(t)
@@ -101,6 +108,12 @@ func TestExternalAPIRunAndResumeSkillWithRepair(t *testing.T) {
 	require.Equal(t, 1, skillOutput.OutputRepairAttempts)
 	assertFileContent(t, filepath.Join(second.ArtifactOutbox, "proxy-result.json"), `{"summary":"proxy-memory-42"}`)
 	assertProxyRequests(t, secondAPI, "second-proxy-key", 3)
+	secondConfigs := readConfigEvents(t, second.ArtifactOutbox)
+	require.Len(t, secondConfigs, 2, "resume and repair each retain launch settings")
+	for _, config := range secondConfigs {
+		require.Equal(t, secondAPI.URL()+"/v1", config["base_url"])
+		require.Equal(t, true, config["resuming"])
+	}
 	assertNoProxyKeys(t, second.ArtifactOutbox, os.Getenv("C2J_OBJECT_OUTBOX"))
 	secondAPI.mu.Lock()
 	history, err := json.Marshal(secondAPI.requests[0]["input"])
@@ -142,5 +155,67 @@ func assertNoProxyKeys(t *testing.T, roots ...string) {
 			}
 			return nil
 		}))
+	}
+}
+
+// The diagnostic must survive an actual CLI 401 and an op error for both entrypoints.
+func TestExternalAPIUnauthorizedKeepsLaunchDiagnostic(t *testing.T) {
+	requireCodexCLI(t)
+	t.Setenv("C2J_OBJECT_OUTBOX", t.TempDir())
+	t.Setenv("CODEX_HOME", filepath.Join(t.TempDir(), "unused-home"))
+	for _, skill := range []bool{false, true} {
+		name := "codex"
+		if skill {
+			name = "skill-run"
+		}
+		t.Run(name, func(t *testing.T) {
+			requests := make(chan string, 32)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				select {
+				case requests <- r.Header.Get("Authorization"):
+				default:
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusUnauthorized)
+				_, _ = w.Write([]byte(`{"error":{"message":"invalid proxy client key","type":"authentication_error"}}`))
+			}))
+			defer server.Close()
+			opts := testExecuteOptions(t)
+			key := "rejected-private-key"
+			api := &APIConfig{BaseURL: server.URL + "/v1", APIKey: &key}
+			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			defer cancel()
+			var err error
+			if skill {
+				createLocalSkill(t, opts.WorktreeRoot, "auth-test")
+				_, err = RunSkill(ctx, SkillRunInput{Skill: "auth-test", Prompt: "test", Model: "gpt-5.3-codex", API: api, WorkdirPath: opts.WorkDirRoot, WorktreePath: opts.WorktreeRoot, ArtifactInboxPath: opts.ArtifactInbox, ArtifactOutboxPath: opts.ArtifactOutbox})
+			} else {
+				_, err = Run(ctx, ExecOpInput{Prompt: "test", Model: "gpt-5.3-codex", API: api, WorkdirPath: opts.WorkDirRoot, WorktreePath: opts.WorktreeRoot, ArtifactInboxPath: opts.ArtifactInbox, ArtifactOutboxPath: opts.ArtifactOutbox})
+			}
+			require.ErrorContains(t, err, "401")
+			require.NotContains(t, err.Error(), key)
+			select {
+			case auth := <-requests:
+				require.Equal(t, "Bearer "+key, auth)
+			default:
+				t.Fatal("CLI did not contact the proxy")
+			}
+			configs := readConfigEvents(t, opts.ArtifactOutbox)
+			require.Len(t, configs, 1)
+			require.Equal(t, "external_api", configs[0]["mode"])
+			require.Equal(t, api.BaseURL, configs[0]["base_url"])
+			require.Equal(t, true, configs[0]["credential_present"])
+			require.Equal(t, "api.api_key", configs[0]["credential_source"])
+			require.FileExists(t, filepath.Join(opts.ArtifactOutbox, "stderr.txt"))
+			require.FileExists(t, filepath.Join(opts.ArtifactOutbox, "stdout.jsonl"))
+			require.NoError(t, filepath.WalkDir(opts.ArtifactOutbox, func(path string, entry fs.DirEntry, err error) error {
+				if err != nil || entry.IsDir() {
+					return err
+				}
+				data, err := os.ReadFile(path)
+				require.NotContains(t, string(data), key)
+				return err
+			}))
+		})
 	}
 }
