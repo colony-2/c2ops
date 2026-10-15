@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -508,7 +509,8 @@ func executeRecipeWithArtifacts(
 	for _, worker := range workset.TaskWorkers {
 		taskWorkers = append(taskWorkers, worker)
 	}
-	fixtureRuntime := toyruntime.New()
+	secretsProvider := &fixtureSecretProvider{}
+	fixtureRuntime := toyruntime.New(toyruntime.WithSecretProvider(secretsProvider))
 	engine, err := jobworkflow.NewEngineBuilder().
 		WithRuntime(fixtureRuntime).
 		WithWorkerTenantId("default").
@@ -535,6 +537,9 @@ func executeRecipeWithArtifacts(
 		return nil, nil, nil, err
 	}
 
+	if secretsProvider.calls.Load() == 0 {
+		return nil, nil, nil, fmt.Errorf("fixture did not resolve the manifest's default secret binding")
+	}
 	capture.mu.Lock()
 	prepared := len(capture.nixPackages)
 	capture.mu.Unlock()
@@ -581,4 +586,16 @@ func assertArtifactNames(t *testing.T, expected []string, actual []string) {
 func publicArtifactNames(value any) map[string]any {
 	result, _ := value.(map[string]any)
 	return result
+}
+
+// An empty successful response models a configured provider with no tenant key.
+// Fixtures exercise manifest defaults through a real leased JobDB execution.
+type fixtureSecretProvider struct{ calls atomic.Int32 }
+
+func (p *fixtureSecretProvider) ResolveSecrets(_ context.Context, request jobdb.SecretResolveRequest) (jobdb.SecretResolveResult, error) {
+	if !reflect.DeepEqual(request.Names, []string{"codex_api_key"}) {
+		return jobdb.SecretResolveResult{}, fmt.Errorf("unexpected secret binding: %v", request.Names)
+	}
+	p.calls.Add(1)
+	return jobdb.SecretResolveResult{}, nil
 }

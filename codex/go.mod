@@ -3,8 +3,8 @@ module github.com/colony-2/c2ops/codex
 go 1.26.0
 
 require (
-	github.com/colony-2/c2j v0.0.69 // test-only: object-store and recipe integration
-	github.com/colony-2/jobdb v0.0.33 // test-only: integration harness
+	github.com/colony-2/c2j v0.0.76-0.20261015024712-66010fb85af6 // test-only: object-store and recipe integration
+	github.com/colony-2/jobdb v0.0.41-0.20261014050424-623a8276fedc // test-only: integration harness
 	github.com/google/uuid v1.6.0
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/stretchr/testify v1.12.1

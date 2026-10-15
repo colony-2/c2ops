@@ -7,6 +7,3 @@ sequence:
     op: nix:github:colony-2/c2ops/published#codex
     inputs:
       prompt: Fix the failing tests in this repository.
-      api:
-        base_url: '${{ context.config.?codex_api_base_url.orValue(null) }}'
-        api_key: '${{ context.secrets.?codex_api_key.orValue(null) }}'

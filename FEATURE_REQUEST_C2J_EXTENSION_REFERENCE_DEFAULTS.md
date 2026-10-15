@@ -5,11 +5,12 @@ including `orValue(...)`, that recipes can already pass as inputs. An op should
 be able to declare its conventional tenant settings once, without every recipe
 repeating those bindings.
 
-Status: proposal. The secret-reference default shown below is not supported by
-the current contract. This request does not depend on placing references in a
-surrounding object default as a workaround.
+Status: implemented in c2j main at `66010fb85af6`
+(`v0.0.76-0.20261015024712-66010fb85af6`). c2ops now uses the supported field
+reference defaults in both Codex manifests. See [Codex setup](codex/README.md#external-api--cliproxyapi).
+The sections below preserve the original request and acceptance criteria.
 
-## Problem and current behavior
+## Original problem and behavior
 
 c2ops has two extension ops, `codex` and `skill-run`, with optional external API
 settings. Today every recipe must repeat:

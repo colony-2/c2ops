@@ -64,8 +64,8 @@ op: nix:github:colony-2/c2ops/published#codex
 
 Both `codex` and `skill-run` can send model requests to an external
 [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) server or another
-Responses-compatible endpoint. With c2j v0.0.69 or later, provision these tenant
-settings through JobDB:
+Responses-compatible endpoint. Both manifests automatically bind their API
+settings to these tenant values in JobDB:
 
 - Config `codex_api_base_url`: the API root, such as `http://192.168.1.122:8317/v1`.
 - Secret `codex_api_key`: the proxy's client API key.
@@ -76,20 +76,40 @@ sequence:
     op: nix:github:colony-2/c2ops/published#codex
     inputs:
       prompt: Fix the failing tests in this repository.
-      api:
-        base_url: '${{ context.config.?codex_api_base_url.orValue(null) }}'
-        api_key: '${{ context.secrets.?codex_api_key.orValue(null) }}'
 ```
 
-Keep your existing `model` input. The same `api` inputs work with `skill-run`.
-See the [complete example](examples/proxy-config.yaml).
+No `api` input is needed. Keep your existing `model` input; the same defaults
+apply to `skill-run`, including resumed sessions. See the
+[complete example](examples/proxy-config.yaml).
+
+This requires c2j's extension reference-default support, currently on `main`;
+tests pin `v0.0.76-0.20261015024712-66010fb85af6`. c2j v0.0.75 and earlier do not
+support these secret defaults. Invoke the op directly using its selector, as
+above; the lower-level `extension_execution` form cannot prepare these defaults.
+
+The manifests provide these default bindings:
+
+```yaml
+api:
+  base_url: '${{ context.config.?codex_api_base_url.orValue(null) }}'
+  api_key: '${{ context.secrets.?codex_api_key.orValue(null) }}'
+```
+
+To disable the bindings for one invocation and use the worker's normal Codex
+setup without any settings lookup, set `api: null`. A partial `api` object
+fills only missing fields from the manifest defaults. Explicit fields win;
+for example, `api: {base_url: "https://other-proxy.example/v1"}` keeps the default
+secret binding. To select another key, supply an explicit `api_key` secret
+reference. If that reference is unavailable, c2j applies its fallback without
+trying the default tenant key.
 
 **The override activates only when both settings are available.** Missing config
 resolves to null; a missing optional secret omits `api_key`. If either is absent,
 the op retains its normal Codex provider and authentication setup, including
 loading the worker's `CODEX_HOME` (or `$HOME/.codex`) files. Null or empty URL
 config also retains that behavior. An empty secret is invalid; a settings-provider
-outage still fails the task rather than silently changing providers.
+outage or an unconfigured provider still fails the task rather than silently
+changing providers. Use `api: null` on workers without a settings provider.
 
 c2j resolves these references inside the consuming task. The manifest marks
 `api_key` with `x-secret`; put a secret reference there, never a literal key.
@@ -105,20 +125,22 @@ and uses Responses streaming over HTTP/SSE. No additional provider settings are
 needed in the recipe.
 
 For compatibility, `api_key_env` can name a nonempty worker environment variable
-instead of supplying `api_key`. Do not supply both. An explicitly named but
-missing environment variable is an error. Prefer the secret reference above for
-new recipes.
+instead of using the tenant secret. An explicit `api_key_env` takes precedence
+over `api_key`, including its default; the unused resolved key is not forwarded
+to Codex. An explicitly named but missing environment variable is an error.
+Prefer the default secret binding for new recipes.
 
 With the override active, the op skips importing the worker's Codex authentication
-and configuration files. The same settings apply to skill output repair. Pass
-`api` again when resuming a session; the current invocation supplies the endpoint
-and key. Workspace commands still execute inside the worker.
+and configuration files. The same settings apply to skill output repair. Each
+invocation obtains its own settings; repeat any explicit overrides or `api: null`
+when resuming a session. Workspace commands still execute inside the worker.
 
 The regular `make -C codex test` suite checks c2j reference resolution against both
 manifests and runs the packaged Codex CLI against local mock Responses servers.
-It covers authentication, default behavior when either setting is absent, tool
-execution, skill repair, and session resume. CI runs this suite on both AMD64 and
-ARM64 without a subscription login or live proxy.
+It covers omitted and overridden API inputs, authentication, default behavior
+when either setting is absent, tool execution, skill repair, and session resume.
+CI runs this suite on both AMD64 and ARM64 without a subscription login or live
+proxy.
 
 ## Sandbox
 

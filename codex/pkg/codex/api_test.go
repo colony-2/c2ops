@@ -25,7 +25,7 @@ func TestExternalAPIValidation(t *testing.T) {
 		{name: "resolved secret", api: &APIConfig{BaseURL: "https://proxy.example/v1", APIKey: &key}},
 		{name: "secret without URL", api: &APIConfig{APIKey: &key}},
 		{name: "empty secret", api: &APIConfig{BaseURL: "https://proxy.example/v1", APIKey: &emptyKey}, err: "must be nonempty"},
-		{name: "conflicting credentials", api: &APIConfig{BaseURL: "https://proxy.example/v1", APIKey: &key, APIKeyEnv: "CUSTOM_PROXY_KEY"}, err: "cannot both be set"},
+		{name: "explicit environment overrides tenant secret", api: &APIConfig{BaseURL: "https://proxy.example/v1", APIKey: &key, APIKeyEnv: "CUSTOM_PROXY_KEY"}},
 		{name: "custom key", api: &APIConfig{BaseURL: "http://localhost:8317/v1", APIKeyEnv: "CUSTOM_PROXY_KEY"}},
 		{name: "input environment", api: &APIConfig{BaseURL: "https://proxy.example/v1", APIKeyEnv: "INPUT_ONLY_KEY"}, env: map[string]string{"INPUT_ONLY_KEY": "input-key"}},
 		{name: "empty API", api: &APIConfig{}},
@@ -52,7 +52,11 @@ func TestExternalAPIValidation(t *testing.T) {
 				return
 			}
 			require.Equal(t, tc.api.APIKeyEnv, got.APIKeyEnv)
-			require.Equal(t, tc.api.APIKey, got.APIKey)
+			if tc.api.APIKeyEnv != "" {
+				require.Nil(t, got.APIKey)
+			} else {
+				require.Equal(t, tc.api.APIKey, got.APIKey)
+			}
 			require.Equal(t, strings.TrimRight(strings.TrimSpace(tc.api.BaseURL), "/"), got.BaseURL)
 		})
 	}

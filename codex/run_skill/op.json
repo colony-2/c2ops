@@ -35,8 +35,11 @@
         "type": "string"
       },
       "api": {
-        "type": "object",
-        "description": "Optional external Responses API; used only when both URL and credentials are supplied.",
+        "type": [
+          "object",
+          "null"
+        ],
+        "description": "External Responses API from tenant settings; used only when both URL and credentials are available. Set null to disable.",
         "additionalProperties": false,
         "required": [
           "base_url"
@@ -47,17 +50,19 @@
               "string",
               "null"
             ],
+            "default": "${{ context.config.?codex_api_base_url.orValue(null) }}",
             "description": "API base URL including /v1, without /responses. Null or empty retains the default provider."
           },
           "api_key": {
             "type": "string",
             "x-secret": true,
             "minLength": 1,
+            "default": "${{ context.secrets.?codex_api_key.orValue(null) }}",
             "description": "Proxy client key from context.secrets; omit with orValue(null) to retain the default provider."
           },
           "api_key_env": {
             "type": "string",
-            "description": "Legacy alternative to api_key, naming a worker environment variable containing a bearer token."
+            "description": "Explicit worker environment variable containing a bearer token; overrides api_key for legacy recipes."
           }
         }
       },

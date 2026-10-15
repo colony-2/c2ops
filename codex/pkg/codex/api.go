@@ -40,15 +40,15 @@ func normalizeAPI(input *APIConfig, env map[string]string) (*APIConfig, error) {
 		// Do not echo the URL: a mistaken credential in it must not reach logs.
 		return nil, fmt.Errorf("api.base_url must be an absolute HTTP(S) API base URL without credentials, query, or fragment")
 	}
-	if api.APIKey != nil {
-		if api.APIKeyEnv != "" {
-			return nil, fmt.Errorf("api.api_key and api.api_key_env cannot both be set")
-		}
+	if api.APIKey != nil && api.APIKeyEnv == "" {
 		if strings.TrimSpace(*api.APIKey) == "" {
 			return nil, fmt.Errorf("api.api_key must be nonempty when supplied")
 		}
 		return &api, nil
 	}
+	// An explicitly selected environment credential overrides the tenant secret
+	// default. Do not forward an unused resolved key to the child process.
+	api.APIKey = nil
 	if !envNamePattern.MatchString(api.APIKeyEnv) {
 		return nil, fmt.Errorf("api.api_key_env must be an environment variable name")
 	}
