@@ -97,6 +97,18 @@ URL and `credential_present: true` still requires checking the proxy's client ke
 and authentication configuration; these diagnostics cannot determine the
 server's reason for rejecting the request.
 
+If CLIProxyAPI returns `{"error":"Missing API key"}` despite
+`credential_present: true`, check for a trailing newline in the stored
+`codex_api_key` secret. Codex 0.161.0 silently omits the Authorization header
+when its key contains a newline or another character invalid in an HTTP header.
+The op now trims surrounding whitespace from both resolved secrets and selected
+environment credentials, and rejects embedded whitespace, control characters,
+and non-ASCII characters before launching Codex. Older packages need a clean,
+single-line secret or an update to a published package containing this fix.
+Never paste the key into logs when checking it. If a clean key still produces
+this error, check whether redirects or an intervening proxy strip Authorization;
+the launch diagnostic does not observe the headers received by the server.
+
 If `exec.config` is absent, check the last phase below and verify that the
 resolved c2ops package includes this diagnostic change.
 

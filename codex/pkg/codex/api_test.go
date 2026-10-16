@@ -85,6 +85,58 @@ func TestExternalAPIDoesNotImportSubscriptionFiles(t *testing.T) {
 	}
 }
 
+func TestExternalAPIRejectsMalformedCredentials(t *testing.T) {
+	for _, tc := range []struct{ name, key string }{
+		{"newline", "private\nkey"}, {"carriage_return", "private\rkey"},
+		{"nul", "private\x00key"}, {"delete", "private\x7fkey"},
+		{"tab", "private\tkey"}, {"space", "private key"},
+		{"zero_width_space", "private\u200bkey"},
+	} {
+		for _, source := range []string{"secret", "worker_environment", "input_environment"} {
+			if source == "worker_environment" && tc.name == "nul" {
+				continue // Operating systems cannot represent NUL in environment values.
+			}
+			t.Run(source+"/"+tc.name, func(t *testing.T) {
+				key := tc.key
+				opts := testExecuteOptions(t)
+				opts.API = &APIConfig{BaseURL: "https://proxy.example/v1", APIKey: &key}
+				if source != "secret" {
+					opts.API.APIKeyEnv = "MALFORMED_PROXY_KEY"
+					if source == "worker_environment" {
+						t.Setenv("MALFORMED_PROXY_KEY", key)
+					} else {
+						opts.ExtraEnv = map[string]string{"MALFORMED_PROXY_KEY": key}
+					}
+				}
+				err := opts.validate()
+				require.ErrorContains(t, err, "API key must contain only printable ASCII")
+				require.NotContains(t, err.Error(), "private")
+			})
+		}
+	}
+}
+
+func TestExternalAPINormalizationDoesNotMutateInputs(t *testing.T) {
+	key := "proxy-key\n"
+	input := &APIConfig{BaseURL: "https://proxy.example/v1", APIKey: &key}
+	api, err := normalizeAPI(input, nil)
+	require.NoError(t, err)
+	require.Equal(t, "proxy-key", *api.APIKey)
+	require.Equal(t, "proxy-key\n", *input.APIKey)
+
+	input.APIKeyEnv = "PADDED_PROXY_KEY"
+	env := map[string]string{"PADDED_PROXY_KEY": "environment-key\n"}
+	t.Setenv("PADDED_PROXY_KEY", "worker-key\n")
+	api, err = normalizeAPI(input, env)
+	require.NoError(t, err)
+	require.Equal(t, "environment-key", buildEnv(Options{API: api, ExtraEnv: env})["PADDED_PROXY_KEY"])
+	require.Equal(t, "environment-key\n", env["PADDED_PROXY_KEY"])
+	require.Equal(t, "worker-key\n", os.Getenv("PADDED_PROXY_KEY"))
+	encoded, err := json.Marshal(api)
+	require.NoError(t, err)
+	require.NotContains(t, string(encoded), "environment-key")
+}
+
 func TestExternalAPICommandKeepsKeyOutOfArguments(t *testing.T) {
 	t.Setenv("C2OPS_CODEX_API_KEY", "private-proxy-key")
 	opts := testExecuteOptions(t)

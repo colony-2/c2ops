@@ -56,6 +56,8 @@ func buildEnv(opts Options) map[string]string {
 	}
 	if opts.API != nil && opts.API.APIKey != nil {
 		env[resolvedAPIKeyEnv] = *opts.API.APIKey
+	} else if opts.API != nil && opts.API.normalizedEnvKey != "" {
+		env[opts.API.APIKeyEnv] = opts.API.normalizedEnvKey
 	}
 	return env
 }

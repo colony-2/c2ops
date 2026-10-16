@@ -14,6 +14,39 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// Codex 0.161.0 silently drops Authorization if the token contains a newline.
+// Exercise the real CLI so nonempty environment values alone cannot pass this test.
+func TestExternalAPITrimsCredentialWhitespace(t *testing.T) {
+	requireCodexCLI(t)
+	for _, source := range []string{"secret", "worker_environment", "input_environment"} {
+		t.Run(source, func(t *testing.T) {
+			provider := newMockCodexAPI(t, []mockCodexTurn{{Summary: "authenticated"}})
+			defer provider.Close()
+			opts := testExecuteOptions(t)
+			opts.Model = "gpt-5.3-codex"
+			key := " \tpadded-proxy-key\r\n"
+			opts.API = &APIConfig{BaseURL: provider.URL() + "/v1", APIKey: &key}
+			if source != "secret" {
+				opts.API.APIKeyEnv = "PADDED_PROXY_KEY"
+				// The environment credential must still override the tenant secret.
+				opts.API.APIKey = apiTestKey("unused-tenant-key")
+				t.Setenv("PADDED_PROXY_KEY", key)
+				if source == "input_environment" {
+					t.Setenv("PADDED_PROXY_KEY", "wrong-worker-key")
+					opts.ExtraEnv = map[string]string{"PADDED_PROXY_KEY": key}
+				}
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			defer cancel()
+			result, stdout, stderr, artifacts, err := Execute(ctx, opts)
+			defer cleanupArtifacts(stdout, stderr, artifacts)
+			require.NoError(t, err)
+			require.Equal(t, StatusCompleted, result.Status, result.ErrorMessage)
+			assertProxyRequests(t, provider, "padded-proxy-key", 1)
+		})
+	}
+}
+
 func TestExternalAPIMissingConfigOrSecretUsesDefaultProvider(t *testing.T) {
 	requireCodexCLI(t)
 	for _, payload := range []string{
