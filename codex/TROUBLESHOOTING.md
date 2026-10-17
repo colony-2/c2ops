@@ -27,7 +27,7 @@ Nix selectors execute a prebuilt wrapper. Check tool-setup diagnostics for
 package substitution or declared CLI dependency failures before execution.
 
 Local/Git source selectors start with `go run .`. Module downloads and compilation happen
-before any wrapper diagnostics or its startup timeouts. Check worker launch
+before any wrapper diagnostics. Check worker launch
 errors and, from the resolved op checkout in the same environment, run
 `go mod download` and `go build ./...`. Check Go availability, cache permissions,
 and module-network access if either stalls. Recipe `inputs.env` configures the
@@ -132,11 +132,11 @@ host invocation directory.
 | Last phase / symptom | What to inspect |
 | --- | --- |
 | No progress file | The wrapper may not have started, may be waiting for stdin, or may have rejected input/paths. Check startup and process stderr. |
-| `waiting for JSON input on stdin` on stderr | Runner must deliver a complete JSON object. The wrapper fails after 30 seconds without one. |
+| `waiting for JSON input on stdin` on stderr | Runner must deliver a complete JSON object. Input waits until delivery or caller cancellation. |
 | `invocation.start` | Input decoded and paths normalized; check session configuration errors. |
-| `version.check` | `codex --version` has a 15-second deadline. Check the executable in the actual environment. |
+| `version.check` | `codex --version` has no wrapper-imposed deadline. Check the executable in the actual environment; caller cancellation still applies. |
 | `session.restore` | A supplied checkpoint is being checked/copied and SQLite paths relocated. Check filesystem availability and checkpoint size. |
-| `skills.prepare` | Git skill sources are being fetched. Check network/authentication; the preparation context has a two-minute deadline. |
+| `skills.prepare` | Git skill sources are being fetched. Check network/authentication; preparation inherits caller cancellation without adding a deadline. |
 | `exec.start` | Captures are open; includes `stdout_path`, `stderr_path`, and the configured idle timeout. Home preparation/process launch follows. |
 | `exec.config` | Home preparation finished; inspect the provider mode, credential source, and URL. Process launch follows. |
 | `exec.running` / `exec.wait` | CLI started. Wait records appear every 30 seconds with PID, elapsed/idle seconds and stdout/stderr byte counts. Inspect the capture paths. |
@@ -145,12 +145,12 @@ host invocation directory.
 | `session.export` | Conversation files and SQLite state are being exported. Inspect disk availability and session size. |
 | `session.exported` / `invocation.end` | Local export or wrapper work completed. If the job still hangs, inspect c2j object freezing/artifact upload and worker completion. |
 
-`idle_timeout` defaults to `5m`, counts **both** CLI stdout and stderr, and starts
-when the CLI launches. Periodic CLI stderr keeps it alive even without an answer.
+`idle_timeout` is disabled by default. When explicitly set, it counts **both**
+CLI stdout and stderr and starts when the CLI launches. Periodic CLI stderr keeps it alive even without an answer.
 `idle_timeout: "0"` disables it. Wrapper progress records do not reset it. Use
 `idle_timeout: "30s"` for a short diagnostic run only if that limit suits the task.
-The manifest's `30m` timeout covers extension execution; the CLI idle timer does
-not cover startup, checkpoint I/O, or object publication. Filesystem operations
+The manifest sets no execution timeout. An explicitly configured CLI idle timer
+does not cover startup, checkpoint I/O, or object publication. Filesystem operations
 are not all context-interruptible.
 
 Progress records omit prompts, environment values, and CLI arguments. Raw
@@ -203,9 +203,9 @@ Source inspection shows a separate upstream problem:
    `internal/shai/runtime/ephemeral_runner.go` uses the worker's `os.Stdin`.
 
 Consequently, a sandboxed extension can wait on the worker's stdin instead of
-receiving its invocation JSON, or encounter immediate EOF. The wrapper's new
-30-second input deadline turns the wait into an actionable failure, but does
-not repair upstream transport. This source-level defect is a candidate cause
+receiving its invocation JSON, or encounter immediate EOF. The wrapper logs
+that it is waiting for input and honors caller cancellation, but does not impose
+an input deadline or repair upstream transport. This source-level defect is a candidate cause
 when `sandbox.type: shai` is used; it has not been reproduced here in a running
 Shai container or confirmed as the cause of the reported deployment hang.
 
@@ -255,8 +255,8 @@ Two hangs were reproduced locally and fixed:
 - A CLI descendant could keep inherited stdout/stderr pipes open after the main
   process exited. A two-second `exec.Cmd.WaitDelay` now bounds pipe draining.
 
-Version probing is bounded to 15 seconds. Git skill preparation gets a two-minute
-context deadline. Both subprocess paths terminate their process groups on
+Version probing and Git skill preparation inherit caller cancellation without
+adding deadlines. Both subprocess paths terminate their process groups on
 cancellation and bound pipe draining. SIGINT/SIGTERM also cancel wrapper work.
 CLI output capture paths are retained when output parsing fails.
 

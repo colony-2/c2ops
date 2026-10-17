@@ -140,7 +140,9 @@ func TestLiveExecuteResumesSessionKnowledge(t *testing.T) {
 
 func requireCodexCLI(t *testing.T) {
 	t.Helper()
-	if _, err := readCodexVersion(context.Background(), 30*time.Second); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if _, err := readCodexVersion(ctx); err != nil {
 		t.Fatalf("declared Codex CLI not available: %v", err)
 	}
 }

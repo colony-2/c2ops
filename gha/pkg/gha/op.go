@@ -263,7 +263,7 @@ func cloneGitWorktree(ctx context.Context, src string) (string, error) {
 func parseTimeout(raw string) (time.Duration, error) {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
-		return 30 * time.Minute, nil
+		return 0, nil
 	}
 	return time.ParseDuration(trimmed)
 }

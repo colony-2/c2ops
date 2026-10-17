@@ -49,6 +49,9 @@ Create .c2/available-skill/result.json when useful.
 `
 
 	materializeSkillRefsFn = func(ctx context.Context, skillRefs []string, stageRoot string, skillsRoot string) ([]string, error) {
+		if _, ok := ctx.Deadline(); ok {
+			t.Fatal("skill preparation added a default deadline")
+		}
 		if !reflect.DeepEqual(skillRefs, []string{skillRef}) {
 			t.Fatalf("expected skill refs %v, got %v", []string{skillRef}, skillRefs)
 		}
@@ -64,6 +67,9 @@ Create .c2/available-skill/result.json when useful.
 
 	prompt := "Use whatever skills are useful for this request."
 	executeLibrary = func(ctx context.Context, opts Options) (Result, string, string, string, error) {
+		if opts.IdleTimeout != 0 {
+			t.Fatal("omitted idle_timeout must disable the watchdog")
+		}
 		seedTestSession(t, opts.CodexHome, "session-with-available-skill")
 		if opts.Prompt != prompt {
 			t.Fatalf("expected prompt to remain %q, got %q", prompt, opts.Prompt)

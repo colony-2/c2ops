@@ -1,7 +1,6 @@
 name: codex
 description: Runs Codex via the selector-backed extension mechanism
 command: ["go", "run", "."]
-timeout: 30m
 dependencies:
   - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#go
   - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#gitMinimal
@@ -53,7 +52,7 @@ input_schema:
       type: object
     idle_timeout:
       type: string
-      default: 5m
+      description: Optional idle limit; omitted or zero disables the watchdog.
     workdir_path:
       type: string
       default: "{{ context.environment.op.workdir }}"

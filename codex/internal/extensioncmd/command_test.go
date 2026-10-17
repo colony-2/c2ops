@@ -44,12 +44,14 @@ func TestDecodeInputDoesNotWaitForEOF(t *testing.T) {
 	}
 }
 
-func TestReadInputTimesOutWhenRunnerNeverSendsJSON(t *testing.T) {
+func TestReadInputHonorsCallerDeadline(t *testing.T) {
 	reader, writer, err := os.Pipe()
 	require.NoError(t, err)
 	defer reader.Close()
 	defer writer.Close()
-	_, err = readInput[testInput](context.Background(), reader, 25*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
+	defer cancel()
+	_, err = readInput[testInput](ctx, reader)
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 	require.ErrorContains(t, err, "stdin forwarding")
 }
@@ -61,7 +63,7 @@ func TestReadInputHonorsCancellation(t *testing.T) {
 	defer writer.Close()
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	_, err = readInput[testInput](ctx, reader, time.Minute)
+	_, err = readInput[testInput](ctx, reader)
 	require.ErrorIs(t, err, context.Canceled)
 }
 

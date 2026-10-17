@@ -38,7 +38,7 @@ type SkillRunInput struct {
 	ReturnOn           []string               `json:"return_on,omitempty"`
 	StatusContract     StatusContractRef      `json:"status_contract,omitempty"`
 	Output             SkillRunOutputSpec     `json:"output,omitempty"`
-	IdleTimeout        string                 `json:"idle_timeout,omitempty" default:"5m"`
+	IdleTimeout        string                 `json:"idle_timeout,omitempty"`
 	WorkdirPath        string                 `json:"workdir_path,omitempty" default:"{{ context.environment.op.workdir }}"`
 	WorktreePath       string                 `json:"worktree_path" default:"{{ context.environment.op.worktree_path }}"`
 	ArtifactInboxPath  string                 `json:"artifact_inbox_path,omitempty" default:"{{ context.environment.op.inbox }}"`

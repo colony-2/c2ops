@@ -4,7 +4,6 @@
   "command": [
     "bin/litellm"
   ],
-  "timeout": "5m",
   "env": {
     "PYTHONUNBUFFERED": "1"
   },

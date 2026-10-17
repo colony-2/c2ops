@@ -9,7 +9,6 @@ import (
 	"os/signal"
 	"reflect"
 	"syscall"
-	"time"
 
 	"github.com/colony-2/c2ops/codex/pkg/checkpoint"
 )
@@ -55,8 +54,8 @@ func Main[I any, O any](run func(context.Context, I) (Result[O], error)) {
 func Run[I any, O any](run func(context.Context, I) (Result[O], error)) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	_, _ = fmt.Fprintln(os.Stderr, "codex-op: waiting for JSON input on stdin (30s timeout)")
-	input, err := readInput[I](ctx, os.Stdin, 30*time.Second)
+	_, _ = fmt.Fprintln(os.Stderr, "codex-op: waiting for JSON input on stdin")
+	input, err := readInput[I](ctx, os.Stdin)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "decode input: %v\n", err)
 		return 1
@@ -101,9 +100,7 @@ func decodeInput[I any](r io.Reader) (I, error) {
 	return input, nil
 }
 
-func readInput[I any](ctx context.Context, stdin io.ReadCloser, timeout time.Duration) (I, error) {
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
+func readInput[I any](ctx context.Context, stdin io.ReadCloser) (I, error) {
 	type decoded struct {
 		input I
 		err   error

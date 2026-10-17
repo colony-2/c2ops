@@ -1,7 +1,6 @@
 name: jev
 description: Evaluates state with TypeSafe Jev's typed System One questions
 command: ["uv", "run", "--script", "./main.py"]
-timeout: 5m
 dependencies:
   - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#python314
   - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#uv
@@ -36,10 +35,9 @@ input_schema:
       type: string
       description: API origin override (SDK adds /v1/systemone)
     timeout_seconds:
-      type: number
+      description: Optional timeout in seconds; omitted or null means no limit.
+      type: [number, "null"]
       exclusiveMinimum: 0
-      maximum: 240
-      default: 60
 output_schema:
   type: object
   required: [model, answers, usage]

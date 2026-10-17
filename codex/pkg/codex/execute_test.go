@@ -29,11 +29,13 @@ func TestWatchdogBoundsPipeDrainAfterProcessExit(t *testing.T) {
 	}
 }
 
-func TestVersionProbeIsBoundedBeforeIdleWatchdog(t *testing.T) {
+func TestVersionProbeHonorsCallerDeadline(t *testing.T) {
 	// Deliberately omit the helper's --version fast path.
 	installFakeCodex(t, "#!/usr/bin/env bash\nsleep 5\n")
 	started := time.Now()
-	_, err := readCodexVersion(context.Background(), 25*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
+	defer cancel()
+	_, err := readCodexVersion(ctx)
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("expected version probe deadline, got %v", err)
 	}
@@ -44,7 +46,7 @@ func TestVersionProbeIsBoundedBeforeIdleWatchdog(t *testing.T) {
 
 func TestVersionProbePreservesStartupDiagnostics(t *testing.T) {
 	installFakeCodex(t, "#!/bin/sh\nprintf 'launcher output\\n'\nprintf 'native runtime unavailable\\n' >&2\nexit 1\n")
-	output, err := readCodexVersion(context.Background(), time.Second)
+	output, err := readCodexVersion(context.Background())
 	var exitErr *exec.ExitError
 	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 {
 		t.Fatalf("expected wrapped exit status 1, got %v", err)

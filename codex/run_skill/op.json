@@ -4,7 +4,6 @@
   "command": [
     "bin/skill-run"
   ],
-  "timeout": "30m",
   "input_schema": {
     "type": "object",
     "additionalProperties": false,
@@ -127,7 +126,7 @@
       },
       "idle_timeout": {
         "type": "string",
-        "default": "5m"
+        "description": "Optional idle limit; omitted or zero disables the watchdog."
       },
       "workdir_path": {
         "type": "string",

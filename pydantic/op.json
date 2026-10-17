@@ -4,7 +4,6 @@
   "command": [
     "bin/pydantic"
   ],
-  "timeout": "5m",
   "env": {
     "PYTHONUNBUFFERED": "1",
     "PYDANTIC_AI_NO_BANNER": "1"

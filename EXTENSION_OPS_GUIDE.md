@@ -39,11 +39,19 @@ Source manifests declare their tool dependencies explicitly. Their `go run` and
 `uv run --script` commands still compile or prepare library environments during
 execution. Use Nix selectors for prebuilt ops.
 
+## Timeouts
+
+These ops do not declare default execution timeouts. Set a recipe node
+`timeout` when a task needs a deadline. Codex's `idle_timeout`, Kimi and Jev's
+`timeout_seconds`, and the GitHub Actions ops' `timeout` inputs are opt-in.
+Caller cancellation and enclosing recipe/worker limits still apply, as do
+limits imposed by external services and CLI/provider internals.
+
 ## Manifests and process boundary
 
 `op.yaml` is the schema source. `make manifests` generates each `op.json`, replacing
 the development command with `bin/<package>` and retaining the schemas, defaults,
-environment, timeout, and non-Nix dependency declarations. CI checks for drift.
+environment, and non-Nix dependency declarations. CI checks for drift.
 Each Nix derivation exposes this document as `passthru.c2j` and installs the same
 JSON at `$out/share/c2j/op.json`.
 

@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["typesafe-sdk==0.7.4"]
+# dependencies = ["typesafe-sdk==0.7.4", "httpx2==2.9.1"]
 # ///
 """Evaluate typed questions with TypeSafe's System One API."""
 
 import json
+import math
 import os
 import sys
 
+from httpx2 import Timeout
 from typesafe_sdk import Choice, Noul, Score, TypeSafeClient
 
 
@@ -37,10 +39,10 @@ def run(payload):
     api_key = payload.get("api_key") or os.environ.get("TYPESAFE_API_KEY")
     if not isinstance(api_key, str) or not api_key.strip():
         raise ValueError("api_key or TYPESAFE_API_KEY is required")
-    timeout = payload.get("timeout_seconds", 60)
-    if type(timeout) not in (float, int) or not 0 < timeout <= 240:
-        raise ValueError("timeout_seconds must be between 0 and 240")
-    with TypeSafeClient(api_key=api_key, base_url=payload.get("base_url"), timeout=timeout) as client:
+    timeout = payload.get("timeout_seconds")
+    if timeout is not None and (type(timeout) not in (int, float) or not math.isfinite(timeout) or timeout <= 0):
+        raise ValueError("timeout_seconds must be a positive finite number or null")
+    with TypeSafeClient(api_key=api_key, base_url=payload.get("base_url"), timeout=Timeout(timeout)) as client:
         response = client.system_one(state=payload["state"], questions=typed,
                                      model=payload.get("model") or "jev-latest")
     if set(response.answers) != set(typed):

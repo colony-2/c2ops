@@ -25,7 +25,7 @@ op: nix:github:colony-2/c2ops/published#gha-many
 ## Inputs
 
 - `workflows`
-- `timeout`
+- `timeout` (optional Go duration; omitted or zero means no op-imposed limit)
 - `continue_on_error`
 - `git_context`
 

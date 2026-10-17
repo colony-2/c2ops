@@ -91,6 +91,19 @@ class JevTests(unittest.TestCase):
         self.assertEqual(self.requests[0][1], "Bearer env-secret")
         self.assertEqual(self.requests[0][2]["model"], "jev-1.13.0")
 
+    def test_request_timeout_is_opt_in(self):
+        real_client = main.TypeSafeClient
+        for override in ({}, {"timeout_seconds": None}, {"timeout_seconds": 600}):
+            with self.subTest(override=override):
+                def client(**kwargs):
+                    instance = real_client(**kwargs)
+                    self.assertEqual(instance._http_client.timeout.as_dict(),
+                                     dict.fromkeys(("connect", "read", "write", "pool"),
+                                                   override.get("timeout_seconds")))
+                    return instance
+                with patch.object(main, "TypeSafeClient", side_effect=client):
+                    main.run({**self.payload, **override})
+
     def test_auth_error_has_no_success_output_or_secret(self):
         self.status = 401
         self.response = {"error": {"message": "Invalid test-secret"}}

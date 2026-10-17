@@ -47,8 +47,9 @@ without converting probabilities to booleans or discarding confidence scores.
 stable thresholds. `api_key` takes precedence over `TYPESAFE_API_KEY`. Recipes
 should pass the key explicitly rather than depend on worker environment setup.
 `base_url` overrides the API origin for proxies/testing (the SDK adds
-`/v1/systemone`). `timeout_seconds` defaults to 60 per HTTP attempt; SDK retry
-behavior applies, within the manifest's five-minute process limit.
+`/v1/systemone`). `timeout_seconds` is optional; omitted or null disables the
+HTTP client timeout. A positive value sets the timeout per HTTP operation; SDK
+retry behavior still applies. The op manifest sets no process execution limit.
 
 Validation and API failures exit nonzero without emitting a success envelope.
 Error diagnostics omit request bodies and credentials.

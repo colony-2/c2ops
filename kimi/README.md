@@ -39,7 +39,8 @@ configure `api_key_env` in Kimi's config. See the upstream
 Outputs include `status`, `sessionId`, `assistantSummary`, `exitCode`, and error
 information. The outbox contains raw `stdout.jsonl` and `stderr.txt`; it defaults
 to `<workdir_path>/outbox`. Invalid or empty successful CLI output is an error.
-`timeout_seconds` defaults to 1740 seconds, below the manifest's 30-minute limit.
+`timeout_seconds` is optional; omitted or null means no op execution limit.
+Supply a positive number of seconds to limit execution, including stderr draining.
 The op exits nonzero on CLI, timeout, or output-parsing failure.
 
 ```sh

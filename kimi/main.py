@@ -8,6 +8,7 @@
 import codecs
 from contextlib import contextmanager
 import json
+import math
 import os
 import re
 import signal
@@ -66,7 +67,7 @@ def execute(args, worktree, env, timeout):
             started = time.monotonic()
             try:
                 stdout, _ = proc.communicate(timeout=timeout)
-                reader.join(max(0, timeout - (time.monotonic() - started)))
+                reader.join(None if timeout is None else max(0, timeout - (time.monotonic() - started)))
                 if reader.is_alive():
                     raise subprocess.TimeoutExpired(args, timeout)
             except subprocess.TimeoutExpired:
@@ -118,9 +119,9 @@ def run(payload):
         args.extend(["--model", str(payload["model"])])
     for directory in payload.get("skills_dirs") or []:
         args.extend(["--skills-dir", str(Path(directory).resolve())])
-    timeout = payload.get("timeout_seconds", 1740)
-    if type(timeout) not in (int, float) or not 0 < timeout < 1800:
-        raise ValueError("timeout_seconds must be between 0 and 1800")
+    timeout = payload.get("timeout_seconds")
+    if timeout is not None and (type(timeout) not in (int, float) or not math.isfinite(timeout) or timeout <= 0):
+        raise ValueError("timeout_seconds must be a positive finite number or null")
     code = 1
     stdout = stderr = ""
     try:

@@ -63,7 +63,7 @@ sys.exit(int(sys.argv[2]))
                     sink = RecordingStderr()
                     args = ([sys.executable, "-c", code, str(release), str(status)], directory, dict(os.environ))
                     if name == "kimi":
-                        args += (5,)
+                        args += (None,)
                     with redirect_stderr(sink), ThreadPoolExecutor(max_workers=1) as pool:
                         future = pool.submit(op.execute, *args)
                         try:

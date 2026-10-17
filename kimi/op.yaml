@@ -1,7 +1,6 @@
 name: kimi
 description: Runs Kimi Code noninteractively with resumable sessions
 command: ["python3", "./main.py"]
-timeout: 30m
 dependencies:
   - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#python314
   - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#gitMinimal
@@ -29,10 +28,9 @@ input_schema:
       items:
         type: string
     timeout_seconds:
-      type: number
+      description: Optional timeout in seconds; omitted or null means no limit.
+      type: [number, "null"]
       exclusiveMinimum: 0
-      exclusiveMaximum: 1800
-      default: 1740
     workdir_path:
       type: string
       default: "{{ context.environment.op.workdir }}"

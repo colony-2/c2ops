@@ -72,7 +72,7 @@ func prepareSession(ctx context.Context, input *SessionInput, paths execRunPaths
 		return nil, err
 	}
 	progress(ctx, "version.check", nil)
-	version, err := readCodexVersion(ctx, 15*time.Second)
+	version, err := readCodexVersion(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("read Codex version: %w", err)
 	}
@@ -411,9 +411,7 @@ func rejectLegacySessionFields(data []byte) error {
 }
 
 // Version probing happens before the execution idle watchdog starts.
-func readCodexVersion(ctx context.Context, timeout time.Duration) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
+func readCodexVersion(ctx context.Context) ([]byte, error) {
 	args := codexCommand("--version")
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}

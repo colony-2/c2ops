@@ -61,7 +61,7 @@ op: nix:github:colony-2/c2ops/published#codex
 
 `skills` accepts git skill source refs. The op fetches those skills and installs them into the Codex home for the invocation, so Codex can discover them and decide when to use them.
 
-`idle_timeout` is a Go duration string and defaults to `5m`. If Codex produces no stdout/stderr activity for that duration, the op terminates the Codex process group and returns a timeout error instead of waiting for the outer extension timeout.
+`idle_timeout` is an optional Go duration string; omitted or `"0"` disables the idle watchdog. When explicitly set, no stdout/stderr activity for that duration terminates the Codex process group with a timeout error. The op has no default execution, input-read, version-check, or skill-preparation deadline; caller cancellation and recipe deadlines still apply.
 
 ## External API / CLIProxyAPI
 

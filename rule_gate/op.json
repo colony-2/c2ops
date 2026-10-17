@@ -4,7 +4,6 @@
   "command": [
     "bin/rule_gate"
   ],
-  "timeout": "2m",
   "input_schema": {
     "type": "object",
     "required": [

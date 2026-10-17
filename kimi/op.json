@@ -4,7 +4,6 @@
   "command": [
     "bin/kimi"
   ],
-  "timeout": "30m",
   "dependencies": [
     "pnpm:@moonshot-ai/kimi-code@2.1.1"
   ],
@@ -42,10 +41,12 @@
         }
       },
       "timeout_seconds": {
-        "type": "number",
-        "exclusiveMinimum": 0,
-        "exclusiveMaximum": 1800,
-        "default": 1740
+        "description": "Optional timeout in seconds; omitted or null means no limit.",
+        "type": [
+          "number",
+          "null"
+        ],
+        "exclusiveMinimum": 0
       },
       "workdir_path": {
         "type": "string",

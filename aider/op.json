@@ -4,7 +4,6 @@
   "command": [
     "bin/aider"
   ],
-  "timeout": "30m",
   "env": {
     "PYTHONUNBUFFERED": "1"
   },

@@ -31,7 +31,7 @@ op: nix:github:colony-2/c2ops/published#gha
 - `backend`
 - `runner_image`
 - `container_architecture`
-- `timeout`
+- `timeout` (optional Go duration; omitted or zero means no op-imposed limit)
 - `continue_on_error`
 - `remote`
 - `git_context`

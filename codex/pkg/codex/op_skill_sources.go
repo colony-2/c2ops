@@ -34,8 +34,6 @@ func prepareConfiguredSkillSources(
 		return nil, nil, nil, nil
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
-	defer cancel()
 	progress(ctx, "skills.prepare", map[string]any{"count": len(input.Skills)})
 	stageRoot := filepath.Join(workdir, ".codex-skill-inputs", uuid.NewString())
 	skillsRoot := filepath.Join(stageRoot, "skills")

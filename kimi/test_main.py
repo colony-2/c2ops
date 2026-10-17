@@ -30,6 +30,7 @@ class KimiTests(unittest.TestCase):
     def test_cli_call_matches_declared_package(self):
         with patch.object(main, "execute", return_value=subprocess.CompletedProcess([], 1, "", "test")) as execute:
             main.run(self.payload)
+        self.assertIsNone(execute.call_args.args[3])
         args = execute.call_args.args[0]
         self.assertEqual(args[:4], ["pnpm", "--package=" + main.KIMI_PACKAGE, "dlx", "kimi"])
         self.assertIn("pnpm:" + main.KIMI_PACKAGE, self.manifest["dependencies"])
@@ -98,6 +99,15 @@ class KimiTests(unittest.TestCase):
         self.assertIn("session.resume_hint", events)
         self.assertTrue((self.root / "outbox/stderr.txt").is_file())
 
+    def test_timeout_is_optional_and_not_capped_by_old_manifest_limit(self):
+        for timeout in (None, 3600):
+            payload = {**self.payload, "timeout_seconds": timeout}
+            with self.subTest(timeout=timeout):
+                jsonschema.validate(payload, self.manifest["input_schema"])
+                with patch.object(main, "execute", return_value=subprocess.CompletedProcess([], 1, "", "test")) as execute:
+                    main.run(payload)
+                self.assertEqual(execute.call_args.args[3], timeout)
+
     def test_failure_and_malformed_output(self):
         for code, stdout, stderr in [(1, "", "auth failed"), (0, "not json", ""), (0, "", "")]:
             with self.subTest(code=code, stdout=stdout):
@@ -109,8 +119,9 @@ class KimiTests(unittest.TestCase):
                 self.assertTrue((self.root / "outbox/stderr.txt").read_text())
 
     def test_timeout_preserves_partial_artifact(self):
-        with patch.object(main, "execute", side_effect=subprocess.TimeoutExpired("kimi", 1, output=b'{"role":"assistant","content":"partial"}\n')):
-            output, code = main.run(self.payload)
+        with patch.object(main, "execute", side_effect=subprocess.TimeoutExpired("kimi", 1, output=b'{"role":"assistant","content":"partial"}\n')) as execute:
+            output, code = main.run({**self.payload, "timeout_seconds": 1})
+        self.assertEqual(execute.call_args.args[3], 1)
         self.assertEqual(code, 124)
         self.assertEqual(output["assistantSummary"], "partial")
         self.assertIn("timed out", output["incompleteReason"])

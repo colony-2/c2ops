@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestRunSkillGeneratesPromptAndValidatesOutputArtifact(t *testing.T) {
@@ -20,6 +19,9 @@ func TestRunSkillGeneratesPromptAndValidatesOutputArtifact(t *testing.T) {
 	createLocalSkill(t, root.worktree, "ticket-intake")
 
 	executeLibrary = func(ctx context.Context, opts Options) (Result, string, string, string, error) {
+		if opts.IdleTimeout != 0 {
+			t.Fatal("omitted idle_timeout must disable the watchdog")
+		}
 		seedTestSession(t, opts.CodexHome, "session-1")
 		if !strings.Contains(opts.Prompt, "Run the Codex skill `ticket-intake`") {
 			t.Fatalf("prompt did not request skill:\n%s", opts.Prompt)
@@ -424,7 +426,7 @@ func TestRunSkillAcceptsAssistantSummaryOutputCompatibility(t *testing.T) {
 }
 
 func TestRunSkillIdleTimeoutValidation(t *testing.T) {
-	_, err := parseDurationInput("idle_timeout", "not-a-duration", 5*time.Minute)
+	_, err := parseDurationInput("idle_timeout", "not-a-duration", 0)
 	if err == nil {
 		t.Fatalf("expected parse duration error")
 	}

@@ -4,7 +4,6 @@
   "command": [
     "bin/jev"
   ],
-  "timeout": "5m",
   "env": {
     "PYTHONUNBUFFERED": "1"
   },
@@ -68,10 +67,12 @@
         "description": "API origin override (SDK adds /v1/systemone)"
       },
       "timeout_seconds": {
-        "type": "number",
-        "exclusiveMinimum": 0,
-        "maximum": 240,
-        "default": 60
+        "description": "Optional timeout in seconds; omitted or null means no limit.",
+        "type": [
+          "number",
+          "null"
+        ],
+        "exclusiveMinimum": 0
       }
     }
   },
