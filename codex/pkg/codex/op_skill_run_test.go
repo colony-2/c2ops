@@ -19,6 +19,9 @@ func TestRunSkillGeneratesPromptAndValidatesOutputArtifact(t *testing.T) {
 	createLocalSkill(t, root.worktree, "ticket-intake")
 
 	executeLibrary = func(ctx context.Context, opts Options) (Result, string, string, string, error) {
+		if opts.Instructions != "initial skill instructions" {
+			t.Fatalf("instructions not forwarded: %q", opts.Instructions)
+		}
 		if opts.IdleTimeout != 0 {
 			t.Fatal("omitted idle_timeout must disable the watchdog")
 		}
@@ -54,7 +57,8 @@ func TestRunSkillGeneratesPromptAndValidatesOutputArtifact(t *testing.T) {
 	}
 
 	output, err := RunSkill(context.Background(), SkillRunInput{
-		Skill: "ticket-intake",
+		Skill:        "ticket-intake",
+		Instructions: "initial skill instructions",
 		Input: map[string]any{
 			"ticket_prompt": "triage this",
 		},

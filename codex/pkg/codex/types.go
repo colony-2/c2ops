@@ -52,11 +52,12 @@ type ResponseOutputSpec struct {
 
 // Options control Execute behaviour.
 type Options struct {
-	Prompt    string
-	SessionID string
-	Model     string
-	API       *APIConfig
-	ExtraEnv  map[string]string
+	Prompt       string
+	Instructions string
+	SessionID    string
+	Model        string
+	API          *APIConfig
+	ExtraEnv     map[string]string
 
 	IdleTimeout time.Duration
 

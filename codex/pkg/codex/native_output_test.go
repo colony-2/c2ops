@@ -105,6 +105,7 @@ func TestOutputSchemaRepairsResumeAndRetainEveryAttempt(t *testing.T) {
 	dir := installNativeSequence(t, []string{nativeTurn(`{"answer":"wrong"}`), nativeTurn(`{"answer":9007199254740993}`)}, 0)
 	opts := testExecuteOptions(t)
 	opts.StructuredSchema = []byte(answerSchema)
+	opts.Instructions = "initial instructions"
 	r, out, errout, artifacts, err := Execute(context.Background(), opts)
 	defer cleanupArtifacts(out, errout, artifacts)
 	require.NoError(t, err)
@@ -122,6 +123,10 @@ func TestOutputSchemaRepairsResumeAndRetainEveryAttempt(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, string(args), "--output-schema\n")
 	require.Contains(t, string(args), "resume\ntest-session\n")
+	require.NotContains(t, string(args), "developer_instructions=")
+	initialArgs, err := os.ReadFile(filepath.Join(dir, "args-1"))
+	require.NoError(t, err)
+	require.Contains(t, string(initialArgs), `developer_instructions="initial instructions"`)
 	require.Contains(t, string(args), "Validation feedback:")
 }
 

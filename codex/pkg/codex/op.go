@@ -19,6 +19,7 @@ import (
 
 // ExecOpInput defines the codex.exec command input.
 type ExecOpInput struct {
+	Instructions       string             `json:"instructions,omitempty"`
 	Output             ResponseOutputSpec `json:"output,omitempty"`
 	Prompt             string             `json:"prompt" validate:"required"`
 	Session            *SessionInput      `json:"session,omitempty"`
@@ -194,6 +195,7 @@ func runCodexActivityPrepared(
 
 	opts := Options{
 		Prompt:              promptForExec,
+		Instructions:        input.Instructions,
 		StructuredSchema:    input.Output.Schema,
 		MaxRepairAttempts:   input.Output.MaxRepairAttempts,
 		CodexHome:           input.execution.home,

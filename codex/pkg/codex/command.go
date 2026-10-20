@@ -1,6 +1,7 @@
 package codex
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
@@ -28,6 +29,13 @@ func buildCommand(opts Options, schemaContainerPath string) []string {
 		"--dangerously-bypass-approvals-and-sandbox",
 		"--skip-git-repo-check",
 	)
+	// A resumed rollout already contains its developer message. Ignore the
+	// input on continuations, including internal response/artifact repairs.
+	if strings.TrimSpace(opts.SessionID) == "" && strings.TrimSpace(opts.Instructions) != "" {
+		// JSON string escapes are valid TOML basic-string escapes (unlike Go's \x/\v).
+		instructions, _ := json.Marshal(opts.Instructions)
+		cmd = append(cmd, "-c", "developer_instructions="+string(instructions))
+	}
 	if schemaContainerPath != "" {
 		cmd = append(cmd, "--output-schema", schemaContainerPath)
 	}

@@ -50,6 +50,7 @@ op: nix:github:colony-2/c2ops/published#codex
 ## Inputs
 
 - `prompt`
+- `instructions` (optional; new sessions only)
 - `session` (optional `c2ops.codex.session/v1` reference)
 - `model`
 - `api` (optional external Responses API: `base_url`, `api_key`; legacy `api_key_env`)
@@ -63,6 +64,26 @@ op: nix:github:colony-2/c2ops/published#codex
 `skills` accepts git skill source refs. The op fetches those skills and installs them into the Codex home for the invocation, so Codex can discover them and decide when to use them.
 
 `idle_timeout` is an optional Go duration string; omitted or `"0"` disables the idle watchdog. When explicitly set, no stdout/stderr activity for that duration terminates the Codex process group with a timeout error. The op has no default execution, input-read, version-check, or skill-preparation deadline; caller cancellation and recipe deadlines still apply.
+
+## Initial session instructions
+
+Both `codex` and `skill-run` accept optional `instructions`:
+
+```yaml
+inputs:
+  instructions: |
+    Follow the repository's coding conventions.
+    Explain any tests you could not run.
+  prompt: Fix the failing tests.
+```
+
+The op passes these as Codex developer instructions only when starting a new
+session. On continuations, the input is ignored, even if its value changes.
+The existing conversation rollout supplies the original instructions. This also
+applies to schema and artifact repair attempts. A recipe loop can therefore keep
+one op definition with the same inputs and pass its previous `session` output
+back on each iteration. No separate instruction field is added to checkpoint
+metadata. The ordinary `prompt` remains the user message for each invocation.
 
 ## External API / CLIProxyAPI
 

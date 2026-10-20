@@ -85,8 +85,9 @@ func TestExternalAPIRunAndResumeSkillWithRepair(t *testing.T) {
 	first := testExecuteOptions(t)
 	output, err := Run(context.Background(), ExecOpInput{
 		Prompt: "Remember proxy-memory-42.", Model: "gpt-5.3-codex",
-		API:         &APIConfig{BaseURL: firstAPI.URL() + "/v1/", APIKey: &firstKey},
-		WorkdirPath: first.WorkDirRoot, WorktreePath: first.WorktreeRoot,
+		Instructions: "initial-session-guidance",
+		API:          &APIConfig{BaseURL: firstAPI.URL() + "/v1/", APIKey: &firstKey},
+		WorkdirPath:  first.WorkDirRoot, WorktreePath: first.WorktreeRoot,
 		ArtifactInboxPath: first.ArtifactInbox, ArtifactOutboxPath: first.ArtifactOutbox,
 		IdleTimeout: "15s",
 	})
@@ -124,8 +125,9 @@ func TestExternalAPIRunAndResumeSkillWithRepair(t *testing.T) {
 	skillOutput, err := RunSkill(context.Background(), SkillRunInput{
 		Skill: "proxy-smoke", Session: hydrateSession(t, store, ref),
 		Prompt: "Recall the remembered fact and write proxy-result.json.", Model: "gpt-5.3-codex",
-		API:         &APIConfig{BaseURL: secondAPI.URL() + "/v1", APIKey: &secondKey},
-		WorkdirPath: second.WorkDirRoot, WorktreePath: second.WorktreeRoot,
+		Instructions: "ignored-continuation-guidance",
+		API:          &APIConfig{BaseURL: secondAPI.URL() + "/v1", APIKey: &secondKey},
+		WorkdirPath:  second.WorkDirRoot, WorktreePath: second.WorktreeRoot,
 		ArtifactInboxPath: second.ArtifactInbox, ArtifactOutboxPath: second.ArtifactOutbox,
 		IdleTimeout: "15s",
 		Output: SkillRunOutputSpec{
@@ -158,6 +160,9 @@ func TestExternalAPIRunAndResumeSkillWithRepair(t *testing.T) {
 	}
 	assertNoProxyKeys(t, second.ArtifactOutbox, os.Getenv("C2J_OBJECT_OUTBOX"))
 	secondAPI.mu.Lock()
+	for _, request := range secondAPI.requests {
+		requireInitialInstructions(t, request)
+	}
 	history, err := json.Marshal(secondAPI.requests[0]["input"])
 	secondAPI.mu.Unlock()
 	require.NoError(t, err)

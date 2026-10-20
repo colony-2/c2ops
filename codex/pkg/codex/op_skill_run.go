@@ -28,6 +28,7 @@ const (
 
 // SkillRunInput defines the codex/run_skill extension op input.
 type SkillRunInput struct {
+	Instructions       string                 `json:"instructions,omitempty"`
 	Skill              string                 `json:"skill"`
 	Skills             []string               `json:"skills,omitempty"`
 	Input              map[string]interface{} `json:"input,omitempty"`
@@ -269,6 +270,7 @@ func RunSkill(ctx context.Context, input SkillRunInput) (result SkillRunOutput, 
 func execInputForSkillRun(input SkillRunInput) ExecOpInput {
 	return ExecOpInput{
 		Session:            input.Session,
+		Instructions:       input.Instructions,
 		Model:              input.Model,
 		API:                input.API,
 		Env:                input.Env,

@@ -27,8 +27,9 @@ func TestNativeRunOutputAndResumeSchema(t *testing.T) {
 	first := liveExecuteOptions(t, api)
 	t.Setenv("CODEX_HOME", first.HostCodexHome)
 	runInput := ExecOpInput{
-		Prompt: "Remember native-output-memory. Later return the answer 42.",
-		Env:    first.ExtraEnv, WorkdirPath: first.WorkDirRoot, WorktreePath: first.WorktreeRoot,
+		Prompt:       "Remember native-output-memory. Later return the answer 42.",
+		Instructions: "initial-session-guidance: keep quoted \"text\".\nPreserve this guidance.",
+		Env:          first.ExtraEnv, WorkdirPath: first.WorkDirRoot, WorktreePath: first.WorktreeRoot,
 		ArtifactInboxPath: first.ArtifactInbox, ArtifactOutboxPath: first.ArtifactOutbox,
 	}
 	output, err := Run(ctx, runInput)
@@ -57,8 +58,9 @@ func TestNativeRunOutputAndResumeSchema(t *testing.T) {
 	t.Setenv("CODEX_HOME", second.HostCodexHome)
 	runInput = ExecOpInput{
 		Prompt: "Return the remembered answer.", Session: hydrateSession(t, store, ref),
-		Output: ResponseOutputSpec{Schema: json.RawMessage(answerSchema)},
-		Env:    second.ExtraEnv, WorkdirPath: second.WorkDirRoot, WorktreePath: second.WorktreeRoot,
+		Instructions: "ignored-continuation-guidance",
+		Output:       ResponseOutputSpec{Schema: json.RawMessage(answerSchema)},
+		Env:          second.ExtraEnv, WorkdirPath: second.WorkDirRoot, WorktreePath: second.WorktreeRoot,
 		ArtifactInboxPath: second.ArtifactInbox, ArtifactOutboxPath: second.ArtifactOutbox,
 	}
 	repaired, err := Run(ctx, runInput)
@@ -79,6 +81,9 @@ func TestNativeRunOutputAndResumeSchema(t *testing.T) {
 	api.mu.Lock()
 	defer api.mu.Unlock()
 	require.Len(t, api.requests, 3)
+	for _, request := range api.requests {
+		requireInitialInstructions(t, request)
+	}
 	requireNoNativeSchema(t, api.requests[0])
 	for _, request := range api.requests[1:] {
 		text := request["text"].(map[string]any)
@@ -131,4 +136,27 @@ func requireNoNativeSchema(t *testing.T, request map[string]any) {
 			require.NotEqual(t, "json_schema", format["type"])
 		}
 	}
+}
+
+// Verify the provider sees the original developer message, exactly once, even
+// after restoring a checkpoint on a different worker and repairing a response.
+func requireInitialInstructions(t *testing.T, request map[string]any) {
+	t.Helper()
+	history, err := json.Marshal(request["input"])
+	require.NoError(t, err)
+	require.NotContains(t, string(history), "ignored-continuation-guidance")
+	require.Equal(t, 1, strings.Count(string(history), "initial-session-guidance"))
+	found := false
+	for _, raw := range request["input"].([]any) {
+		message, ok := raw.(map[string]any)
+		if !ok || message["role"] != "developer" {
+			continue
+		}
+		content, err := json.Marshal(message["content"])
+		require.NoError(t, err)
+		if strings.Contains(string(content), "initial-session-guidance") {
+			found = true
+		}
+	}
+	require.True(t, found, "instructions must be a developer message")
 }

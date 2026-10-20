@@ -20,6 +20,9 @@ input_schema:
       type: object
     prompt:
       type: string
+    instructions:
+      type: string
+      description: Additional developer instructions for a new session only. Ignored when continuing a session, including repair attempts; the existing rollout supplies its instructions.
     session:
       type: object
       x-c2j-object-type: c2ops.codex.session/v1
