@@ -1,6 +1,9 @@
 package codex
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // Status describes the overall Codex execution outcome.
 type Status string
@@ -17,15 +20,34 @@ type Dependency struct {
 	RequestedChanges string `json:"requestedChanges"`
 }
 
-// Result represents the normalized Codex execution outcome returned by Execute.
+// NativeOutput retains Codex's event fields without imposing a model response envelope.
+// Events are lossless JSON objects; Items contains the latest snapshot per item per turn.
+type NativeOutput struct {
+	Response             json.RawMessage   `json:"response"`
+	ResponseText         string            `json:"response_text"`
+	Events               []json.RawMessage `json:"events"`
+	Items                []json.RawMessage `json:"items"`
+	Usage                json.RawMessage   `json:"usage"`
+	TerminalEvent        json.RawMessage   `json:"terminal_event"`
+	ExitCode             *int              `json:"exit_code"`
+	OutputSchemaValid    *bool             `json:"output_schema_valid,omitempty"`
+	OutputSchemaErrors   []string          `json:"output_schema_errors,omitempty"`
+	OutputRepairAttempts int               `json:"output_repair_attempts"`
+	SchemaMode           string            `json:"schema_mode,omitempty"`
+}
+
+// Result describes execution, independently of the content of the model's answer.
 type Result struct {
-	Status              Status       `json:"status"`
-	SessionID           string       `json:"sessionId"`
-	AssistantSummary    string       `json:"assistantSummary,omitempty"`
-	IncompleteReason    string       `json:"incompleteReason,omitempty"`
-	IncompleteCategory  string       `json:"incompleteCategory,omitempty"`
-	PendingDependencies []Dependency `json:"pendingDependencies,omitempty"`
-	ErrorMessage        string       `json:"errorMessage,omitempty"`
+	NativeOutput
+	Status       Status `json:"status"`
+	SessionID    string `json:"sessionId"`
+	ErrorMessage string `json:"errorMessage,omitempty"`
+}
+
+// ResponseOutputSpec requests validation of the model's final answer.
+type ResponseOutputSpec struct {
+	Schema            json.RawMessage `json:"schema,omitempty"`
+	MaxRepairAttempts *int            `json:"max_repair_attempts,omitempty"`
 }
 
 // Options control Execute behaviour.
@@ -46,5 +68,6 @@ type Options struct {
 	HostCodexHome       string
 	ConfiguredSkillDirs []string
 
-	StructuredSchema []byte
+	StructuredSchema  []byte
+	MaxRepairAttempts *int
 }

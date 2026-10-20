@@ -89,7 +89,8 @@
         "type": "object",
         "properties": {
           "from": {
-            "type": "string"
+            "type": "string",
+            "description": "artifact (default), response (final answer), or legacy assistantSummary alias."
           },
           "path": {
             "type": "string"
@@ -98,7 +99,15 @@
             "type": "string"
           },
           "schema": {
-            "type": "object"
+            "type": [
+              "object",
+              "boolean"
+            ]
+          },
+          "max_repair_attempts": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Final-answer schema corrections (default 3); applies to response and assistantSummary sources."
           },
           "required_when_incomplete": {
             "type": "boolean"
@@ -232,6 +241,50 @@
       },
       "diagnostics": {
         "type": "object"
+      },
+      "response": {},
+      "response_text": {
+        "type": "string"
+      },
+      "events": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "usage": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "additionalProperties": true
+      },
+      "terminal_event": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "additionalProperties": true
+      },
+      "exit_code": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "schema_mode": {
+        "type": "string"
+      },
+      "errorMessage": {
+        "type": "string"
       }
     }
   }

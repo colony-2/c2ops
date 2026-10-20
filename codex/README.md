@@ -55,6 +55,7 @@ op: nix:github:colony-2/c2ops/published#codex
 - `api` (optional external Responses API: `base_url`, `api_key`; legacy `api_key_env`)
 - `env`
 - `skills`
+- `output.schema` and `output.max_repair_attempts` (optional)
 - `idle_timeout`
 - `workdir_path`, `worktree_path`
 - `artifact_inbox_path`, `artifact_outbox_path`
@@ -163,15 +164,90 @@ sequence:
 
 ## Outputs
 
-- `session` (durable `c2ops.codex.session/v1` reference)
-- `status`
-- `sessionId` (diagnostic only; never pass it as a resume input)
-- `assistantSummary`
-- `incompleteReason`
-- `incompleteCategory`
-- `pendingDependencies`
-- `skills_installed`
-- `outcome`
+The model returns its answer directly. The op no longer requests the old
+`status` / `assistantSummary` / `pendingDependencies` JSON envelope from Codex.
+The c2j process envelope (`output`, `objects`) and durable session references
+remain part of the extension protocol.
+
+| Field | Meaning |
+| --- | --- |
+| `response` | Final answer as a string without a schema, or the validated JSON value with a schema. Null if no answer is available or validation fails. |
+| `response_text` | Original final-answer text, including invalid output for diagnosis. |
+| `events` | Every native JSONL event in order, including all fields, unknown event types, intermediate updates, errors, and repair attempts. |
+| `items` | Latest complete snapshot of each item, in first-seen order. Item IDs are scoped to each turn/invocation. |
+| `terminal_event` | Last attempt's full `turn.completed` or `turn.failed` event, or null if the stream ended early. |
+| `usage` | Last turn's native usage object, including any additional counters Codex emits. Earlier turns' usage remains in `events`. |
+| `exit_code` | Last CLI process exit code; -1 for a signal or failure without an exit code, null if no process result is available. |
+| `status`, `errorMessage` | Execution/validation result derived by the op, independent of the answer's contents. |
+| `session`, `sessionId` | Durable checkpoint and diagnostic thread ID. Resume with `session`. |
+| `skills_installed` | Installed skill names. |
+| `workflow` | Optional status-artifact interpretation, present only with explicit `status_contract.path`. |
+| `output_schema_valid`, `output_schema_errors` | Local validation result when a response schema is supplied. |
+| `output_repair_attempts`, `schema_mode` | Correction count and `native` or `prompt` enforcement mode. |
+
+A completed turn means the CLI finished successfully; it does not establish that
+the requested task was fulfilled. A tool command can fail and Codex can recover
+within the same turn. Inspect item statuses and command exit codes for details.
+Transient `error` events are retained but do not override a later successful turn.
+
+**Migration:** use `response_text` in place of `assistantSummary`, or `response`
+for structured answers. The generic op no longer outputs `incompleteReason`,
+`incompleteCategory`, or `pendingDependencies`. If a recipe needs semantic task
+status, request those fields in its own response schema with instructions defining
+their meaning, or explicitly configure a status artifact and read `workflow`.
+
+## Optional response schema
+
+```yaml
+op: nix:github:colony-2/c2ops/published#codex
+inputs:
+  prompt: Assess this repository and report a summary and whether tests passed.
+  output:
+    schema:
+      type: object
+      additionalProperties: false
+      required: [summary, tests_passed]
+      properties:
+        summary: {type: string}
+        tests_passed: {type: boolean}
+    max_repair_attempts: 3
+```
+
+The exact schema is passed to `codex exec --output-schema`, including on resume.
+The final answer must parse as exactly one JSON value and pass local JSON Schema
+validation before it is exposed as `response`. Markdown fences and trailing JSON
+are rejected. Without a schema (or with `schema: null`), no native output schema
+is supplied and `response` is the final text string.
+
+An invalid answer triggers up to three corrections after the initial attempt.
+Set `max_repair_attempts: 0` to fail immediately, or another nonnegative integer
+to change the limit. Corrections resume the same conversation with validation
+feedback. An explicit provider rejection of native structured output before any
+tool activity switches to schema instructions in the prompt and local validation;
+this fallback also consumes a correction attempt. Authentication, process, and
+other execution failures are not retried as schema repairs.
+
+Exhaustion fails the op, leaves `response` null, and retains the raw answer,
+events, validation errors, and stdout/stderr artifacts. A failed op does not
+publish a successor session. Repair prompts ask Codex to correct only its answer;
+a resumed model still has the same tool access as the original invocation.
+
+## Execution events and questions
+
+The pinned CLI emits agent messages, reasoning summaries, command executions
+(including output, status, and exit code), file changes, MCP tool calls,
+collaboration tool calls, web searches, todo/plan updates, and error items.
+These are available through `events` and `items`; the full transcript is also
+retained as `stdout.jsonl` in the outbox. No known event field is filtered out.
+
+Codex CLI 0.161.0's `exec` mode rejects `request_user_input` and has no dedicated
+question event. A question in an ordinary agent message remains answer text;
+the op does not infer a `needs_user_input` state from punctuation. A recipe can
+request an explicit question/status field in its own schema and resume with a
+subsequent prompt. Interactive structured questions, approvals, and MCP
+elicitation require an app-server integration, which this op does not implement.
+See the official [exec stream](https://learn.chatgpt.com/docs/non-interactive-mode)
+and [app-server requests](https://learn.chatgpt.com/docs/app-server) documentation.
 
 ## `run_skill`
 
@@ -196,3 +272,14 @@ workspace/artifact channels.
 `run_skill` also accepts `env` for invocation credentials and provider settings.
 Output repair shares the invocation's private state and publishes only after
 validation finishes. No successful checkpoint is returned for a failed op.
+
+`run_skill` also returns native `events`, `items`, `response`, and execution
+metadata. Its legacy `assistantSummary` output is a compatibility alias for the
+final answer, not a field the model must fill. Its existing artifact validation
+and optional status-contract outputs remain available. `output.from: response`
+selects the final answer for JSON validation (`assistantSummary` remains an
+accepted source alias); with a schema, this also uses native schema enforcement
+and the same response repair mechanism (configure `output.max_repair_attempts`).
+Final-answer schemas always fail the op on exhaustion; artifact validation retains
+its existing `output.validation.on_error` policy. Artifact output schemas constrain the
+artifact, not the model's final summary.

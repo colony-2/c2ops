@@ -23,10 +23,18 @@ sequence:
       worktree_path: "{{ context.environment.op.worktree_path }}"
       artifact_inbox_path: "{{ context.environment.op.inbox }}"
       artifact_outbox_path: "{{ context.environment.op.outbox }}"
+      output:
+        schema:
+          type: object
+          additionalProperties: false
+          required: [summary]
+          properties:
+            summary: {type: string}
+        max_repair_attempts: 0
       prompt: |
         Run this exact shell command and do not alter it:
         bash -lc 'set -euo pipefail; token=$(cat "{{ context.environment.op.inbox }}/input.txt"); printf "from_inbox=%s" "$token" > codex-fixture.txt; printf "outbox_from_inbox=%s" "$token" > "{{ context.environment.op.outbox }}/codex-generated.txt"; test -s codex-fixture.txt; test -s "{{ context.environment.op.outbox }}/codex-generated.txt"'
-        After running it, provide your normal structured response.
+        After running it, return a JSON object with a summary of the result.
 
   - id: read_git_file
     op: command_execution
@@ -42,3 +50,6 @@ sequence:
 outputs:
   codex_status: "{{ sequence.codex_apply.outputs.status }}"
   git_content: "{{ sequence.read_git_file.outputs.stdout }}"
+  codex_response: "${{ sequence.codex_apply.outputs.response.summary }}"
+  codex_response_text: "${{ sequence.codex_apply.outputs.response_text }}"
+  codex_terminal: "${{ sequence.codex_apply.outputs.terminal_event.type }}"

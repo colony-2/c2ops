@@ -4,6 +4,9 @@ tests:
     inputs: {}
     want:
       codex_status: "completed"
+      codex_response: "done"
+      codex_response_text: '{"summary":"done"}'
+      codex_terminal: "turn.completed"
       git_content: "from_inbox=fixture-token"
     wantArtifacts:
       - "__git_state_thin_pack__"

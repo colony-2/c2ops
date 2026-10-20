@@ -85,7 +85,7 @@ sequence:
 outputs:
   session: "${{ sequence.fix.outputs.session }}"
   status: "${{ sequence.fix.outputs.status }}"
-  summary: "${{ sequence.fix.outputs.assistantSummary }}"
+  summary: "${{ sequence.fix.outputs.response_text }}"
 ```
 
 Use a complete `${{ ... }}` expression. Do not concatenate the reference into a

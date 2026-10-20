@@ -2,6 +2,7 @@ package codex
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -18,9 +19,9 @@ var codexCredentialFileNames = []string{
 	"config.toml",
 }
 
-// Execute runs Codex in non-interactive mode and returns the normalized result.
+// executeOnce captures one native Codex invocation.
 // The caller is responsible for managing the returned stdoutPath, stderrPath, and artifactDir.
-func Execute(ctx context.Context, opts Options) (Result, string, string, string, error) {
+func executeOnce(ctx context.Context, opts Options) (Result, string, string, string, error) {
 	requestedAPI := opts.API
 	if err := opts.validate(); err != nil {
 		return Result{}, "", "", "", err
@@ -34,7 +35,7 @@ func Execute(ctx context.Context, opts Options) (Result, string, string, string,
 	if err != nil {
 		return Result{}, "", "", "", fmt.Errorf("create artifacts dir: %w", err)
 	}
-	schemaPath, schemaCleanup, err := writeSchemaTempFile(activeOpts.StructuredSchema)
+	schemaPath, schemaCleanup, err := optionalSchemaFile(activeOpts.StructuredSchema)
 	if err != nil {
 		_ = os.RemoveAll(artifactDir)
 		return Result{}, "", "", "", err
@@ -64,6 +65,15 @@ func Execute(ctx context.Context, opts Options) (Result, string, string, string,
 	progress(ctx, "exec.start", map[string]any{"stdout_path": stdoutPath, "stderr_path": stderrPath, "idle_timeout": activeOpts.IdleTimeout.String()})
 
 	runErr := runCodexExec(ctx, activeOpts, requestedAPI, schemaPath, collector)
+	exitCode := 0
+	if runErr != nil {
+		var exitErr *exec.ExitError
+		if errors.As(runErr, &exitErr) {
+			exitCode = exitErr.ExitCode()
+		} else {
+			exitCode = -1
+		}
+	}
 	progress(ctx, "exec.finished", map[string]any{"failed": runErr != nil})
 	if sanitizeErr := sanitizeCodexHomeOutput(activeOpts); sanitizeErr != nil {
 		if runErr == nil {
@@ -84,11 +94,8 @@ func Execute(ctx context.Context, opts Options) (Result, string, string, string,
 	}
 
 	parseRes, parseErr := parseJSONL(stdoutPath)
-	if parseErr != nil {
-		return Result{}, stdoutPath, stderrPath, artifactDir, parseErr
-	}
-
-	result := buildResultFromParse(parseRes)
+	result := parseRes.Result
+	result.ExitCode = &exitCode
 
 	if runErr != nil {
 		result.Status = StatusError
@@ -100,13 +107,17 @@ func Execute(ctx context.Context, opts Options) (Result, string, string, string,
 	}
 
 	if result.SessionID == "" {
-		if parseRes.sessionID != "" {
-			result.SessionID = parseRes.sessionID
+		if parseRes.SessionID != "" {
+			result.SessionID = parseRes.SessionID
 		} else if activeOpts.SessionID != "" {
 			result.SessionID = activeOpts.SessionID
 		}
 	}
-	return result, stdoutPath, stderrPath, artifactDir, nil
+	if parseErr != nil {
+		result.Status = StatusError
+		result.ErrorMessage = firstNonEmpty(result.ErrorMessage, parseErr.Error())
+	}
+	return result, stdoutPath, stderrPath, artifactDir, parseErr
 }
 
 func runCodexExec(ctx context.Context, opts Options, requestedAPI *APIConfig, schemaPath string, collector *outputCollector) error {
@@ -415,48 +426,4 @@ func copyRegularFile(sourcePath string, targetPath string, mode os.FileMode) err
 		return fmt.Errorf("copy %q to %q: %w", sourcePath, targetPath, err)
 	}
 	return nil
-}
-
-func buildResultFromParse(outcome parseOutcome) Result {
-	res := Result{}
-
-	if outcome.payload == nil {
-		res.Status = StatusError
-		res.ErrorMessage = fallbackErrorMessage(outcome)
-		return res
-	}
-
-	switch strings.ToLower(outcome.payload.Status) {
-	case string(StatusCompleted):
-		res.Status = StatusCompleted
-	case string(StatusIncomplete):
-		res.Status = StatusIncomplete
-	case string(StatusError):
-		res.Status = StatusError
-	default:
-		res.Status = StatusError
-		res.ErrorMessage = fmt.Sprintf("unknown status %q", outcome.payload.Status)
-	}
-
-	res.SessionID = outcome.sessionID
-	res.AssistantSummary = outcome.payload.AssistantSummary
-	res.IncompleteReason = outcome.payload.IncompleteReason
-	res.IncompleteCategory = outcome.payload.IncompleteCategory
-	res.PendingDependencies = outcome.payload.PendingDeps
-	if len(res.PendingDependencies) == 0 && res.Status == StatusIncomplete && res.IncompleteCategory == "" {
-		res.IncompleteCategory = "agent_abandoned"
-	}
-	if outcome.payload.ErrorMessage != "" {
-		res.ErrorMessage = outcome.payload.ErrorMessage
-	} else if outcome.failureMessage != "" && res.Status == StatusError {
-		res.ErrorMessage = outcome.failureMessage
-	}
-	return res
-}
-
-func fallbackErrorMessage(outcome parseOutcome) string {
-	if outcome.failureMessage != "" {
-		return outcome.failureMessage
-	}
-	return "codex did not produce structured output"
 }

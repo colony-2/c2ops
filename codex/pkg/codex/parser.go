@@ -5,50 +5,30 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 )
 
+// Decode only the fields needed for indexing; retain the original objects so
+// new Codex fields and event types are available without a wrapper upgrade.
 type codexEvent struct {
-	Type      string      `json:"type"`
-	SessionID string      `json:"session_id"`
-	ThreadID  string      `json:"thread_id"`
-	Error     *eventError `json:"error"`
-	Item      *eventItem  `json:"item"`
+	Type      string          `json:"type"`
+	SessionID string          `json:"session_id"`
+	ThreadID  string          `json:"thread_id"`
+	Message   string          `json:"message"`
+	Error     *eventError     `json:"error"`
+	Item      json.RawMessage `json:"item"`
+	Usage     json.RawMessage `json:"usage"`
 }
-
 type eventError struct {
 	Message string `json:"message"`
 }
-
 type eventItem struct {
-	ID       string             `json:"id"`
-	ItemType string             `json:"item_type"`
-	Type     string             `json:"type"`
-	Text     string             `json:"text"`
-	Content  []eventItemContent `json:"content"`
+	ID       string `json:"id"`
+	Type     string `json:"type"`
+	ItemType string `json:"item_type"`
+	Text     string `json:"text"`
 }
-
-type eventItemContent struct {
-	Type string          `json:"type"`
-	Text string          `json:"text"`
-	JSON json.RawMessage `json:"json"`
-}
-
-type assistantPayload struct {
-	Status             string       `json:"status"`
-	AssistantSummary   string       `json:"assistantSummary"`
-	IncompleteReason   string       `json:"incompleteReason"`
-	IncompleteCategory string       `json:"incompleteCategory"`
-	PendingDeps        []Dependency `json:"pendingDependencies"`
-	ErrorMessage       string       `json:"errorMessage"`
-}
-
-type parseOutcome struct {
-	sessionID      string
-	payload        *assistantPayload
-	failureMessage string
-}
+type parseOutcome struct{ Result }
 
 func parseJSONL(path string) (parseOutcome, error) {
 	f, err := os.Open(path)
@@ -56,96 +36,83 @@ func parseJSONL(path string) (parseOutcome, error) {
 		return parseOutcome{}, fmt.Errorf("open stdout: %w", err)
 	}
 	defer f.Close()
-
-	var outcome parseOutcome
+	out := parseOutcome{Result: Result{NativeOutput: NativeOutput{
+		Events: []json.RawMessage{}, Items: []json.RawMessage{},
+	}, Status: StatusError}}
 	scanner := bufio.NewScanner(f)
-	buf := make([]byte, 0, 1024*1024)
-	scanner.Buffer(buf, 8*1024*1024)
-
+	scanner.Buffer(make([]byte, 0, 1024*1024), 8*1024*1024)
+	itemPositions := map[string]int{}
+	lastError := ""
+	terminal := false
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
+		var evt codexEvent
+		if !strings.HasPrefix(line, "{") || json.Unmarshal([]byte(line), &evt) != nil {
 			continue
 		}
-		var evt codexEvent
-		if err := json.Unmarshal([]byte(line), &evt); err != nil {
-			continue // ignore non-JSON output
-		}
+		raw := json.RawMessage(line)
+		out.Events = append(out.Events, raw)
 		switch evt.Type {
-		case "session.created", "thread.started":
-			if evt.SessionID != "" {
-				outcome.sessionID = evt.SessionID
-			} else if evt.ThreadID != "" {
-				outcome.sessionID = evt.ThreadID
+		case "thread.started", "session.created":
+			out.SessionID = firstNonEmpty(evt.ThreadID, evt.SessionID)
+		case "turn.started":
+			// Item ids may be reused by resumed invocations. Never conflate turns.
+			itemPositions = map[string]int{}
+			out.ResponseText = ""
+			out.Response = nil
+			out.TerminalEvent = nil
+			out.Usage = nil
+			out.Status = StatusError
+			out.ErrorMessage = ""
+			terminal = false
+			lastError = ""
+		case "error":
+			lastError = evt.Message
+			if evt.Error != nil {
+				lastError = firstNonEmpty(evt.Error.Message, lastError)
 			}
-		case "turn.failed", "error":
-			if evt.Error != nil && evt.Error.Message != "" {
-				outcome.failureMessage = evt.Error.Message
+			// Reconnection errors can be followed by successful completion.
+		case "turn.completed", "turn.failed":
+			terminal = true
+			out.TerminalEvent = raw
+			out.Usage = evt.Usage
+			if evt.Type == "turn.completed" {
+				out.Status = StatusCompleted
+				out.ErrorMessage = ""
+			} else {
+				out.Status = StatusError
+				if evt.Error != nil {
+					out.ErrorMessage = evt.Error.Message
+				}
+				out.ErrorMessage = firstNonEmpty(out.ErrorMessage, lastError, "Codex turn failed")
 			}
-		case "item.completed":
-			if evt.Item == nil {
+		}
+		if strings.HasPrefix(evt.Type, "item.") && len(evt.Item) > 0 && string(evt.Item) != "null" {
+			var item eventItem
+			if err := json.Unmarshal(evt.Item, &item); err != nil {
 				continue
 			}
-			itemType := evt.Item.ItemType
-			if itemType == "" {
-				itemType = evt.Item.Type
-			}
-			if itemType == "assistant_message" || itemType == "agent_message" {
-				payload, err := decodeAssistantPayload(evt.Item)
-				if err != nil {
-					outcome.failureMessage = err.Error()
-					continue
+			if pos, exists := itemPositions[item.ID]; item.ID != "" && exists {
+				out.Items[pos] = evt.Item
+			} else {
+				if item.ID != "" {
+					itemPositions[item.ID] = len(out.Items)
 				}
-				outcome.payload = payload
+				out.Items = append(out.Items, evt.Item)
+			}
+			kind := firstNonEmpty(item.Type, item.ItemType)
+			if evt.Type == "item.completed" && (kind == "agent_message" || kind == "assistant_message") {
+				out.ResponseText = item.Text
+				out.Response, _ = json.Marshal(item.Text)
 			}
 		}
 	}
-
+	if !terminal {
+		out.Status = StatusError
+		out.ErrorMessage = firstNonEmpty(lastError, "Codex stream ended without a terminal turn event")
+	}
 	if err := scanner.Err(); err != nil {
-		return parseOutcome{}, fmt.Errorf("scan stdout: %w", err)
+		return out, fmt.Errorf("scan stdout: %w", err)
 	}
-
-	return outcome, nil
-}
-
-func decodeAssistantPayload(item *eventItem) (*assistantPayload, error) {
-	raw := strings.TrimSpace(item.Text)
-	if raw == "" {
-		for _, c := range item.Content {
-			if c.Type == "output_json" && len(c.JSON) > 0 {
-				raw = string(c.JSON)
-				break
-			}
-			if c.Type == "output_text" && strings.TrimSpace(c.Text) != "" {
-				raw = c.Text
-				break
-			}
-		}
-	}
-	if raw == "" {
-		return nil, fmt.Errorf("assistant message missing structured payload")
-	}
-	trimmed := strings.TrimSpace(raw)
-	if strings.HasPrefix(trimmed, "\"") && strings.HasSuffix(trimmed, "\"") {
-		if unquoted, err := strconv.Unquote(trimmed); err == nil {
-			trimmed = unquoted
-		}
-	}
-
-	var payload assistantPayload
-	if err := json.Unmarshal([]byte(trimmed), &payload); err != nil {
-		return nil, fmt.Errorf("parse assistant payload: %w", err)
-	}
-
-	if payload.PendingDeps == nil {
-		payload.PendingDeps = []Dependency{}
-	}
-	if strings.TrimSpace(payload.Status) == "" {
-		return nil, fmt.Errorf("assistant payload missing status")
-	}
-	if strings.TrimSpace(payload.AssistantSummary) == "" {
-		return nil, fmt.Errorf("assistant payload missing assistantSummary")
-	}
-
-	return &payload, nil
+	return out, nil
 }

@@ -47,9 +47,9 @@ func TestRunSkillGeneratesPromptAndValidatesOutputArtifact(t *testing.T) {
 			},
 		})
 		return Result{
-			Status:           StatusCompleted,
-			SessionID:        "session-1",
-			AssistantSummary: "assistant summary",
+			Status:       StatusCompleted,
+			SessionID:    "session-1",
+			NativeOutput: NativeOutput{ResponseText: "assistant summary"},
 		}, "", "", "", nil
 	}
 
@@ -163,9 +163,9 @@ func TestRunSkillOutputSchemaFailureReturnsIncomplete(t *testing.T) {
 			"unexpected": true,
 		})
 		return Result{
-			Status:           StatusCompleted,
-			SessionID:        "session-1",
-			AssistantSummary: "assistant summary",
+			Status:       StatusCompleted,
+			SessionID:    "session-1",
+			NativeOutput: NativeOutput{ResponseText: "assistant summary"},
 		}, "", "", "", nil
 	}
 
@@ -222,9 +222,9 @@ func TestRunSkillRepairsInvalidOutputWithSameSession(t *testing.T) {
 				"unexpected": true,
 			})
 			return Result{
-				Status:           StatusCompleted,
-				SessionID:        "session-1",
-				AssistantSummary: "first pass",
+				Status:       StatusCompleted,
+				SessionID:    "session-1",
+				NativeOutput: NativeOutput{ResponseText: "first pass"},
 			}, "", "", "", nil
 		case 2:
 			if opts.CodexHome != executionHome {
@@ -241,9 +241,9 @@ func TestRunSkillRepairsInvalidOutputWithSameSession(t *testing.T) {
 				"summary": "repaired",
 			})
 			return Result{
-				Status:           StatusCompleted,
-				SessionID:        "session-1",
-				AssistantSummary: "repaired",
+				Status:       StatusCompleted,
+				SessionID:    "session-1",
+				NativeOutput: NativeOutput{ResponseText: "repaired"},
 			}, "", "", "", nil
 		default:
 			t.Fatalf("unexpected execute call %d", calls)
@@ -350,9 +350,9 @@ func TestRunSkillOnErrorFailReturnsPartialOutputAndError(t *testing.T) {
 			"unexpected": true,
 		})
 		return Result{
-			Status:           StatusCompleted,
-			SessionID:        "session-1",
-			AssistantSummary: "assistant summary",
+			Status:       StatusCompleted,
+			SessionID:    "session-1",
+			NativeOutput: NativeOutput{ResponseText: "assistant summary"},
 		}, "", "", "", nil
 	}
 
@@ -397,9 +397,9 @@ func TestRunSkillAcceptsAssistantSummaryOutputCompatibility(t *testing.T) {
 	executeLibrary = func(ctx context.Context, opts Options) (Result, string, string, string, error) {
 		seedTestSession(t, opts.CodexHome, "session-1")
 		return Result{
-			Status:           StatusCompleted,
-			SessionID:        "session-1",
-			AssistantSummary: `{"summary":"from summary"}`,
+			Status:       StatusCompleted,
+			SessionID:    "session-1",
+			NativeOutput: NativeOutput{ResponseText: `{"summary":"from summary"}`},
 		}, "", "", "", nil
 	}
 

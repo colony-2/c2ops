@@ -79,9 +79,9 @@ Create .c2/available-skill/result.json when useful.
 		}
 		assertFileContent(t, filepath.Join(opts.ConfiguredSkillDirs[0], "available-skill", "SKILL.md"), skillBody)
 		return Result{
-			Status:           StatusCompleted,
-			SessionID:        "session-with-available-skill",
-			AssistantSummary: "done",
+			Status:       StatusCompleted,
+			SessionID:    "session-with-available-skill",
+			NativeOutput: NativeOutput{ResponseText: "done"},
 		}, "", "", "", nil
 	}
 

@@ -17,7 +17,9 @@ set -euo pipefail
 test -s "$PROGRESS_FILE"
 grep -q 'exec.config' "$PROGRESS_FILE"
 printf '%s\n' '{"type":"session.created","session_id":"test-session"}'
-printf '%s\n' '{"type":"item.completed","item":{"item_type":"assistant_message","text":"{\"status\":\"completed\",\"assistantSummary\":\"done\"}"}}'
+printf '%s\n' '{"type":"turn.started"}'
+printf '%s\n' '{"type":"item.completed","item":{"id":"answer","type":"agent_message","text":"done"}}'
+printf '%s\n' '{"type":"turn.completed","usage":{"input_tokens":1,"output_tokens":1}}'
 `)
 	opts := testExecuteOptions(t)
 	opts.Prompt = "sensitive prompt must not be in progress logs"

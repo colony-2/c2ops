@@ -27,9 +27,10 @@ func buildCommand(opts Options, schemaContainerPath string) []string {
 		"--json",
 		"--dangerously-bypass-approvals-and-sandbox",
 		"--skip-git-repo-check",
-		"--output-schema",
-		schemaContainerPath,
 	)
+	if schemaContainerPath != "" {
+		cmd = append(cmd, "--output-schema", schemaContainerPath)
+	}
 	if opts.API != nil {
 		cmd = append(cmd, opts.API.commandArgs()...)
 	}

@@ -79,7 +79,7 @@ func TestLiveExecuteResumesSessionKnowledge(t *testing.T) {
 	defer api.Close()
 
 	first := liveExecuteOptions(t, api)
-	first.Prompt = "Remember this exact fact for the next turn in this session: my name is " + name + ". Do not modify files. Return a completed structured response whose assistantSummary says you stored that exact name."
+	first.Prompt = "Remember this exact fact for the next turn in this session: my name is " + name + ". Do not modify files. Say you stored that exact name."
 
 	firstResult, stdoutPath, stderrPath, artifactDir, err := Execute(context.Background(), first)
 	defer cleanupArtifacts(stdoutPath, stderrPath, artifactDir)
@@ -109,7 +109,7 @@ func TestLiveExecuteResumesSessionKnowledge(t *testing.T) {
 	if err := relocateSessionIndex(second.CodexHome, second.SessionID, second.WorktreeRoot, false); err != nil {
 		t.Fatal(err)
 	}
-	second.Prompt = "Using the existing conversation in this resumed session, answer this question: what is my name? Do not modify files. Return a completed structured response with assistantSummary containing only the exact name."
+	second.Prompt = "Using the existing conversation in this resumed session, answer this question: what is my name? Do not modify files. Return only the exact name."
 
 	secondResult, stdoutPath, stderrPath, artifactDir, err := Execute(context.Background(), second)
 	defer cleanupArtifacts(stdoutPath, stderrPath, artifactDir)
@@ -133,8 +133,8 @@ func TestLiveExecuteResumesSessionKnowledge(t *testing.T) {
 	if marshalErr != nil || !strings.Contains(string(requestJSON), "Remember this exact fact") {
 		t.Fatalf("resume did not send the earlier conversation: %s, %v", requestJSON, marshalErr)
 	}
-	if !strings.Contains(strings.ToLower(secondResult.AssistantSummary), strings.ToLower(name)) {
-		t.Fatalf("expected resumed assistant summary to contain %q, got %q", name, secondResult.AssistantSummary)
+	if !strings.Contains(strings.ToLower(secondResult.ResponseText), strings.ToLower(name)) {
+		t.Fatalf("expected resumed assistant summary to contain %q, got %q", name, secondResult.ResponseText)
 	}
 }
 
@@ -188,8 +188,9 @@ stream_idle_timeout_ms = 1000
 }
 
 type mockCodexTurn struct {
-	Command string
-	Summary string
+	SchemaRejection bool
+	Command         string
+	Summary         string
 }
 
 type mockCodexAPI struct {
@@ -242,13 +243,19 @@ func (api *mockCodexAPI) handleResponses(w http.ResponseWriter, r *http.Request)
 	turn := api.turns[idx]
 	api.mu.Unlock()
 
+	if turn.SchemaRejection {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":{"message":"Invalid schema for response_format","type":"invalid_request_error","code":"invalid_json_schema"}}`))
+		return
+	}
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.WriteHeader(http.StatusOK)
 	if turn.Command != "" {
 		writeFunctionCallTurn(api.t, w, idx+1, turn.Command)
 		return
 	}
-	writeMessageTurn(api.t, w, idx+1, structuredPayload(turn.Summary))
+	writeMessageTurn(api.t, w, idx+1, turn.Summary)
 }
 
 func writeFunctionCallTurn(t *testing.T, w http.ResponseWriter, turn int, command string) {
@@ -447,19 +454,4 @@ func responseEnvelope(id string, status string, output []any) map[string]any {
 		},
 		"metadata": map[string]any{},
 	}
-}
-
-func structuredPayload(summary string) string {
-	payload, err := json.Marshal(map[string]any{
-		"status":              "completed",
-		"assistantSummary":    summary,
-		"incompleteReason":    "",
-		"incompleteCategory":  "",
-		"pendingDependencies": []any{},
-		"errorMessage":        "",
-	})
-	if err != nil {
-		panic(err)
-	}
-	return string(payload)
 }

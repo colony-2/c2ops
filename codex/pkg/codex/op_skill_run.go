@@ -20,6 +20,7 @@ const (
 	skillRunDiagnosticsDir     = "_skill_run"
 	outputSourceArtifact       = "artifact"
 	outputSourceSummary        = "assistantSummary"
+	outputSourceResponse       = "response"
 	outputValidationIncomplete = "incomplete"
 	outputValidationFail       = "fail"
 	outputValidationWarn       = "warn"
@@ -50,6 +51,7 @@ type SkillRunOutputSpec struct {
 	Path                   string                         `json:"path,omitempty"`
 	Format                 string                         `json:"format,omitempty"`
 	Schema                 json.RawMessage                `json:"schema,omitempty"`
+	MaxRepairAttempts      *int                           `json:"max_repair_attempts,omitempty"`
 	RequiredWhenIncomplete bool                           `json:"required_when_incomplete,omitempty"`
 	Validation             SkillRunOutputValidationConfig `json:"validation,omitempty"`
 }
@@ -66,10 +68,12 @@ type SkillRunOutputRepairConfig struct {
 
 // SkillRunOutput preserves codex outputs and adds structured artifact validation.
 type SkillRunOutput struct {
+	NativeOutput
 	Session             *checkpoint.Marker          `json:"session,omitempty"`
 	Objects             map[string]checkpoint.Draft `json:"-"`
 	Status              string                      `json:"status"`
 	SessionID           string                      `json:"sessionId"`
+	ErrorMessage        string                      `json:"errorMessage,omitempty"`
 	Outcome             ExecOutcome                 `json:"outcome"`
 	AssistantSummary    string                      `json:"assistantSummary"`
 	IncompleteReason    string                      `json:"incompleteReason"`
@@ -203,6 +207,18 @@ func RunSkill(ctx context.Context, input SkillRunInput) (result SkillRunOutput, 
 		return SkillRunOutput{}, err
 	}
 
+	if outputSpec.Source != outputSourceArtifact {
+		execInput.Output.Schema = outputSpec.Schema
+		execInput.Output.MaxRepairAttempts = input.Output.MaxRepairAttempts
+		if execInput.Output.MaxRepairAttempts == nil {
+			if input.Output.Validation.Repair.Enabled != nil && !*input.Output.Validation.Repair.Enabled {
+				zero := 0
+				execInput.Output.MaxRepairAttempts = &zero
+			} else if input.Output.Validation.Repair.MaxAttempts > 0 {
+				execInput.Output.MaxRepairAttempts = &input.Output.Validation.Repair.MaxAttempts
+			}
+		}
+	}
 	prompt := renderRunSkillPrompt(skill, contractPath, paths, input, outputSpec)
 	execOutput, err := runCodexActivityPrepared(ctx, execInput, prompt, paths, configuredSkillDirs, skillsInstalled)
 	output := newSkillRunOutput(skill, execOutput, outputSpec)
@@ -214,15 +230,18 @@ func RunSkill(ctx context.Context, input SkillRunInput) (result SkillRunOutput, 
 	statusValidation := validateSkillRunStatusContract(paths.Outbox, input.StatusContract.Path)
 	applyStatusValidation(&output, statusValidation)
 
-	outputValidation := validateSkillRunOutput(paths.Outbox, execOutput.AssistantSummary, outputSpec, shouldSkipOutputRequirement(execOutput, outputSpec))
-	repairAttempts := 0
+	outputValidation := validateSkillRunOutput(paths.Outbox, execOutput.ResponseText, outputSpec, shouldSkipOutputRequirement(execOutput, outputSpec))
+	repairAttempts := execOutput.OutputRepairAttempts
 	for shouldRepairSkillRunOutput(outputValidation, outputSpec, execOutput) && repairAttempts < outputSpec.RepairMaxAttempts {
 		repairAttempts++
 		progress(ctx, "skill.repair", map[string]any{"attempt": repairAttempts})
 		repairPrompt := renderRunSkillRepairPrompt(skill, outputSpec, outputValidation)
 		repairInput := execInput
 		repairExecOutput, repairErr := runCodexActivityPrepared(ctx, repairInput, repairPrompt, paths, configuredSkillDirs, skillsInstalled)
+		repairExecOutput.Events = append(execOutput.Events, repairExecOutput.Events...)
+		repairExecOutput.Items = append(execOutput.Items, repairExecOutput.Items...)
 		if repairErr != nil {
+			output = newSkillRunOutput(skill, repairExecOutput, outputSpec)
 			output.OutputRepairAttempts = repairAttempts
 			output.OutputSchemaErrors = append(output.OutputSchemaErrors, fmt.Sprintf("repair attempt %d failed: %v", repairAttempts, repairErr))
 			applyDiagnostics(&output)
@@ -232,7 +251,7 @@ func RunSkill(ctx context.Context, input SkillRunInput) (result SkillRunOutput, 
 		execOutput = repairExecOutput
 		output = newSkillRunOutput(skill, execOutput, outputSpec)
 		applyStatusValidation(&output, validateSkillRunStatusContract(paths.Outbox, input.StatusContract.Path))
-		outputValidation = validateSkillRunOutput(paths.Outbox, execOutput.AssistantSummary, outputSpec, shouldSkipOutputRequirement(execOutput, outputSpec))
+		outputValidation = validateSkillRunOutput(paths.Outbox, execOutput.ResponseText, outputSpec, shouldSkipOutputRequirement(execOutput, outputSpec))
 	}
 
 	applyOutputValidation(&output, outputValidation, outputSpec, repairAttempts)
@@ -272,10 +291,12 @@ func normalizeSkillRunOutput(spec SkillRunOutputSpec) (normalizedSkillRunOutput,
 	switch strings.ToLower(source) {
 	case outputSourceArtifact:
 		source = outputSourceArtifact
+	case outputSourceResponse:
+		source = outputSourceResponse
 	case strings.ToLower(outputSourceSummary):
 		source = outputSourceSummary
 	default:
-		return normalizedSkillRunOutput{}, fmt.Errorf("output.from must be %q or %q", outputSourceArtifact, outputSourceSummary)
+		return normalizedSkillRunOutput{}, fmt.Errorf("output.from must be %q, %q, or %q", outputSourceArtifact, outputSourceResponse, outputSourceSummary)
 	}
 
 	format := strings.ToLower(strings.TrimSpace(spec.Format))
@@ -355,9 +376,9 @@ func renderRunSkillPrompt(skill string, contractPath string, paths execRunPaths,
 	}
 	if output.Source == outputSourceArtifact {
 		builder.WriteString(fmt.Sprintf("- Write the primary structured output as %s to outbox artifact path: %s.\n", output.Format, output.Path))
-		builder.WriteString("- Do not put the primary structured output JSON in assistantSummary; assistantSummary should be a concise human summary.\n")
+		builder.WriteString("- After writing the artifact, return a concise human summary as your final answer.\n")
 	} else {
-		builder.WriteString("- Put the primary structured output JSON in assistantSummary.\n")
+		builder.WriteString("- Return the primary structured output JSON directly as your final answer.\n")
 	}
 	builder.WriteString("\nStructured input JSON:\n")
 	builder.WriteString(renderJSONBlock(input.Input))
@@ -377,7 +398,7 @@ func renderRunSkillRepairPrompt(skill string, output normalizedSkillRunOutput, v
 	for _, msg := range validation.errors {
 		builder.WriteString(fmt.Sprintf("- %s\n", msg))
 	}
-	builder.WriteString("\nRewrite the output artifact so it is valid JSON and satisfies the configured schema. Return the normal c2ops Codex structured response after writing the artifact.\n")
+	builder.WriteString("\nRewrite the output artifact so it is valid JSON and satisfies the configured schema. After writing the artifact, return a concise human summary as your final answer.\n")
 	return builder.String()
 }
 
@@ -400,23 +421,29 @@ func ensureRequestedSkillAvailable(skill string, worktree string, configuredSkil
 }
 
 func newSkillRunOutput(skill string, execOutput ExecOpOutput, outputSpec normalizedSkillRunOutput) SkillRunOutput {
-	return SkillRunOutput{
-		Status:               execOutput.Status,
+	output := SkillRunOutput{
+		NativeOutput:         execOutput.NativeOutput,
+		Status:               string(deriveExecOutputStatus(Status(execOutput.Status), execOutput.Outcome)),
 		SessionID:            execOutput.SessionID,
+		ErrorMessage:         execOutput.ErrorMessage,
+		OutputRepairAttempts: execOutput.OutputRepairAttempts,
 		Outcome:              execOutput.Outcome,
-		AssistantSummary:     execOutput.AssistantSummary,
-		IncompleteReason:     execOutput.IncompleteReason,
-		IncompleteCategory:   execOutput.IncompleteCategory,
-		PendingDependencies:  copyDependencies(execOutput.PendingDependencies),
+		AssistantSummary:     execOutput.ResponseText,
+		PendingDependencies:  []Dependency{},
 		SkillsInstalled:      copyStrings(execOutput.SkillsInstalled),
 		Skill:                skill,
-		RawSummary:           execOutput.AssistantSummary,
+		RawSummary:           execOutput.ResponseText,
 		OutputSource:         outputSpec.Source,
 		OutputPath:           outputSpec.Path,
 		OutputSchemaErrors:   []string{},
 		StatusContractPath:   execOutput.Outcome.Checkpoint.StatusArtifact,
 		StatusContractErrors: []string{},
 	}
+	if output.Status == string(StatusIncomplete) {
+		output.IncompleteReason = execOutput.Outcome.Checkpoint.ReturnReason
+		output.IncompleteCategory = execOutput.Outcome.Checkpoint.Status
+	}
+	return output
 }
 
 func validateSkillRunOutput(outbox string, assistantSummary string, spec normalizedSkillRunOutput, skipRequired bool) skillRunOutputValidation {
@@ -429,7 +456,7 @@ func validateSkillRunOutput(outbox string, assistantSummary string, spec normali
 
 	var raw []byte
 	switch spec.Source {
-	case outputSourceSummary:
+	case outputSourceSummary, outputSourceResponse:
 		raw = []byte(strings.TrimSpace(assistantSummary))
 	case outputSourceArtifact:
 		resolved, err := resolveOutboxArtifactPath(outbox, spec.Path, "output artifact")
@@ -455,14 +482,14 @@ func validateSkillRunOutput(outbox string, assistantSummary string, spec normali
 		result.errors = append(result.errors, "output JSON is empty")
 		return result
 	}
-	var parsed interface{}
-	if err := json.Unmarshal(trimmed, &parsed); err != nil {
+	parsed, err := jsonschemav6.UnmarshalJSON(bytes.NewReader(trimmed))
+	if err != nil {
 		result.errors = append(result.errors, fmt.Sprintf("parse output JSON: %v", err))
 		return result
 	}
 	result.parsed = parsed
 
-	compiled, err := compileSkillRunSchema(spec.Schema)
+	compiled, err := compileOutputSchema(spec.Schema)
 	if err != nil {
 		result.errors = append(result.errors, err.Error())
 		return result
@@ -476,26 +503,6 @@ func validateSkillRunOutput(outbox string, assistantSummary string, spec normali
 
 	result.valid = true
 	return result
-}
-
-func compileSkillRunSchema(raw json.RawMessage) (*jsonschemav6.Schema, error) {
-	if len(bytes.TrimSpace(raw)) == 0 {
-		return nil, nil
-	}
-	var doc interface{}
-	if err := json.Unmarshal(raw, &doc); err != nil {
-		return nil, fmt.Errorf("output schema is not valid JSON: %w", err)
-	}
-	compiler := jsonschemav6.NewCompiler()
-	compiler.DefaultDraft(jsonschemav6.Draft2020)
-	if err := compiler.AddResource("inmem://skill-run-output-schema.json", doc); err != nil {
-		return nil, fmt.Errorf("add output schema resource: %w", err)
-	}
-	compiled, err := compiler.Compile("inmem://skill-run-output-schema.json")
-	if err != nil {
-		return nil, fmt.Errorf("compile output schema: %w", err)
-	}
-	return compiled, nil
 }
 
 func validateSkillRunStatusContract(outbox string, statusPath string) skillRunStatusValidation {
@@ -534,14 +541,14 @@ func shouldRepairSkillRunOutput(validation skillRunOutputValidation, spec normal
 	if validation.valid || !spec.RepairEnabled || spec.Source != outputSourceArtifact {
 		return false
 	}
-	if execOutput.Status == string(StatusIncomplete) && !spec.RequiredWhenIncomplete {
+	if deriveExecOutputStatus(Status(execOutput.Status), execOutput.Outcome) == StatusIncomplete && !spec.RequiredWhenIncomplete {
 		return false
 	}
 	return true
 }
 
 func shouldSkipOutputRequirement(execOutput ExecOpOutput, spec normalizedSkillRunOutput) bool {
-	return execOutput.Status == string(StatusIncomplete) && !spec.RequiredWhenIncomplete
+	return deriveExecOutputStatus(Status(execOutput.Status), execOutput.Outcome) == StatusIncomplete && !spec.RequiredWhenIncomplete
 }
 
 func applyStatusValidation(output *SkillRunOutput, validation skillRunStatusValidation) {

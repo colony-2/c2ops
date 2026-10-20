@@ -155,7 +155,17 @@ for name in ['state_5', 'thread_history_1', 'goals_1', 'queue_1', 'memories_1']:
 PYCODE
 bash -lc "$cmd"
 printf '%s\n' '{"type":"session.created","session_id":"fixture-session"}'
-printf '%s\n' '{"type":"item.completed","item":{"item_type":"assistant_message","text":"{\"status\":\"completed\",\"assistantSummary\":\"fixture completed\",\"incompleteReason\":\"\",\"incompleteCategory\":\"\",\"pendingDependencies\":[],\"errorMessage\":\"\"}"}}'
+printf '%s\n' '{"type":"turn.started"}'
+has_schema=false
+for arg in "$@"; do
+  if [[ "$arg" == --output-schema ]]; then has_schema=true; fi
+done
+if $has_schema; then
+  printf '%s\n' '{"type":"item.completed","item":{"id":"answer","type":"agent_message","text":"{\"summary\":\"done\"}"}}'
+else
+  printf '%s\n' '{"type":"item.completed","item":{"id":"answer","type":"agent_message","text":"done"}}'
+fi
+printf '%s\n' '{"type":"turn.completed","usage":{"input_tokens":1,"output_tokens":1}}'
 `
 	require.NoError(t, os.WriteFile(stubPath, []byte(stub), 0o755))
 

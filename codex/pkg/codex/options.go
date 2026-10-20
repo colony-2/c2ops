@@ -57,9 +57,6 @@ func (o *Options) validate() error {
 	if o.ExtraEnv == nil {
 		o.ExtraEnv = map[string]string{}
 	}
-	if len(o.StructuredSchema) == 0 {
-		o.StructuredSchema = structuredOutputSchema
-	}
 	if err := ensureDescendantPath(o.WorkDirRoot, o.WorktreeRoot, "worktree root"); err != nil {
 		return err
 	}

@@ -46,6 +46,7 @@ type sessionExecution struct {
 	id             string
 	outbox         string
 	runtimeVersion string
+	logsWritten    bool
 }
 
 // The supported CLI creates all these databases in a private sqlite_home.

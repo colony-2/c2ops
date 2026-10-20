@@ -100,8 +100,8 @@ func renderSkillPrompt(prompt string, cfg skillExecutionConfig) string {
 func buildExecOutcome(result Result, cfg skillExecutionConfig, outboxPath string) ExecOutcome {
 	outcome := ExecOutcome{
 		Summary: ExecOutcomeSummary{
-			Human:  safeString(result.AssistantSummary),
-			Reason: safeString(result.IncompleteReason),
+			Human:  safeString(result.ResponseText),
+			Reason: "",
 		},
 		Skill: ExecOutcomeSkill{},
 		Checkpoint: ExecOutcomeCheckpoint{
@@ -113,10 +113,6 @@ func buildExecOutcome(result Result, cfg skillExecutionConfig, outboxPath string
 		Routing: ExecOutcomeRouting{
 			NextAction: routingComplete,
 		},
-	}
-
-	if strings.TrimSpace(outcome.Summary.Reason) == "" {
-		outcome.Summary.Reason = safeString(result.IncompleteCategory)
 	}
 
 	if strings.TrimSpace(cfg.StatusContractPath) != "" {
@@ -200,14 +196,6 @@ func deriveExecOutputStatus(resultStatus Status, outcome ExecOutcome) Status {
 }
 
 func deriveCheckpointStatus(result Result) string {
-	category := normalizeStatus(result.IncompleteCategory)
-	switch category {
-	case "dependency_blockers":
-		return "needs_dependency_tickets"
-	case "":
-	default:
-		return category
-	}
 
 	switch result.Status {
 	case StatusError:

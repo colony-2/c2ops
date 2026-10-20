@@ -50,6 +50,18 @@ input_schema:
         type: string
     status_contract:
       type: object
+    output:
+      type: object
+      additionalProperties: false
+      properties:
+        schema:
+          type: [object, boolean, "null"]
+          description: Optional JSON Schema for the final answer, passed directly to Codex and validated locally. Null disables validation.
+        max_repair_attempts:
+          type: integer
+          minimum: 0
+          default: 3
+          description: Corrections after the initial answer; zero disables repairs. Each correction resumes the same session.
     idle_timeout:
       type: string
       description: Optional idle limit; omitted or zero disables the watchdog.
@@ -76,19 +88,43 @@ output_schema:
       type: string
     sessionId:
       type: string
-    assistantSummary:
-      type: string
-    incompleteReason:
-      type: string
-    incompleteCategory:
-      type: string
-    pendingDependencies:
-      type: array
-      items:
-        type: object
     skills_installed:
       type: array
       items:
         type: string
-    outcome:
+    workflow:
       type: object
+      description: Present only when status_contract.path is explicitly configured.
+    response: {}
+    response_text:
+      type: string
+    events:
+      type: array
+      items:
+        type: object
+        additionalProperties: true
+    items:
+      type: array
+      items:
+        type: object
+        additionalProperties: true
+    usage:
+      type: [object, "null"]
+      additionalProperties: true
+    terminal_event:
+      type: [object, "null"]
+      additionalProperties: true
+    exit_code:
+      type: [integer, "null"]
+    schema_mode:
+      type: string
+    errorMessage:
+      type: string
+    output_schema_valid:
+      type: boolean
+    output_schema_errors:
+      type: array
+      items:
+        type: string
+    output_repair_attempts:
+      type: integer

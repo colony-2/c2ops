@@ -19,35 +19,36 @@ import (
 
 // ExecOpInput defines the codex.exec command input.
 type ExecOpInput struct {
-	Prompt             string            `json:"prompt" validate:"required"`
-	Session            *SessionInput     `json:"session,omitempty"`
-	Model              string            `json:"model,omitempty"`
-	API                *APIConfig        `json:"api,omitempty"`
-	Env                map[string]string `json:"env,omitempty"`
-	Skills             []string          `json:"skills,omitempty"`
-	ReturnOn           []string          `json:"return_on,omitempty"`
-	StatusContract     StatusContractRef `json:"status_contract,omitempty"`
-	IdleTimeout        string            `json:"idle_timeout,omitempty"`
-	WorkdirPath        string            `json:"workdir_path,omitempty" default:"{{ context.environment.op.workdir }}"`
-	WorktreePath       string            `json:"worktree_path" default:"{{ context.environment.op.worktree_path }}" validate:"required"`
-	ArtifactInboxPath  string            `json:"artifact_inbox_path,omitempty" default:"{{ context.environment.op.inbox }}"`
-	ArtifactOutboxPath string            `json:"artifact_outbox_path,omitempty" default:"{{ context.environment.op.outbox }}"`
+	Output             ResponseOutputSpec `json:"output,omitempty"`
+	Prompt             string             `json:"prompt" validate:"required"`
+	Session            *SessionInput      `json:"session,omitempty"`
+	Model              string             `json:"model,omitempty"`
+	API                *APIConfig         `json:"api,omitempty"`
+	Env                map[string]string  `json:"env,omitempty"`
+	Skills             []string           `json:"skills,omitempty"`
+	ReturnOn           []string           `json:"return_on,omitempty"`
+	StatusContract     StatusContractRef  `json:"status_contract,omitempty"`
+	IdleTimeout        string             `json:"idle_timeout,omitempty"`
+	WorkdirPath        string             `json:"workdir_path,omitempty" default:"{{ context.environment.op.workdir }}"`
+	WorktreePath       string             `json:"worktree_path" default:"{{ context.environment.op.worktree_path }}" validate:"required"`
+	ArtifactInboxPath  string             `json:"artifact_inbox_path,omitempty" default:"{{ context.environment.op.inbox }}"`
+	ArtifactOutboxPath string             `json:"artifact_outbox_path,omitempty" default:"{{ context.environment.op.outbox }}"`
 
 	execution *sessionExecution
 }
 
-// ExecOpOutput mirrors the structured response surfaced by the codex library.
+// ExecOpOutput exposes native Codex data alongside host-managed session metadata.
 type ExecOpOutput struct {
-	Session             *checkpoint.Marker          `json:"session,omitempty"`
-	Objects             map[string]checkpoint.Draft `json:"-"`
-	Status              string                      `json:"status"`
-	SessionID           string                      `json:"sessionId"`
-	Outcome             ExecOutcome                 `json:"outcome"`
-	AssistantSummary    string                      `json:"assistantSummary"`
-	IncompleteReason    string                      `json:"incompleteReason"`
-	IncompleteCategory  string                      `json:"incompleteCategory"`
-	PendingDependencies []Dependency                `json:"pendingDependencies"`
-	SkillsInstalled     []string                    `json:"skills_installed,omitempty"`
+	NativeOutput
+	Session         *checkpoint.Marker          `json:"session,omitempty"`
+	Objects         map[string]checkpoint.Draft `json:"-"`
+	Status          string                      `json:"status"`
+	SessionID       string                      `json:"sessionId"`
+	ErrorMessage    string                      `json:"errorMessage,omitempty"`
+	SkillsInstalled []string                    `json:"skills_installed,omitempty"`
+	// Workflow is populated only when an explicit status artifact is requested.
+	Workflow *ExecOutcome `json:"workflow,omitempty"`
+	Outcome  ExecOutcome  `json:"-"`
 }
 
 type StatusContractRef struct {
@@ -193,6 +194,8 @@ func runCodexActivityPrepared(
 
 	opts := Options{
 		Prompt:              promptForExec,
+		StructuredSchema:    input.Output.Schema,
+		MaxRepairAttempts:   input.Output.MaxRepairAttempts,
 		CodexHome:           input.execution.home,
 		SessionID:           input.execution.id,
 		Model:               strings.TrimSpace(input.Model),
@@ -209,40 +212,39 @@ func runCodexActivityPrepared(
 	result, stdoutPath, stderrPath, artifactDir, executeErr := executeLibrary(actx, opts)
 	debugArtifactf("stdout=%q stderr=%q artifact_dir=%q err=%v", stdoutPath, stderrPath, artifactDir, executeErr)
 	defer cleanupArtifacts(stdoutPath, stderrPath, artifactDir)
-	if err := writeOutputArtifacts(paths.Outbox, stdoutPath, stderrPath); err != nil {
-		return ExecOpOutput{}, err
+	if input.execution.logsWritten {
+		if err := appendExecutionLogs(filepath.Join(paths.Outbox, "stdout.jsonl"), filepath.Join(paths.Outbox, "stderr.txt"), stdoutPath, stderrPath); err != nil {
+			return ExecOpOutput{}, err
+		}
+	} else {
+		if err := writeOutputArtifacts(paths.Outbox, stdoutPath, stderrPath); err != nil {
+			return ExecOpOutput{}, err
+		}
+		input.execution.logsWritten = true
 	}
 
 	outcome := buildExecOutcome(result, skillCfg, paths.Outbox)
-	finalStatus := deriveExecOutputStatus(result.Status, outcome)
 	output := ExecOpOutput{
-		Status:              string(finalStatus),
-		SessionID:           safeString(result.SessionID),
-		Outcome:             outcome,
-		AssistantSummary:    safeString(outcome.Summary.Human),
-		IncompleteReason:    safeString(result.IncompleteReason),
-		IncompleteCategory:  safeString(result.IncompleteCategory),
-		PendingDependencies: copyDependencies(result.PendingDependencies),
-		SkillsInstalled:     copyStrings(skillsInstalled),
+		NativeOutput: result.NativeOutput,
+		Status:       string(result.Status), SessionID: result.SessionID,
+		ErrorMessage: result.ErrorMessage,
+		Outcome:      outcome, SkillsInstalled: copyStrings(skillsInstalled),
 	}
-	if finalStatus == StatusIncomplete {
-		if output.IncompleteCategory == "" {
-			output.IncompleteCategory = safeString(outcome.Checkpoint.Status)
-		}
-		if output.IncompleteReason == "" {
-			output.IncompleteReason = safeString(outcome.Checkpoint.ReturnReason)
-		}
+	if skillCfg.StatusContractPath != "" {
+		output.Workflow = &outcome
 	}
 
 	if executeErr != nil {
-		return ExecOpOutput{}, fmt.Errorf("codex execution error: %w", executeErr)
+		output.Status = string(StatusError)
+		output.ErrorMessage = firstNonEmpty(output.ErrorMessage, executeErr.Error())
+		return output, fmt.Errorf("codex execution error: %w", executeErr)
 	}
 	if result.Status == StatusError {
 		msg := strings.TrimSpace(result.ErrorMessage)
 		if msg == "" {
 			msg = "codex reported an error"
 		}
-		return ExecOpOutput{}, fmt.Errorf("codex error: %s", msg)
+		return output, fmt.Errorf("codex error: %s", msg)
 	}
 	if result.SessionID == "" {
 		return output, fmt.Errorf("Codex returned no session ID")
