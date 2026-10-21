@@ -66,6 +66,9 @@ let
       version = "0.1.0";
       dontUnpack = true;
       nativeBuildInputs = [ pkgs.makeWrapper ];
+      # Compilation belongs to the builder. Fail the build if a Go op retains
+      # its compiler anywhere in its runtime closure.
+      disallowedRequisites = lib.optionals (op.kind == "go") [ pkgs.go ];
       installPhase = ''
         runHook preInstall
         install -Dm644 ${manifestPath} "$out/share/c2j/op.json"
@@ -85,6 +88,8 @@ let
         runHook postInstall
       '';
       passthru.c2j = manifest;
+      passthru.compiledExecutable =
+        if op.kind == "go" then "${goBinary}/bin/${binaryName}" else null;
       passthru.pythonEnv = if op.kind == "python" then python else null;
       meta = {
         description = manifest.description;

@@ -87,6 +87,20 @@ See [Nix's negative lookup cache setting](https://nix.dev/manual/nix/stable/comm
 
 ## What is packaged
 
+All Go ops are compiled by `buildGoModule` during the CI Nix build. The resulting
+runtime closure contains a native ELF executable for the selected architecture;
+it contains neither the op's Go source nor the Go compiler. `bin/<op>` is a small
+shell launcher that sets runtime paths and executes that compiled binary from
+the Nix store. Seeing a shell launcher does not mean the op compiles on startup.
+The package build rejects a runtime dependency on Go, and package checks verify
+the compiled payload and its architecture for every Go op.
+
+Nix still fetches the flake repository and its inputs to evaluate package
+definitions. This metadata/source download is separate from the executable
+output downloaded from Cachix. `op.yaml` is the local/Git source manifest and
+uses `go run`; Nix selectors use `op.json` with `command: ["bin/<op>"]`. Use
+`nix:github:colony-2/c2ops/published#codex` to select the packaged Codex op.
+
 | Ops | Included in the Nix runtime closure | Additional c2j setup |
 | --- | --- | --- |
 | `llm`, `llm2` | Compiled Go op and Git | None |
@@ -273,7 +287,7 @@ package checks need no provider credentials. CI disables import-from-derivation 
 
 `python3 scripts/check-codex-worker.py` additionally runs the built Codex and
 skill-run packages in the minimal worker container, using the native CLI in their closures
-with first and repeated invocations and package-manager commands disabled. It checks `version.ready`, then
+with first and repeated invocations and compiler and package-manager commands disabled. It checks `version.ready`, then
 deliberately rejects an invalid checkpoint before any provider request. CI runs
 this regression on both architectures. It requires Docker, Nix, and prebuilt
 packages; set `C2OPS_TEST_FLAKE=path:$PWD` to test a local checkout.
@@ -334,7 +348,7 @@ This runs `nix flake check`, then sets `C2OPS_TEST_FLAKE=path:<checkout>` for
 C2OPS_TEST_FLAKE=path:/absolute/path/to/c2ops make test
 ```
 
-With the override unset, `make test` resolves public `main` packages and requires
+With the override unset, `make test` resolves public `published` packages and requires
 the configured Cachix cache. There is no fallback to `go run`, source manifests,
 or `uv run --script` for op invocations. The runner evaluates package metadata,
 realizes that exact output with builds disabled, checks the installed manifest,

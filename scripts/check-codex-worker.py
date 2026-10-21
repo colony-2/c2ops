@@ -43,7 +43,7 @@ def main():
         bundle = Path(directory)
         poison = bundle / "poison"
         poison.mkdir()
-        for name in ("codex", "pnpm", "node", "npm", "npx", "nix"):
+        for name in ("go", "gcc", "cc", "rustc", "cargo", "codex", "pnpm", "node", "npm", "npx", "nix"):
             launcher = poison / name
             launcher.write_text("#!/bin/sh\necho 'unexpected ambient CLI or package manager' >&2\nexit 127\n")
             launcher.chmod(0o755)

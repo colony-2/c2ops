@@ -23,7 +23,8 @@ in {
     nativeBuildInputs = [ pkgs.python3 ];
     SSL_CERT_FILE = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
   } ''
-    python ${../scripts/check-package.py} ${package} ${pkgs.writeText "${name}-manifest.json" (builtins.toJSON package.c2j)} nix:github:colony-2/c2ops/published#${name}
+    python ${../scripts/check-package.py} ${package} ${pkgs.writeText "${name}-manifest.json" (builtins.toJSON package.c2j)} nix:github:colony-2/c2ops/published#${name} \
+      ${lib.optionalString (package.compiledExecutable != null) "--compiled-executable ${package.compiledExecutable} --system ${pkgs.stdenv.hostPlatform.system}"}
     ${lib.optionalString (builtins.elem name [ "pydantic" "litellm" "jev" ]) ''
       ${package.pythonEnv}/bin/python ${../scripts/check-python-runtime.py} ${../. + "/${name}/main.py"} ${pkgs.python3Packages.pydantic} ${name}
     ''}
