@@ -4,9 +4,9 @@ Go-backed Codex op with immutable object sessions and outbox artifacts.
 
 The Nix packages include the native **Codex CLI 0.161.0** from our pinned
 nixpkgs. Both entrypoints share one CLI store path and invoke it explicitly;
-no pnpm or Node setup is needed. Source/Git manifests declare
-`nix:github:colony-2/c2ops/published#codex-cli` and use the corresponding qualified
-`nix run` command. `C2OPS_CODEX_BIN` can explicitly override the binary for
+no pnpm or Node setup is needed. Local/Git manifests declare the prebuilt
+`nix:github:colony-2/c2ops/published#codex` or `#skill-run` op package and invoke
+it with qualified `nix run`; they require no Go toolchain. `C2OPS_CODEX_BIN` can explicitly override the binary for
 fixtures or compatibility experiments; the package wrapper defaults it to the
 native CLI's absolute path.
 
@@ -44,7 +44,7 @@ op: nix:github:colony-2/c2ops/published#codex
 ## What It Does
 
 - Reads one JSON payload from stdin
-- Runs a prebuilt Go executable from the Nix package (local source selectors use `go run .`)
+- Runs a prebuilt Go executable from the Nix package, including through local/Git manifests; Go is not required on workers
 - Returns a `codex.exec`-style result in the extension-op `{"output": ..., "objects": ...}` envelope
 
 ## Inputs

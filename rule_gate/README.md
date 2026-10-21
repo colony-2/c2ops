@@ -19,7 +19,7 @@ op: nix:github:colony-2/c2ops/published#rule_gate
 ## What It Does
 
 - Reads one JSON payload from stdin
-- Runs a prebuilt Go executable from the Nix package (local source selectors use `go run .`)
+- Runs a prebuilt Go executable from the Nix package, including through local/Git manifests; Go is not required on workers
 - Evaluates required policy rules in input order
 - Returns a normalized decision in the extension-op `{"output": ...}` envelope
 - Exits successfully for policy failures with `ok: false`

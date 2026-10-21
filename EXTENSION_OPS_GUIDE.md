@@ -27,7 +27,7 @@ The attribute identifies the operation; the worker selects its native Linux
 architecture. `skill.run` uses the attribute `skill-run`. Bare op names do not
 identify packages. Do not wrap Nix selectors in `extension_execution`.
 
-Local and Git source selectors remain available for development:
+Local and Git manifest selectors are also supported:
 
 ```yaml
 op: ./rule_gate
@@ -35,9 +35,12 @@ op: ./rule_gate
 op: git+https://github.com/colony-2/c2ops.git//rule_gate@main
 ```
 
-Source manifests declare their tool dependencies explicitly. Their `go run` and
-`uv run --script` commands still compile or prepare library environments during
-execution. Use Nix selectors for prebuilt ops.
+Go op manifests declare their published Nix package as a dependency and invoke
+it with `nix run <reference> --`. c2j prepares that package before execution and
+binds the qualified command to its retained executable. Neither these manifests
+nor direct Nix selectors require Go on the worker. A local manifest selects the
+published executable; build and select a local flake to test local Go changes.
+Python source manifests may still use `uv run --script` for library setup.
 
 ## Timeouts
 

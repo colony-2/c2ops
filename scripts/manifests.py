@@ -25,6 +25,10 @@ def main():
     for name, op in catalog.items():
         source = ROOT / op["path"] / "op.yaml"
         manifest = yaml.safe_load(source.read_text())
+        if op["kind"] == "go":
+            reference = f"github:colony-2/c2ops/published#{name}"
+            assert manifest["command"] == ["nix", "run", reference, "--"], f"{source}: must invoke the prebuilt op"
+            assert manifest["dependencies"] == [f"nix:{reference}"], f"{source}: must declare the prebuilt op dependency"
         for key in ("input_schema", "output_schema"):
             assert isinstance(manifest[key], dict), f"{source}: missing {key}"
         manifest.pop("run", None)

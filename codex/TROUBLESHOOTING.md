@@ -26,13 +26,12 @@ nix run github:colony-2/c2ops/published#codex-cli -- --version
 Nix selectors execute a prebuilt wrapper. Check tool-setup diagnostics for
 package substitution or declared CLI dependency failures before execution.
 
-Local/Git source selectors start with `go run .`. Module downloads and compilation happen
-before any wrapper diagnostics. Check worker launch
-errors and, from the resolved op checkout in the same environment, run
-`go mod download` and `go build ./...`. Check Go availability, cache permissions,
-and module-network access if either stalls. Recipe `inputs.env` configures the
-Codex child; it cannot fix PATH or module access needed to start the wrapper or
-its preliminary version probe.
+Local/Git manifests also execute the published prebuilt op via their declared
+Nix dependency. Check package setup, cache availability, and the prepared
+qualified `nix run` binding if startup fails. Go is not required on the worker.
+To test local Go changes, build and select the local flake; selecting a local
+`op.yaml` still runs the published executable. Recipe `inputs.env` configures
+the Codex child and cannot fix package setup before the op starts.
 
 ## Diagnose a custom API 401
 

@@ -29,7 +29,7 @@ sequence:
 `published` with a verified commit SHA from the workflow artifacts. See
 [publication and retention](./NIX_PACKAGES.md#ci-and-publishing).
 
-Local source selector for development (requires a Go toolchain):
+Local manifest selector (also runs the published prebuilt binary; no Go toolchain required):
 
 ```yaml
 sequence:
@@ -215,4 +215,4 @@ Dependency versions, compatibility notes, and validation are recorded in
 
 - Nix packages contain compiled Go binaries or Python wrappers with locked library environments; workers download the finished runtime closures from Cachix.
 - Codex and Kimi declare pinned `pnpm:` CLI dependencies, which c2j prepares before execution. Other tools used by these ops are bound in the Nix wrappers.
-- Local/Git source selectors remain available for development. Their manifests explicitly declare tool dependencies; Go compilation and `uv run --script` library setup still happen when running from source.
+- Local/Git manifests for Go ops declare and invoke the corresponding published Nix package. They do not compile the checkout. To exercise local Go edits, build a local flake and use a `nix:path:/absolute/path/to/c2ops#<op>` selector. Python source manifests may still use `uv run --script` for library setup.

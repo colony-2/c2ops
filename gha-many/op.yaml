@@ -1,10 +1,8 @@
 name: gha-many
 description: Runs the gha.runs Go implementation through the extension mechanism
-command: ["go", "run", "."]
+command: ["nix", "run", "github:colony-2/c2ops/published#gha-many", "--"]
 dependencies:
-  - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#go
-  - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#gitMinimal
-  - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#docker-client
+  - nix:github:colony-2/c2ops/published#gha-many
 input_schema:
   type: object
   required: [workflows]

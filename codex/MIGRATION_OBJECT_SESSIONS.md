@@ -16,9 +16,10 @@ workers as well as recipe submission/validation tools. The integration harness n
 object sessions and package setup. See the [troubleshooting guide](./TROUBLESHOOTING.md) for
 historical v0.0.61 Shai limitations.
 
-The Nix ops include the native Codex CLI in their runtime closure. Source/Git
-manifests declare `nix:github:colony-2/c2ops/published#codex-cli`; c2j prepares that
-package for qualified `nix run` invocation. Both paths require **Codex CLI
+The Nix ops include the native Codex CLI in their runtime closure. Local/Git
+manifests declare the prebuilt `#codex` or `#skill-run` op package from
+`nix:github:colony-2/c2ops/published`; c2j prepares that package for qualified
+`nix run` invocation. Both paths require **Codex CLI
 0.148.0 or later**; older or unparseable versions are rejected.
 
 Checkpoints record the actual producer CLI version. A consumer can use a
@@ -201,7 +202,7 @@ invocation's artifact outbox and the [diagnostic steps](./TROUBLESHOOTING.md).
 | `codex-home-state` no longer supported | Remove the legacy artifact binding and begin a new object session. |
 | Invalid metadata, missing files, unsupported format | Use an intact checkpoint from these migrated ops and the supported CLI version. Do not edit its reference or home contents. |
 
-If you invoke `go run .` directly rather than through c2j, your runner must
+If you invoke the packaged binary directly rather than through c2j, your runner must
 implement the [extension object protocol](../GUIDE-Op-Object-Checkpoints.md): supply
 an absolute object outbox, hydrate references into independent writable files,
 read the `output` plus `objects` envelope, persist drafts, and replace `$object`

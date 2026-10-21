@@ -8,13 +8,13 @@ import (
 	"strings"
 )
 
-// Keep this package coordinate aligned with both Codex manifests.
+// Standalone CLI coordinate for direct Go callers without a package wrapper.
 const codexPackage = "github:colony-2/c2ops/published#codex-cli"
 
 func codexCommand(args ...string) []string {
-	// Packaged ops bind the native CLI's exact store path. Source ops use the
-	// qualified runner for their manifest-declared package. Tests can explicitly
-	// override the binary without relying on an ambient executable named codex.
+	// All op manifests launch a package wrapper that binds the native CLI path.
+	// Direct Go callers can prepare the standalone CLI for qualified execution.
+	// Tests can explicitly override the binary without ambient PATH lookup.
 	if binary := os.Getenv("C2OPS_CODEX_BIN"); binary != "" {
 		return append([]string{binary}, args...)
 	}

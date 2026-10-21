@@ -7,20 +7,9 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
 )
 
-func TestCodexPackageMatchesManifests(t *testing.T) {
-	for _, name := range []string{"../../op.yaml", "../../run_skill/op.yaml"} {
-		data, err := os.ReadFile(name)
-		require.NoError(t, err)
-		var manifest struct {
-			Dependencies []string `yaml:"dependencies"`
-		}
-		require.NoError(t, yaml.Unmarshal(data, &manifest))
-		require.Contains(t, manifest.Dependencies, "nix:"+codexPackage,
-			"qualified CLI calls must match the declared package")
-	}
+func TestCodexPackagedManifestsNeedNoExternalTools(t *testing.T) {
 	for _, name := range []string{"../../op.json", "../../run_skill/op.json"} {
 		data, err := os.ReadFile(name)
 		require.NoError(t, err)
@@ -32,7 +21,7 @@ func TestCodexPackageMatchesManifests(t *testing.T) {
 	}
 }
 
-func TestCodexCommandUsesExplicitBinaryOrDeclaredNixPackage(t *testing.T) {
+func TestCodexCommandUsesExplicitBinaryOrNixPackage(t *testing.T) {
 	t.Setenv("C2OPS_CODEX_BIN", "")
 	require.Equal(t, []string{"nix", "run", codexPackage, "--", "--version"}, codexCommand("--version"))
 	t.Setenv("C2OPS_CODEX_BIN", "/some directory/bin/codex")

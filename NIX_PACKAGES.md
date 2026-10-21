@@ -97,8 +97,11 @@ the compiled payload and its architecture for every Go op.
 
 Nix still fetches the flake repository and its inputs to evaluate package
 definitions. This metadata/source download is separate from the executable
-output downloaded from Cachix. `op.yaml` is the local/Git source manifest and
-uses `go run`; Nix selectors use `op.json` with `command: ["bin/<op>"]`. Use
+output downloaded from Cachix. Go ops' `op.yaml` manifests declare the corresponding
+published op package as their sole dependency and invoke it using
+`nix run github:colony-2/c2ops/published#<op> --`. c2j binds this qualified command
+to the prepared executable; no compilation happens during invocation. Nix selectors
+use `op.json` with `command: ["bin/<op>"]` and no self-dependency. Use
 `nix:github:colony-2/c2ops/published#codex` to select the packaged Codex op.
 
 | Ops | Included in the Nix runtime closure | Additional c2j setup |
@@ -149,9 +152,9 @@ path. Their installed manifests need no external tool dependencies. The
 compatibility experiments; normally the wrapper supplies its Nix store path.
 
 The flake also exports `codex-cli` and `aider-cli`, normal CLI packages for
-source/Git op dependencies. They are not JSON-speaking ops. Their respective
-packaged ops include the same CLI derivations, so publishing the op closures
-also covers these helpers. Source Codex uses the manifest-declared coordinate:
+direct tool use (and Aider's Python source manifest). They are not JSON-speaking
+ops. Their respective packaged ops include the same CLI derivations, so
+publishing the op closures also covers these helpers. For standalone Codex:
 
 ```sh
 nix run github:colony-2/c2ops/published#codex-cli -- --version
@@ -322,9 +325,10 @@ Update Nix inputs with `nix flake update` and commit `flake.lock`. Also update t
 pinned nixpkgs revision in local/Git `op.yaml` dependency references, then
 regenerate the manifests. Check that
 the source manifests' Python attributes still match `pkgs.python3`. Local/Git
-source execution remains available, with explicit tool
-declarations, but still performs Go compilation or uv script library setup at
-invocation time. Aider's source wrapper uses its declared Nix CLI through
+Go manifests run published prebuilt packages, not the checked-out Go files. To
+test local Go edits, build the local flake and select
+`nix:path:/absolute/path/to/c2ops#<op>`. Python source manifests can still perform
+uv script library setup at invocation time. Aider's source wrapper uses its declared Nix CLI through
 `nix run <reference> -- ...`; packaged execution binds that CLI directly.
 
 ## Integration tests and local overrides
@@ -358,6 +362,12 @@ Codex recipes run through the real c2j Nix resolution/setup lifecycle. Their
 harness overrides the flake reference and replaces the model client in a private
 tool binding directory after real dependency setup; the op executable, objects,
 and artifacts remain real. Successful fixtures assert that c2j prepared a Nix package.
+
+The fixture suite also reads every Go `op.yaml`, prepares its declared package
+through c2j, and executes its qualified command from an empty directory with Go
+blocked. These tests check all seven Go ops, including a successful policy check
+and real native Codex version probes. The same test flake override applies to
+both each manifest's dependency and command. Both CI architectures run this suite.
 
 The test harness itself needs Go, Python, uv, Node, pnpm, and Git; `nix develop`
 provides them. Python unit-test libraries may be downloaded by uv. `scripts/with-tools.go`

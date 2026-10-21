@@ -1,8 +1,8 @@
 name: rule_gate
 description: Evaluate deterministic recipe policy rules
-command: ["go", "run", "."]
+command: ["nix", "run", "github:colony-2/c2ops/published#rule_gate", "--"]
 dependencies:
-  - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#go
+  - nix:github:colony-2/c2ops/published#rule_gate
 input_schema:
   type: object
   required: [rules]
