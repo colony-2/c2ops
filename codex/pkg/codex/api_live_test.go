@@ -150,6 +150,7 @@ func TestExternalAPIRunAndResumeSkillWithRepair(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, string(nativeEvents), "output needs repair")
 	require.Contains(t, string(nativeEvents), "repaired proxy-memory-42")
+	requireArtifactOnlyTrace(t, second.ArtifactOutbox, skillOutput.NativeOutput, skillOutput)
 	assertFileContent(t, filepath.Join(second.ArtifactOutbox, "proxy-result.json"), `{"summary":"proxy-memory-42"}`)
 	assertProxyRequests(t, secondAPI, "second-proxy-key", 3)
 	secondConfigs := readConfigEvents(t, second.ArtifactOutbox)

@@ -193,11 +193,7 @@ remain part of the extension protocol.
 | Field | Meaning |
 | --- | --- |
 | `response` | Final answer as a string without a schema, or the validated JSON value with a schema. Null if no answer is available or validation fails. |
-| `response_text` | Original final-answer text, including invalid output for diagnosis. |
-| `events` | Every native JSONL event in order, including all fields, unknown event types, intermediate updates, errors, and repair attempts. |
-| `items` | Latest complete snapshot of each item, in first-seen order. Item IDs are scoped to each turn/invocation. |
-| `terminal_event` | Last attempt's full `turn.completed` or `turn.failed` event, or null if the stream ended early. |
-| `usage` | Last turn's native usage object, including any additional counters Codex emits. Earlier turns' usage remains in `events`. |
+| `usage` | Native cumulative session usage, including resumed turns, repair attempts, and any additional counters Codex emits. Do not sum snapshots for the same session. |
 | `exit_code` | Last CLI process exit code; -1 for a signal or failure without an exit code, null if no process result is available. |
 | `status`, `errorMessage` | Execution/validation result derived by the op, independent of the answer's contents. |
 | `session`, `sessionId` | Durable checkpoint and diagnostic thread ID. Resume with `session`. |
@@ -208,11 +204,18 @@ remain part of the extension protocol.
 
 A completed turn means the CLI finished successfully; it does not establish that
 the requested task was fulfilled. A tool command can fail and Codex can recover
-within the same turn. Inspect item statuses and command exit codes for details.
+within the same turn. Inspect item statuses and command exit codes in
+`stdout.jsonl` for details.
 Transient `error` events are retained but do not override a later successful turn.
 
-**Migration:** use `response_text` in place of `assistantSummary`, or `response`
-for structured answers. The generic op no longer outputs `incompleteReason`,
+**Migration:** use `response` for both plain-text and schema-validated answers.
+`events`, `items`, `response_text`, and `terminal_event` are no longer inline
+output fields in either `codex` or `skill-run`. Read the `stdout.jsonl` artifact
+for the complete trace, including original final-answer text and invalid answers.
+Item snapshots can be reconstructed from its `item.*` events, with IDs scoped
+to each turn. The caller's response schema and `response` value are unchanged.
+
+The generic op no longer outputs `incompleteReason`,
 `incompleteCategory`, or `pendingDependencies`. If a recipe needs semantic task
 status, request those fields in its own response schema with instructions defining
 their meaning, or explicitly configure a status artifact and read `workflow`.
@@ -248,8 +251,8 @@ tool activity switches to schema instructions in the prompt and local validation
 this fallback also consumes a correction attempt. Authentication, process, and
 other execution failures are not retried as schema repairs.
 
-Exhaustion fails the op, leaves `response` null, and retains the raw answer,
-events, validation errors, and stdout/stderr artifacts. A failed op does not
+Exhaustion fails the op, leaves `response` null, and retains validation errors
+inline and the raw answer and full event stream in the stdout/stderr artifacts. A failed op does not
 publish a successor session. Repair prompts ask Codex to correct only its answer;
 a resumed model still has the same tool access as the original invocation.
 
@@ -258,8 +261,18 @@ a resumed model still has the same tool access as the original invocation.
 The pinned CLI emits agent messages, reasoning summaries, command executions
 (including output, status, and exit code), file changes, MCP tool calls,
 collaboration tool calls, web searches, todo/plan updates, and error items.
-These are available through `events` and `items`; the full transcript is also
-retained as `stdout.jsonl` in the outbox. No known event field is filtered out.
+The complete native stream is retained as `stdout.jsonl` in the outbox,
+including intermediate updates, unknown event fields/types, and every repair
+attempt. It is not duplicated in the inline op result. `stderr.txt` and
+`codex-progress.jsonl` remain separate diagnostic artifacts. These artifacts
+are retained on execution and validation failures; failed-task artifact
+upload/visibility depends on the c2j runner. Session checkpoints are unchanged.
+
+`usage` remains inline. It copies the terminal event's cumulative session
+counters, which include prior resumed turns. Summing successive snapshots
+would double-count tokens. Per-invocation usage would require subtracting the
+incoming checkpoint's counters from the final counters; the op does not
+currently expose that delta.
 
 Codex CLI 0.161.0's `exec` mode rejects `request_user_input` and has no dedicated
 question event. A question in an ordinary agent message remains answer text;
@@ -294,8 +307,8 @@ workspace/artifact channels.
 Output repair shares the invocation's private state and publishes only after
 validation finishes. No successful checkpoint is returned for a failed op.
 
-`run_skill` also returns native `events`, `items`, `response`, and execution
-metadata. Its legacy `assistantSummary` output is a compatibility alias for the
+`run_skill` also returns `response` and execution metadata, with the full
+execution trace in `stdout.jsonl`. Its legacy `assistantSummary` output is a compatibility alias for the
 final answer, not a field the model must fill. Its existing artifact validation
 and optional status-contract outputs remain available. `output.from: response`
 selects the final answer for JSON validation (`assistantSummary` remains an

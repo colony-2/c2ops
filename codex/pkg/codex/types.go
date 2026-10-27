@@ -20,15 +20,17 @@ type Dependency struct {
 	RequestedChanges string `json:"requestedChanges"`
 }
 
-// NativeOutput retains Codex's event fields without imposing a model response envelope.
-// Events are lossless JSON objects; Items contains the latest snapshot per item per turn.
+// NativeOutput exposes the final answer and execution summary without imposing
+// a model response envelope. Trace fields stay available to Go callers and the
+// validation/repair logic, but are omitted from JSON output. Their source events
+// are retained unchanged in the stdout.jsonl artifact.
 type NativeOutput struct {
 	Response             json.RawMessage   `json:"response"`
-	ResponseText         string            `json:"response_text"`
-	Events               []json.RawMessage `json:"events"`
-	Items                []json.RawMessage `json:"items"`
+	ResponseText         string            `json:"-"`
+	Events               []json.RawMessage `json:"-"`
+	Items                []json.RawMessage `json:"-"`
 	Usage                json.RawMessage   `json:"usage"`
-	TerminalEvent        json.RawMessage   `json:"terminal_event"`
+	TerminalEvent        json.RawMessage   `json:"-"`
 	ExitCode             *int              `json:"exit_code"`
 	OutputSchemaValid    *bool             `json:"output_schema_valid,omitempty"`
 	OutputSchemaErrors   []string          `json:"output_schema_errors,omitempty"`

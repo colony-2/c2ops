@@ -5,11 +5,12 @@ tests:
     want:
       codex_status: "completed"
       codex_response: "done"
-      codex_response_text: '{"summary":"done"}'
-      codex_terminal: "turn.completed"
+      codex_trace_inline: false
       git_content: "from_inbox=fixture-token"
     wantArtifacts:
       - "__git_state_thin_pack__"
       - "diff_from_parent.diff"
       - "codex-generated.txt"
+      - "stdout.jsonl"
+      - "stderr.txt"
     wantErr: false

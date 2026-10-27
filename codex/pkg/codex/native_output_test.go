@@ -14,6 +14,31 @@ import (
 
 const answerSchema = `{"type":"object","properties":{"answer":{"type":"integer"}},"required":["answer"],"additionalProperties":false}`
 
+func TestPublicOutputDoesNotDuplicateLargeTrace(t *testing.T) {
+	toolOutput := strings.Repeat("large tool output\n", 10000)
+	item, err := json.Marshal(map[string]any{"id": "tool", "type": "command_execution", "aggregated_output": toolOutput})
+	require.NoError(t, err)
+	native := parseStream(t, `{"type":"item.completed","item":`+string(item)+"}\n"+nativeTurn("done")).NativeOutput
+	for name, output := range map[string]any{
+		"codex":     ExecOpOutput{NativeOutput: native, Status: "completed"},
+		"skill-run": SkillRunOutput{NativeOutput: native, Status: "completed"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			encoded, err := json.Marshal(output)
+			require.NoError(t, err)
+			require.Less(t, len(encoded), 2048, "inline size must not grow with trace size")
+			var public map[string]json.RawMessage
+			require.NoError(t, json.Unmarshal(encoded, &public))
+			for _, field := range []string{"events", "items", "response_text", "terminal_event"} {
+				require.NotContains(t, public, field)
+			}
+			require.JSONEq(t, `"done"`, string(public["response"]))
+			require.JSONEq(t, string(native.Usage), string(public["usage"]))
+		})
+	}
+	require.Contains(t, string(native.Items[0]), "large tool output", "Go callers retain diagnostics")
+}
+
 func nativeTurn(answer string) string {
 	item, _ := json.Marshal(map[string]any{"type": "item.completed", "item": map[string]any{"id": "answer", "type": "agent_message", "text": answer}})
 	return "{\"type\":\"thread.started\",\"thread_id\":\"test-session\"}\n{\"type\":\"turn.started\"}\n" + string(item) + "\n{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":4,\"output_tokens\":2}}\n"

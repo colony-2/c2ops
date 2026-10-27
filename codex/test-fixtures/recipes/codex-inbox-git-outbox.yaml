@@ -51,5 +51,4 @@ outputs:
   codex_status: "{{ sequence.codex_apply.outputs.status }}"
   git_content: "{{ sequence.read_git_file.outputs.stdout }}"
   codex_response: "${{ sequence.codex_apply.outputs.response.summary }}"
-  codex_response_text: "${{ sequence.codex_apply.outputs.response_text }}"
-  codex_terminal: "${{ sequence.codex_apply.outputs.terminal_event.type }}"
+  codex_trace_inline: "${{ ['events', 'items', 'response_text', 'terminal_event'].exists(k, k in sequence.codex_apply.outputs) }}"

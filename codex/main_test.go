@@ -53,7 +53,18 @@ exit 1
 			require.NotEmpty(t, result.Output.ErrorMessage)
 			require.Nil(t, result.Output.Session)
 			require.Empty(t, result.Objects)
-			require.FileExists(t, filepath.Join(root, "outbox", "stdout.jsonl"))
+			encoded, err := json.Marshal(result.Output)
+			require.NoError(t, err)
+			var public map[string]json.RawMessage
+			require.NoError(t, json.Unmarshal(encoded, &public))
+			for _, field := range []string{"events", "items", "response_text", "terminal_event"} {
+				require.NotContains(t, public, field)
+			}
+			transcript, err := os.ReadFile(filepath.Join(root, "outbox", "stdout.jsonl"))
+			require.NoError(t, err)
+			for _, event := range result.Output.Events {
+				require.Contains(t, string(transcript), string(event))
+			}
 			if schemaFailure {
 				require.Nil(t, result.Output.Response)
 				require.Equal(t, "not JSON", result.Output.ResponseText)

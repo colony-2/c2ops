@@ -163,22 +163,8 @@ output_schema:
     diagnostics:
       type: object
     response: {}
-    response_text:
-      type: string
-    events:
-      type: array
-      items:
-        type: object
-        additionalProperties: true
-    items:
-      type: array
-      items:
-        type: object
-        additionalProperties: true
     usage:
-      type: [object, "null"]
-      additionalProperties: true
-    terminal_event:
+      description: Native cumulative session token usage, including resumed turns and repair attempts. Do not sum snapshots across invocations of the same session.
       type: [object, "null"]
       additionalProperties: true
     exit_code:

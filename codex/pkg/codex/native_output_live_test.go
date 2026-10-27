@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -42,6 +43,7 @@ func TestNativeRunOutputAndResumeSchema(t *testing.T) {
 	require.NotEmpty(t, output.TerminalEvent)
 	require.Equal(t, 0, *output.ExitCode)
 	require.Nil(t, output.Workflow)
+	requireArtifactOnlyTrace(t, first.ArtifactOutbox, output.NativeOutput, output)
 	encoded, err := json.Marshal(output)
 	require.NoError(t, err)
 	var public map[string]any
@@ -71,6 +73,7 @@ func TestNativeRunOutputAndResumeSchema(t *testing.T) {
 	require.JSONEq(t, `{"answer":42}`, string(repaired.Response))
 	require.Equal(t, 1, repaired.OutputRepairAttempts)
 	require.Equal(t, "native", repaired.SchemaMode)
+	requireArtifactOnlyTrace(t, second.ArtifactOutbox, repaired.NativeOutput, repaired)
 	terminalCount := 0
 	for _, event := range repaired.Events {
 		if strings.Contains(string(event), `"type":"turn.completed"`) {
@@ -96,6 +99,24 @@ func TestNativeRunOutputAndResumeSchema(t *testing.T) {
 		require.NoError(t, err)
 		require.Contains(t, string(history), "native-output-memory")
 	}
+}
+
+func requireArtifactOnlyTrace(t *testing.T, outbox string, native NativeOutput, output any) {
+	t.Helper()
+	encoded, err := json.Marshal(output)
+	require.NoError(t, err)
+	var public map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(encoded, &public))
+	for _, field := range []string{"events", "items", "response_text", "terminal_event"} {
+		require.NotContains(t, public, field)
+	}
+	require.JSONEq(t, string(native.Usage), string(public["usage"]))
+	restored, err := parseJSONL(filepath.Join(outbox, "stdout.jsonl"))
+	require.NoError(t, err)
+	require.Equal(t, native.Events, restored.Events)
+	require.Equal(t, native.Items, restored.Items)
+	require.Equal(t, native.ResponseText, restored.ResponseText)
+	require.Equal(t, native.TerminalEvent, restored.TerminalEvent)
 }
 
 func TestNativeSchemaRejectionFallsBackToPromptAndLocalValidation(t *testing.T) {
