@@ -60,7 +60,8 @@
         "default": "jev-latest"
       },
       "api_key": {
-        "type": "string"
+        "type": "string",
+        "x-secret": true
       },
       "base_url": {
         "type": "string",

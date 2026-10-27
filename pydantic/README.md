@@ -108,7 +108,7 @@ sequence:
       default_provider: openai
       default_model: gpt-4.1
       api_keys:
-        openai: "${{ secrets.openai_api_key }}"
+        openai: "${{ context.secrets.openai_api_key }}"
       prompt: Review these files and propose a patch plan.
       files:
         - path: README.md
@@ -126,7 +126,7 @@ sequence:
       default_provider: openai
       default_model: gpt-4.1
       api_keys:
-        openai: "${{ secrets.openai_api_key }}"
+        openai: "${{ context.secrets.openai_api_key }}"
       prompt: Review these files and propose a patch plan.
 ```
 

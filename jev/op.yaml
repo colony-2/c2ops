@@ -31,6 +31,7 @@ input_schema:
       default: jev-latest
     api_key:
       type: string
+      x-secret: true
     base_url:
       type: string
       description: API origin override (SDK adds /v1/systemone)

@@ -24,6 +24,16 @@
       },
       "env": {
         "type": "object",
+        "properties": {
+          "OPENAI_API_KEY": {
+            "type": "string",
+            "x-secret": true
+          },
+          "ANTHROPIC_API_KEY": {
+            "type": "string",
+            "x-secret": true
+          }
+        },
         "additionalProperties": {
           "type": "string"
         }

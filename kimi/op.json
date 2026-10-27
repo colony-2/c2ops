@@ -30,6 +30,12 @@
       },
       "env": {
         "type": "object",
+        "properties": {
+          "KIMI_MODEL_API_KEY": {
+            "type": "string",
+            "x-secret": true
+          }
+        },
         "additionalProperties": {
           "type": "string"
         }

@@ -36,6 +36,9 @@ You can provide provider-specific environment variables through the op input `en
 - `AIDER_MODEL`
 - `OPENAI_API_BASE`
 
+`env.OPENAI_API_KEY` and `env.ANTHROPIC_API_KEY` are secret inputs: pass
+`context.secrets` references for them. Model names and URLs remain ordinary strings.
+
 ## Inputs
 
 This op accepts the same main fields as `codex.exec`:
@@ -77,7 +80,7 @@ sequence:
       prompt: Fix the failing unit tests in this repository.
       model: sonnet
       env:
-        ANTHROPIC_API_KEY: "${{ secrets.anthropic_api_key }}"
+        ANTHROPIC_API_KEY: "${{ context.secrets.anthropic_api_key }}"
       workdir_path: "{{ context.environment.op.workdir }}"
       worktree_path: "{{ context.environment.op.worktree_path }}"
       artifact_outbox_path: "{{ context.environment.op.outbox }}"
@@ -93,7 +96,7 @@ sequence:
       prompt: Fix the failing unit tests in this repository.
       model: sonnet
       env:
-        ANTHROPIC_API_KEY: "${{ secrets.anthropic_api_key }}"
+        ANTHROPIC_API_KEY: "${{ context.secrets.anthropic_api_key }}"
       worktree_path: "{{ context.environment.op.worktree_path }}"
 ```
 
@@ -107,7 +110,7 @@ sequence:
       sessionId: "${{ sequence.apply_fix.outputs.sessionId }}"
       prompt: Continue and summarize what changed.
       env:
-        ANTHROPIC_API_KEY: "${{ secrets.anthropic_api_key }}"
+        ANTHROPIC_API_KEY: "${{ context.secrets.anthropic_api_key }}"
       worktree_path: "{{ context.environment.op.worktree_path }}"
 ```
 

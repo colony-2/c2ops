@@ -17,7 +17,7 @@ sequence:
       artifact_outbox_path: "{{ context.environment.op.outbox }}"
       env:
         KIMI_MODEL_NAME: kimi-for-coding
-        KIMI_MODEL_API_KEY: "${{ secrets.kimi_api_key }}"
+        KIMI_MODEL_API_KEY: "${{ context.secrets.kimi_api_key }}"
         KIMI_MODEL_BASE_URL: https://api.kimi.com/coding/v1
 ```
 
@@ -35,6 +35,9 @@ by the wrapper. To use an existing Kimi login or `config.toml`, explicitly set
 not automatically read by this version of Kimi; use `KIMI_MODEL_*` as above or
 configure `api_key_env` in Kimi's config. See the upstream
 [environment reference](https://moonshotai.github.io/kimi-code/en/configuration/env-vars).
+
+`env.KIMI_MODEL_API_KEY` is a secret input and requires a `context.secrets`
+reference. Other environment settings remain ordinary strings.
 
 Outputs include `status`, `sessionId`, `assistantSummary`, `exitCode`, and error
 information. The outbox contains raw `stdout.jsonl` and `stderr.txt`; it defaults

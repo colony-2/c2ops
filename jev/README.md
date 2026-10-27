@@ -11,7 +11,7 @@ sequence:
   - id: triage
     op: nix:github:colony-2/c2ops/published#jev
     inputs:
-      api_key: "${{ secrets.typesafe_api_key }}"
+      api_key: "${{ context.secrets.typesafe_api_key }}"
       state:
         ticket: I was charged twice. Please refund the duplicate charge today.
       questions:
@@ -45,7 +45,8 @@ The JSON output envelope contains `model`, `answers`, and `usage` from the SDK,
 without converting probabilities to booleans or discarding confidence scores.
 `model` defaults to `jev-latest`; use an explicit model version when you need
 stable thresholds. `api_key` takes precedence over `TYPESAFE_API_KEY`. Recipes
-should pass the key explicitly rather than depend on worker environment setup.
+should pass a `context.secrets` reference for `api_key`; the manifest marks this
+field with `x-secret: true`, so c2j resolves it only at execution time.
 `base_url` overrides the API origin for proxies/testing (the SDK adds
 `/v1/systemone`). `timeout_seconds` is optional; omitted or null disables the
 HTTP client timeout. A positive value sets the timeout per HTTP operation; SDK

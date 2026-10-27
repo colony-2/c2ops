@@ -23,6 +23,7 @@ input_schema:
       type: object
       additionalProperties:
         type: string
+        x-secret: true
     temperature:
       type: number
     max_tokens:

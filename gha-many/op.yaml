@@ -27,6 +27,7 @@ input_schema:
             type: object
             additionalProperties:
               type: string
+              x-secret: true
           backend:
             type: string
           runner_image:

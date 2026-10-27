@@ -30,7 +30,8 @@
       "api_keys": {
         "type": "object",
         "additionalProperties": {
-          "type": "string"
+          "type": "string",
+          "x-secret": true
         }
       },
       "temperature": {

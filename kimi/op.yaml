@@ -21,6 +21,10 @@ input_schema:
       type: string
     env:
       type: object
+      properties:
+        KIMI_MODEL_API_KEY:
+          type: string
+          x-secret: true
       additionalProperties:
         type: string
     skills_dirs:
