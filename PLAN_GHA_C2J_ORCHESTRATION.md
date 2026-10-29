@@ -4,6 +4,12 @@ Status: proposed implementation plan, 2026-10-29. This document changes no runti
 behavior. All new op names, `backend: c2j`, runner profiles, and composite-op
 interfaces below are proposed contracts, not currently usable configuration.
 
+Agreed scope: populate workflow metadata from c2j and pass named credentials
+through c2j secrets. GitHub OIDC is explicitly unsupported for this implementation.
+Extend the generic execution contract to select VM isolation and, when needed,
+hardware-accelerated nested virtualization. Section 5.3 proposes the names and
+matching semantics; those fields are not implemented in the inspected c2j version.
+
 ## 1. Decision and scope
 
 Use c2j's workflow primitives to own workflow lifetime, dependencies, parallel
@@ -277,12 +283,118 @@ The selected profile must supply the correct environment in both cases.
 
 Execution needs does not currently describe arbitrary capabilities such as a
 Docker daemon, privileged mounts, GPU devices, or network policy. An image alone
-does not guarantee them. Use provisioner-supported profiles/capabilities and
-preflight checks; do not invent unsupported `execution_needs.docker` fields.
-If the provisioner cannot express a required capability, that is a separate
-generic execution-contract gap to resolve.
+does not guarantee them. The planned VM/capability extension below addresses
+Docker and nested guests through the same execution-needs mechanism. Until that
+contract is implemented, use verified provisioner profiles; do not submit the
+proposed fields to existing workers or fall back to an unsuitable environment.
 
-### 5.3 Cross-platform package resolution is a release gate
+### 5.3 Proposed VM isolation and capabilities contract
+
+Keep the execution boundary separate from facilities available inside it.
+Recommend two new top-level fields in `execution_needs`:
+
+```yaml
+# Proposed generic c2j fields, not current syntax.
+execution_needs:
+  platform: linux/amd64
+  isolation: vm
+  capabilities: [docker, nested_virtualization]
+  resources:
+    cpu: '8'
+    memory: 16Gi
+    ephemeral-storage: 100Gi
+```
+
+`isolation` selects the boundary; `capabilities` is a set of positive requirements.
+Avoid a combined enum such as `vm-with-docker-and-nested-vms`: the two capabilities
+can be needed independently. Proposed initial values are:
+
+| Field/value | Required behavior |
+| --- | --- |
+| `isolation: container` | At least the existing isolated task-container boundary. A task-scoped VM is also an acceptable allocation when it supplies the same task environment; this request does not promise a task-owned guest kernel or require a particular packaging mechanism. |
+| `isolation: vm` | A fresh or equivalently reset, task-scoped VM boundary with its own guest kernel. The worker may execute directly in the guest or in a container inside that task's VM. A shared VM containing many unrelated task containers does not satisfy this request. |
+| `capabilities: [docker]` | A usable, job-scoped Docker Engine API supporting the adapter's build/run/network/volume requirements, reachable from the actual job context. A Docker CLI alone is insufficient. The engine and its containers must respect the allocation's isolation and resource contract. |
+| `capabilities: [nested_virtualization]` | The task can launch hardware-accelerated guests inside its allocated VM, with usable virtualization devices and permissions from the actual job context. This initially promises one additional guest level, not arbitrary recursive nesting. |
+
+Examples of demand, rather than separate backend implementations:
+
+| Workload | Isolation | Capabilities |
+| --- | --- | --- |
+| Ordinary shell/Node build | Existing container default | None |
+| `docker build`, Docker actions, or service containers on a VM | `vm` | `docker` |
+| QEMU/KVM guest tests inside a VM | `vm` | `nested_virtualization` |
+| A Docker-based test harness that starts accelerated guests | `vm` | Both |
+
+Docker workloads do not inherently need nested hardware virtualization. The
+`docker` capability supplies a functioning container engine; the nested capability
+is for launching accelerated VMs from a VM. On Linux/KVM this requires suitable
+host/guest configuration and working device access, not just a QEMU executable
+or a visible CPU flag. Providers must qualify each platform independently; an
+AMD64 result is not evidence of ARM64 support. [KVM nested-guest model](https://docs.kernel.org/virt/kvm/x86/running-nested-guests.html)
+
+Matching and scope rules:
+
+- Omitted isolation keeps existing placement behavior; it does not request a VM.
+  An explicit VM requirement must never silently degrade to a shared container.
+- `nested_virtualization` requires an effective `isolation: vm` in this initial
+  contract. Other hardware-virtualization arrangements can get a separate
+  capability later instead of overloading the meaning of nesting.
+- Omitted/empty capabilities mean no additional requirement. Normalize names,
+  deduplicate, and reject unknown values. Use registered capability names rather
+  than arbitrary labels that workers can interpret inconsistently.
+- Capabilities accumulate within inherited scopes; an inner node can add a need,
+  and leaving that scope restores the parent's set. An empty list does not clear
+  inherited requirements. A sibling has its own effective demand. Reject
+  contradictory effective requests, including nested virtualization without an
+  effective explicit VM request, rather than dropping a capability.
+- Isolation selection follows the existing requirement-overlay precedence;
+  capabilities combine by set union. Apply compatibility validation after all
+  recipe/node and explicit job overrides are combined. The coordinator must not
+  impose a container override on a child that is meant to request a VM.
+- The trusted provisioner reports actual isolation and **verified available**
+  capabilities in the allocation. Matching requires every requested capability;
+  unknown allocation facts cannot satisfy an explicit requirement. An image tag,
+  requested demand, or installed binary is not proof of availability.
+- Preserve the current successful-task/replay boundary: a new need yields before
+  unfinished execution; completed tasks do not need their old VM recreated.
+- Distinguish an unsupported request from supported capacity that is temporarily
+  unavailable. Neither should result in a worker repeatedly accepting and yielding
+  the same incompatible lease.
+
+Keep `image`'s existing meaning as the task's software environment. Do not
+silently reinterpret an OCI reference as a VM disk image. A provisioner can boot
+a compatible guest and run that task image inside it. VM boot image, kernel, and
+hypervisor selection belong to provisioner profiles initially; tests requiring
+a particular guest kernel will need an explicit additional contract. Report the
+actual boundary and task image separately in allocation provenance.
+
+Resource minima describe capacity usable by the task and its subordinate
+containers/VMs together, after provisioning overhead. They are not a promise of
+the same memory/CPU separately for every nested guest. Storage must account for
+build layers and guest disks. Worker teardown must terminate guest VMs and
+containers even if the executor crashes; c2j checkpoints do not preserve a live
+hypervisor or arbitrary VM RAM across handoff.
+
+The provisioner configures the engine, virtualization exposure, permissions,
+mounts, and networking before reporting the capability ready. Do not try to
+enable nesting by calling `modprobe` on an unqualified shared worker from an
+ordinary workflow step. A task container inside its own VM must actually receive
+the required engine/device access; the outer VM being capable is not enough.
+
+This is generic c2j/provisioner work, not a GHA-specific backend. Implementation
+must update requirement/allocation schemas, validation, overlays, template
+resolution, demand digests and snapshots, task guards, handoff, CLI/API handling,
+and provisioner admission. Version the changed contracts so older consumers
+reject unsupported demands rather than ignore their fields.
+
+Qualification tests must include an ordinary VM job, a real Docker build/run,
+service networking and cleanup, and a small nested guest boot using an explicitly
+hardware-accelerated mode with software-emulation fallback disabled. Also test
+missing/denied device access, per-platform capability mismatch, resource pressure,
+worker cancellation, and teardown of orphaned child VMs/containers. Test these in
+the final task context, including the container-in-VM arrangement if used.
+
+### 5.4 Cross-platform package resolution is a release gate
 
 Our extension guide currently warns that Nix metadata inspection and execution
 need compatible platforms. Confirm the current implementation's behavior with
@@ -373,10 +485,21 @@ reference string.
 
 `GITHUB_TOKEN` is a supplied credential, not an automatically minted GitHub
 installation token. `permissions:` cannot reduce a PAT's actual privileges.
-Either integrate an issuer that enforces requested permissions, or document and
-validate the pre-scoped token mode. Do not claim permission enforcement just
-because act accepts the YAML. OIDC and environment approvals require additional
-services and are outside initial support.
+For this implementation, use pre-scoped credentials supplied as named c2j
+secrets and populate the expected `secrets.GITHUB_TOKEN`/`github.token` contexts.
+Document the credential's actual scope; do not claim permission enforcement just
+because act accepts the YAML. A GitHub App token issuer can be added separately
+later. Repository, commit, branch, actor, and local run metadata come from the
+recorded c2j context as described in section 7.1.
+
+**GitHub OIDC is explicitly unsupported.** Reject `id-token: write` requests
+during preflight with a specific unsupported-feature error. Do not advertise an
+OIDC endpoint or manufacture GitHub-signed identity. If an action attempts OIDC
+without a detectable declaration, return a clear unsupported-operation error.
+Workflows needing cloud access must use bound credentials or an already supported
+non-OIDC authentication method. OIDC is not a prerequisite for shipping this
+backend. Protected GitHub environments/approvals also remain outside initial
+support.
 
 Worker artifact-service tokens are separate from GitHub credentials. Never
 expose c2j/JobDB service credentials to workflow steps. The artifact adapter gets
@@ -721,6 +844,8 @@ Keep implementation changes out of this planning commit.
 
 - Verify the current c2j composition, secret-forwarding, child lifecycle,
   allocation, and Nix handoff APIs against main.
+- Specify and qualify the proposed VM/capability demands with the execution
+  provisioner; require explicit supported allocations for Docker/nested-VM tests.
 - Prototype one ordinary job via the exported act API, then a downstream job
   consuming injected outputs/results without executing its prerequisite.
 - Prove explicit matrix selection, job failure detection, host mode, and cleanup.
@@ -781,6 +906,8 @@ Acceptance: an unrelated slow sibling does not delay a ready downstream job;
 false job conditions do not allocate workers; dynamic matrices consume prior
 outputs; cancellations reach workers; tolerated failures and status functions
 match fixtures; no duplicate child submission after controller restart.
+VM profiles must also pass their Docker/nested-guest qualification tests before
+the corresponding workflow capabilities are advertised.
 
 ### M5: Expose the composite entry point and document compatibility
 
@@ -796,13 +923,16 @@ secret stores; existing local/GitHub backend tests remain passing.
 
 ### Later compatibility work
 
-Reusable workflows, cross-workflow concurrency groups, OIDC/permission-aware
-token issuance, protected environments, shared live artifact discovery,
+Reusable workflows, cross-workflow concurrency groups, permission-aware token
+issuance, protected environments, shared live artifact discovery,
 cross-run downloads, Actions cache protocol, and non-Linux runners each require
 explicit support and tests. Reject unsupported job-level constructs before
 starting a partially understood workflow. Keep a supported-feature matrix and
 compare representative cases with native GitHub runs where semantic ambiguity
 cannot be settled by unit tests.
+
+GitHub OIDC remains unsupported unless a separate future design changes that
+decision; it is not an uncompleted milestone of this plan.
 
 ### CI placement
 
@@ -829,9 +959,13 @@ Never silently skip the required release gate when provisioning is unavailable.
 | GHA dependency and expression semantics | No | Planner/reducer and per-job act context adapter. |
 | Named GHA secrets | Existing secret resolution supplies values | Preserve references through composition and map names at the final worker. |
 | Files and outputs crossing workers | Existing c2j artifacts/objects supply storage | Actions protocol/catalog bridge and explicit output mapping. |
-| Docker/services/GPU/network privileges | Not merely an image/platform field | Provisioner capabilities, profile validation, and suitable isolation. |
+| Task-scoped VM isolation | Proposed `isolation: vm` | Generic schema/matching support and qualified VM provisioner. |
+| Docker builds/actions/services | Proposed `capabilities: [docker]` | A reachable job-scoped engine with working networking/mounts. |
+| Accelerated VMs inside a VM | Proposed `capabilities: [nested_virtualization]` | Hardware/provisioner support and qualification in the actual task context. |
+| GPU and other device/network privileges | Not covered by the initial capability set | Additional generic execution contracts when needed. |
 | Cancellation and retry correctness | c2j supplies lifecycle mechanisms | Propagate into act and external processes; preserve GHA conclusions. |
-| GitHub tokens, OIDC, approvals, API services | No | Explicit integrations or documented unsupported features. |
+| GitHub API credentials | Existing c2j secrets | Named binding of pre-scoped credentials; no automatic GitHub-issued token. |
+| GitHub OIDC and protected environment approvals | No | Explicitly unsupported in this implementation. |
 
 The major infrastructure is already present. The project should concentrate on
 exposing each job to those primitives and preserving meaning across the
