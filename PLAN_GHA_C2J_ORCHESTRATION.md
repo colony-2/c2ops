@@ -2,13 +2,17 @@
 
 Status: proposed implementation plan, 2026-10-29. This document changes no runtime
 behavior. All new op names, `backend: c2j`, runner profiles, and composite-op
-interfaces below are proposed contracts, not currently usable configuration.
+interfaces, source selection, and event metadata below are proposed contracts,
+not currently usable configuration.
 
 Agreed scope: populate workflow metadata from c2j and pass named credentials
 through c2j secrets. GitHub OIDC is explicitly unsupported for this implementation.
 Extend the generic execution contract to select VM isolation and, when needed,
 hardware-accelerated nested virtualization. Section 5.3 proposes the names and
 matching semantics; those fields are not implemented in the inspected c2j version.
+Callers can explicitly select push-style or PR-style evaluation without creating
+a GitHub pull request. Section 7.1 defines the event/branch contract separately
+from the source revision actually tested.
 
 ## 1. Decision and scope
 
@@ -49,6 +53,8 @@ missing facility in this pinned version is still missing upstream.
 | c2j has sequences, state machines, `child_group`, catches, retry metadata, object checkpoints, and node execution needs. | Reuse these mechanisms for durable orchestration and transfer. |
 | `RunContext.Executor()` is exported; a manually constructed `model.Plan` can contain one run. | An executor adapter can use upstream Go APIs without initially forking act. |
 | `PlanJob(id)` includes prerequisite jobs. | It is not an API for executing only one externally scheduled job. |
+| `WorkflowPlanner` returns public `Plan`, `Stage`, and `Run` structures; each run retains its workflow/job model. | Reuse upstream parsing/planning and translate the job's `Needs()` edges into the durable c2j graph. |
+| `PlanEvent(name)` selects by event name, without evaluating branch/path/activity filters. | Event selection alone is insufficient; the adapter must evaluate supported trigger filters. |
 | act's `needs` context reads dependency jobs' `Outputs` and `Result` from the workflow model. | We can populate these fields from durable c2j results before executing a downstream job. |
 
 Sources: [current local backend](gha/pkg/gha/act_backend.go),
@@ -136,6 +142,56 @@ If the wrapper needs a generated recipe with per-secret scalar declarations,
 compile it through this trusted composition boundary and record its digest.
 Never execute arbitrary recipe text returned by a shell step or build artifact.
 
+### 3.3 Reuse act's planner through an adapter
+
+The existing public boundary is useful, but it is not a scheduler-provider hook.
+In the pinned act version, `model.WorkflowPlanner` exposes `PlanEvent`, `PlanJob`,
+`PlanAll`, and `GetEvents`. Its `Plan` contains sequential `Stage` values, each
+containing parallel `Run` values. `Run.Job().Needs()` exposes the original
+dependency IDs. The separate `runner.Runner` interface exposes only
+`NewPlanExecutor(*model.Plan) common.Executor`; its implementation constructs
+local execution pipelines internally. There is no configuration callback for
+replacing each scheduled job with a remote c2j submission.
+
+Use the following composition:
+
+```mermaid
+flowchart LR
+    W[Workflow YAML] --> P[act WorkflowPlanner]
+    P --> A[c2ops plan adapter]
+    A --> C[Durable c2j graph and child tasks]
+    C --> J[act single-job executor on each worker]
+    J --> R[Recorded results and artifacts]
+    R --> C
+```
+
+The adapter consumes the upstream plan as data. It deduplicates runs by workflow
+identity and job ID, reads each job's actual `needs` edges, and records those in
+`WorkflowPlan/v1`. Reuse act's expression and matrix facilities where their
+semantics fit, behind the version-pinned adapter. We do not need to replace the
+YAML parser or fork act to prove this approach.
+
+Do not convert every act stage into a c2j wait-all barrier. For example, if `a`
+and `b` are independent and `c` needs only `a`, finishing `a` should make `c`
+eligible even while `b` runs. Stage order is useful for inspecting the static
+plan; original dependency edges determine c2j readiness.
+
+The plan is not a fully evaluated execution graph. Trigger filters, job
+conditions, dependency-driven matrices, runner profiles, and failure/cancellation
+semantics still require the reducer and context bridges below. In particular,
+`PlanEvent("pull_request")` alone does not enforce `branches`, `paths`, or `types`.
+Evaluate the trigger gate before scheduling children, and evaluate later
+conditions/matrices as their required dependency results become available.
+
+Implementing our own Go `runner.Runner` is technically possible, but its
+process-oriented executor return type does not itself provide durable c2j
+submission/wait/replay. Prefer an explicit plan-to-recipe adapter and the generic
+composition boundary in section 3.2. Do not invoke act's whole-plan executor on
+the controller and attempt to intercept its goroutines.
+
+Verified against the public [planner/model API](https://github.com/nektos/act/blob/v0.2.89/pkg/model/planner.go)
+and [runner implementation](https://github.com/nektos/act/blob/v0.2.89/pkg/runner/runner.go).
+
 ## 4. Workflow graph and transitions
 
 ### 4.1 Durable records
@@ -144,7 +200,7 @@ Define versioned JSON contracts, with schemas and example fixtures:
 
 | Record | Required information |
 | --- | --- |
-| `WorkflowPlan/v1` | Source/workflow digests; effective event and typed inputs; logical jobs and edges; retained GHA expressions; runner-profile mapping; action references; compatibility policy and adapter version |
+| `WorkflowPlan/v1` | Source/workflow digests; normalized event snapshot/digest, simulation provenance, and trigger decision; typed inputs; logical jobs and edges; retained GHA expressions; runner-profile mapping; action references; compatibility policy and adapter version |
 | `WorkflowState/v1` | Run identity; logical-job and instance states; accepted result refs; child IDs; scheduler decisions; cancellation state; artifact catalog revision |
 | `JobInvocation/v1` | Plan ref; logical job ID; canonical matrix assignment; instance/attempt IDs; selected execution profile; source snapshot ref; dependency results; artifact catalog view |
 | `JobResult/v1` | Instance/attempt IDs; raw and effective conclusions; step summaries; exported string outputs; artifact refs; diagnostics; execution provenance |
@@ -519,6 +575,7 @@ access within the execution's existing tenant/run authorization.
 | `with` | `inputs` and event inputs | Validate against workflow input definitions; preserve booleans/numbers where the selected event supports them. |
 | Proposed `vars` | `vars` | Resolve c2j config in a dedicated setup task; record the public snapshot used by this run. |
 | `env` | Workflow-wide environment overlay | String values; define precedence and prevent overriding framework identity/runtime endpoints accidentally. |
+| Proposed `event` | Trigger selection, `github` context, and event payload | Normalize once against source metadata; record public values and distinguish simulation from real GitHub identity. |
 | `secrets` | `secrets` | Resolve only for the live executing child; never snapshot values in the plan. |
 
 If public config controls matrices, profiles, or other routing, first materialize
@@ -559,8 +616,146 @@ that a local run exists on github.com.
 Construct `github`, `inputs`, `matrix`, `strategy`, `runner`, and `needs` contexts
 consistently for every job. `runner.arch` must describe the executing allocation.
 `GITHUB_RUN_ID` is shared across jobs; run attempt and internal task retry are
-separate concepts. Begin with `workflow_dispatch` and an explicit event payload;
-do not synthesize push/PR semantics from an unrelated recipe invocation.
+separate concepts. Default to `workflow_dispatch`; callers may explicitly select
+`push` or `pull_request` evaluation. Do not infer a PR merely from a non-default
+branch or a recipe's name.
+
+#### Caller-selected event and branch metadata
+
+Proposed invocation for running PR-only checks without an actual GitHub PR:
+
+```yaml
+# Proposed backend/composition contract, not currently implemented.
+op: nix:github:colony-2/c2ops/published#gha
+inputs:
+  backend: c2j
+  workflow: .github/workflows/ci.yml
+  source:
+    mode: prepared
+  event:
+    name: pull_request
+    action: synchronize
+    pull_request:
+      head: {ref: feature/parser}
+      base: {ref: main}
+```
+
+For push-style evaluation, use `event: {name: push, ref: refs/heads/main}`.
+`event.name` chooses the context presented to the workflow, not a GitHub API
+operation. These invocations create no PR, push, check suite, or GitHub run.
+They belong to the proposed c2j backend; the existing GitHub backend dispatches
+a real `workflow_dispatch` and must reject incompatible event overrides.
+
+| Proposed input | Contract |
+| --- | --- |
+| `source.mode` | `prepared` uses the frozen c2j worktree; `remote` explicitly fetches and freezes a revision before planning. Default: `prepared`. |
+| `source.ref` | Required in remote mode; a branch, tag, or commit resolved once in the recorded source repository. Reject in prepared mode rather than ignoring it. Changing event metadata alone never checks out another revision. |
+| `event.name` | Initially `workflow_dispatch`, `push`, or `pull_request`; default `workflow_dispatch`. Reject other selected events until implemented. |
+| `event.ref` | Full branch/tag ref for dispatch or push; default from a known source ref. Require an explicit value when the snapshot has no suitable ref. Reject for PR mode, whose execution ref is derived below. |
+| `event.action` | PR activity type, exposed as `github.event.action`; default `synchronize`. Initially support `opened`, `reopened`, and `synchronize`; other activities need explicit compatibility work. Reject on dispatch/push. |
+| `event.pull_request.head.ref` / `.base.ref` | Required short branch names for PR evaluation. These populate `github.head_ref`, `github.base_ref`, and the corresponding payload fields. Reject PR fields on other events. |
+| `event.pull_request.number` | Optional real PR number supplied by the caller; normalize both payload `number` and `pull_request.number`. Omit when there is no PR; never invent a GitHub number or URL from a c2j ID. Supplying metadata does not verify a PR's existence. |
+| `event.changed_files` | Optional complete repository-relative path list for trigger filtering. Omitted means unknown; an explicit empty list means known no changes. Preserve that distinction. |
+| `event.payload` | Optional public supplemental webhook-shaped data, such as labels or actor metadata. Validate size/types; reject conflicting normalized identity fields instead of letting arbitrary JSON override source/event identity. |
+
+These values may be bound from recipe inputs or c2j config. They are ordinary
+public input data, never a place for API keys. `with` remains the dispatch-input
+binding, validated against declared inputs; reject nonempty `with` for the
+initial push/PR modes rather than inventing dispatch inputs for those events.
+
+Normalize one immutable event record before planning. Derive all copies of
+`github.event_name`, `github.ref`, `github.sha`, head/base refs, event payload,
+and `GITHUB_*` identity variables from it. Materialize the same event JSON at
+each worker's `GITHUB_EVENT_PATH`; the absolute path may differ across workers.
+Protect those fields from contradictory `env` overrides. Use the repository's
+actual recorded default branch for `repository.default_branch`, independently
+of the selected event branch. Record caller overrides and simulation provenance
+alongside the event so diagnostics explain exactly what each condition saw.
+
+#### Workflow triggers versus job and step conditions
+
+There are two gates. First, evaluate the workflow's `on` declaration against the
+selected event, including supported activity/branch/tag/path filters. Then use
+GHA expressions for job and step `if` conditions with the same normalized
+context. `pull_request.branches` matches the **base** branch; a head-branch
+condition uses `github.head_ref`. Preserve filter glob ordering/negation and
+the conjunction of branch and path restrictions. [Trigger filter syntax](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax)
+
+For example, this workflow selects the relevant job without requiring a PR to
+exist on GitHub:
+
+```yaml
+name: Event-specific checks
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+jobs:
+  review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    steps:
+      - run: ./scripts/check-pr.sh
+  main_checks:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    steps:
+      - run: ./scripts/check-main.sh
+```
+
+The PR invocation above runs `review`; a simulated push to main runs
+`main_checks`. A push to a feature branch skips the workflow at its trigger
+gate. There is no implicit bypass just because a recipe explicitly invoked the
+op. Return a compact trigger decision and workflow conclusion `skipped`, with
+no child allocations or job-secret resolution, when filters do not match.
+Job-condition skips remain ordinary `needs` results as described in section 4.
+
+When path filters matter, use the caller's explicit changed-file set or compute
+and record it from pinned comparison commits: push before/after comparison or
+PR merge-base-to-head comparison. Record the comparison provenance. Fail
+preflight if required history is unavailable and no explicit list was supplied;
+unknown changes must not become an empty list that silently skips CI. GitHub's
+server-side diff limits/fallbacks and new/deleted-ref cases require separate
+compatibility fixtures; reject unsupported cases rather than assuming every
+event is an ordinary branch update.
+
+#### Source and simulated PR limitations
+
+The initial simulated PR mode tests the prepared **head snapshot**. Its
+`github.sha` and `pull_request.head.sha` identify that snapshot's commit,
+including a recorded synthetic commit if needed. Derive them rather than
+accepting a conflicting SHA in supplemental payload data. Resolve and record a
+base SHA if available or required for a comparison; never substitute the head
+SHA for an unknown base. A claimed remote revision must be verified by source
+preparation, independently of branch labels used for simulated conditions.
+
+Use a local execution ref `refs/c2j/pull/<run-id>/head`, materialized against the
+head snapshot in each worktree. For this custom namespace, define `ref_name` as
+`c2j/pull/<run-id>/head` and leave `ref_type` empty. The adapter must supply these
+values consistently rather than let act infer a nonexistent GitHub merge ref
+or fall back to the base branch. This deliberate compatibility difference keeps
+PR evaluation distinct from a push to main; event/head/base conditions work,
+but actions requiring a GitHub merge ref need additional support.
+
+Native GitHub open-PR runs normally test a merge ref/commit. We do not claim
+that behavior when testing only the head. A future explicit merge mode must
+prepare a real merge snapshot, handle conflicts, and record both parents and
+the tested commit. Merely changing `github.ref` cannot supply merge testing.
+[GitHub PR ref and commit semantics](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request)
+
+Actions that comment on or query a real PR still need a real PR number,
+repository, API access, and supplied credentials. Metadata simulation supplies
+none of those services or permissions. Do not derive secret access from
+`event.name`, labels, actors, or caller-supplied fork metadata; the c2j caller's
+explicit secret bindings remain authoritative. Reject selecting
+`pull_request_target` initially rather than treating it as ordinary PR mode.
+
+The normalized event, trigger decision, source revision, and context adapter
+version are part of the plan's identity. Replay and all ARM/AMD children reuse
+them; a new branch/event selection requires a new workflow invocation.
+
+#### Checkout and action resolution
 
 Define checkout behavior explicitly. A c2j synthetic commit may not be fetchable
 from GitHub. Support a prepared-source mode for the current snapshot and an
@@ -763,6 +958,8 @@ Retain existing top-level `status`, `exit_code`, `duration_seconds`, `workflow`,
 and `jobs` fields where compatible. Add a versioned result projection:
 
 - Stable workflow/run identity and source/plan provenance.
+- Selected event/ref, simulation marker, and trigger match/reason; an explicit
+  workflow conclusion distinguishes a filtered invocation from executed success.
 - Per-job/instance conclusion, effective result, timing, and declared job outputs.
 - A compact matrix assignment and child-job identifier for tracing.
 - Explicit top-level export mappings for selected job outputs. Standalone
@@ -848,6 +1045,8 @@ Keep implementation changes out of this planning commit.
   provisioner; require explicit supported allocations for Docker/nested-VM tests.
 - Prototype one ordinary job via the exported act API, then a downstream job
   consuming injected outputs/results without executing its prerequisite.
+- Consume the public planner output and original `Needs()` edges; prove which
+  trigger/condition work remains outside the planner, without a scheduler hook.
 - Prove explicit matrix selection, job failure detection, host mode, and cleanup.
 - Confirm artifact server startup/readiness and the chosen v4 action protocol.
 - Produce focused c2j feature requests only for gaps still present upstream.
@@ -860,6 +1059,8 @@ explicitly; a failed step never becomes a successful job due to a nil Go error.
 
 - Add versioned schemas, deterministic IDs, source/context binding, and the
   executor adapter in shared Go code.
+- Normalize explicit dispatch/push/PR inputs; evaluate trigger filters and
+  preserve the event snapshot across planner, worker, and replay boundaries.
 - Implement named secret input schemas, masking, output collection, and result
   normalization. Do not add implicit execution timeouts.
 - Package the helper for both architectures using the existing Nix/Cachix CI.
@@ -881,6 +1082,9 @@ Acceptance: upload on one disposable worker, destroy it, download on another;
 compare contents/digests; test duplicate names, glob downloads, overwrites,
 missing artifacts, failed jobs with diagnostic uploads, partial uploads, path
 traversal, container reachability, and artifact-token isolation.
+Source tests also cover explicit remote branch selection, frozen revisions,
+prepared-source event overrides that leave code unchanged, and PR head snapshots
+that are never silently replaced by a default-branch checkout.
 
 ### M3: Compose the static three-job workflow in c2j
 
@@ -893,6 +1097,12 @@ Acceptance: ARM and AMD tasks genuinely run on matching native allocations;
 `uname`/runtime evidence is captured; combine starts only when eligible and sees
 both artifacts. An AMD parent does not accidentally force ARM work onto AMD.
 Replay does not reexecute completed tasks or re-fetch their secrets/packages.
+Run the same workflow with PR-to-main, push-to-main, and push-to-feature metadata;
+assert the selected/skipped jobs and trigger decision. Cover activity filters,
+head versus base branches, path-filter unknown versus empty sets, contradictory
+payloads, absent real PR numbers, and unsupported selected event types. Assert
+identical event identity in expressions, environment, and event files across
+architectures, retries, and replay; filtered workflows allocate no job workers.
 
 ### M4: Generalize dependency scheduling and matrix semantics
 
@@ -957,6 +1167,7 @@ Never silently skip the required release gate when provisioning is unavailable.
 | Declared executable tools | Existing c2j tool preparation | Make tools available in the actual step environment. |
 | Running ready jobs concurrently | No | Use child workflows/tasks with independent execution scopes. |
 | GHA dependency and expression semantics | No | Planner/reducer and per-job act context adapter. |
+| Branch/event selection and PR simulation | No | Explicit public metadata, trigger filters, source binding, and consistent GHA contexts. |
 | Named GHA secrets | Existing secret resolution supplies values | Preserve references through composition and map names at the final worker. |
 | Files and outputs crossing workers | Existing c2j artifacts/objects supply storage | Actions protocol/catalog bridge and explicit output mapping. |
 | Task-scoped VM isolation | Proposed `isolation: vm` | Generic schema/matching support and qualified VM provisioner. |
