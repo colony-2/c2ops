@@ -17,6 +17,19 @@ from the source revision actually tested.
 
 ## 1. Decision and scope
 
+Correction from the CLI/broker audit (2026-10-30): c2j already supports repeated
+`c2j submit` calls from extensions, including local recipe snapshots, formal
+child relationships, and recorded `jobs` context. Native recipe operations
+provide durable starts/waits and reference forwarding. The earlier composition
+request incorrectly treated these as blocked. See the corrected
+[capability audit](FEATURE_REQUEST_C2J_COMPOSED_WORKFLOW_OPS.md).
+
+For a static DAG, submit wrappers asynchronously and put prerequisite waits in
+each dependent wrapper. C can run after A without waiting for unrelated B; a
+central wait-any API is not a prerequisite. Use native deterministic child
+starts for replay. A CLI-based submission boundary needs explicit reconciliation
+after an ambiguous response because repeated CLI submits create fresh IDs.
+
 Use c2j's workflow primitives to own workflow lifetime, dependencies, parallel
 children, execution requirements, durable results, and artifacts. Use the
 exported Go APIs in `act` to execute **one selected job instance** on the worker
@@ -48,7 +61,7 @@ upstream contracts as each later milestone begins.
 
 | Existing behavior | Consequence for this work |
 | --- | --- |
-| `gha` is one process receiving JSON and returning an output envelope. | Its subprocess cannot currently emit child tasks for c2j to schedule through that envelope. |
+| `gha` is one process receiving JSON and returning an output envelope. | Its subprocess can submit children through the existing invocation broker, including via `c2j submit`; an output envelope alone does not schedule jobs. |
 | The local backend calls `Runner.NewPlanExecutor` on the complete plan. | All jobs remain inside one task and one configured Docker execution environment. |
 | `gha-many` uses goroutines to run complete workflows. | Those goroutines do not become independently placed c2j children. |
 | The current `secrets` map has secret-marked string values. | Named credentials already work for one invocation; forwarding them through orchestration requires preserving references. |
@@ -118,21 +131,23 @@ inputs:
     GITHUB_TOKEN: '${{ context.secrets.?github_token.orValue(null) }}'
 ```
 
-This cannot be implemented merely by adding another Go switch case to the
-existing subprocess backend. c2j must expand a trusted wrapper recipe/composite
-**before secret materialization**, or the caller must invoke that wrapper recipe
-explicitly. Do not have the binary start a nested c2j engine or submit jobs using
-ambient JobDB credentials.
+An extension can submit wrapper recipes through the existing child broker and
+return their identities; the caller can then await their results with native
+recipe operations. That route requires no new c2j composition feature. A
+synchronous one-selector interface is a separate convenience. Keep resolved
+secret values out of generated recipes: plan from public metadata and binding
+names, or forward references through native recipe inputs. Do not start a nested
+c2j engine or substitute direct JobDB credentials for the scoped broker.
 
 Preferred delivery:
 
 1. Implement a reusable c2j wrapper recipe using the existing primitives and
    separately callable helper ops. Ship and test this explicit recipe first.
-2. If c2j does not already support packaged recipe-backed extensions, add a
-   generic, versioned composition facility. It loads a recorded wrapper recipe
-   from the same resolved package and forwards typed inputs into that recipe.
-3. Use that facility to expose the single-call `gha` experience. Keep the
-   existing local and GitHub backends available during migration.
+2. Use the existing local-recipe submission/broker contract when an extension
+   needs to submit a generated wrapper. Await its recorded child identity in
+   recipe logic. Keep the existing local and GitHub backends available.
+3. Consider a packaged recipe-backed selector later if it improves the call
+   interface. This is optional upstream convenience, not a workflow blocker.
 
 The composition contract should identify a trusted, immutable recipe, its input
 schema, helper selectors, and result projection. It must preserve opaque secret
@@ -141,8 +156,9 @@ execution scope. An ordinary op output containing YAML or a `children` field
 must remain ordinary data, not implicitly become executable code.
 
 If the wrapper needs a generated recipe with per-secret scalar declarations,
-compile it through this trusted composition boundary and record its digest.
-Never execute arbitrary recipe text returned by a shell step or build artifact.
+generate it in trusted adapter code and submit its snapshot through the existing
+broker. Workflow steps and build artifacts must not supply arbitrary wrapper
+recipe text. Secret values must never be embedded in that snapshot.
 
 ### 3.3 Reuse act's planner through an adapter
 
@@ -271,10 +287,10 @@ their old secrets, or execute actions again.
 - Use catch/result collection to turn failed child execution into a dependency
   result, so failure-reporting jobs remain schedulable.
 
-The inspected `child_group` supports starting children and waiting for a group;
-it does not establish that an incremental wait-for-any/cancel interface is
-available to recipes. Verify current c2j APIs. If necessary, add generic durable
-child-status/wait/cancel primitives, not GHA-specific scheduling to c2j.
+Use start-only child operations and put durable waits inside dependent wrappers.
+That permits incremental progress without a wait-any controller. Existing
+`recipe.await_result_soft` makes terminal failures collectable. Audit cancellation
+separately for fail-fast; do not treat it as a prerequisite for ordinary DAGs.
 
 A barrier-per-ready-batch prototype can prove the ARM/AMD/combine case. It is an
 explicit prototype restriction: in a larger graph, a child must be able to start
@@ -526,9 +542,11 @@ that type denotes checkpoint objects. Two valid implementation routes are:
 - Add generic schema-aware forwarding for named secret maps to recipe/composite
   inputs, reusing the extension schema's semantics.
 
-Start with the first route for a fixed wrapper prototype. The arbitrary named
-map public interface requires the second route or equivalent trusted composition
-support. Do not serialize references into strings, materialize them in a planner,
+Start with the first route for a fixed wrapper prototype. A public map of binding
+names can also be compiled into executor-only secret
+references using the existing local-recipe submission contract. A map of already
+materialized values must not be written into the generated recipe. Do not serialize
+opaque references into strings, materialize them in a planner,
 or hand-construct c2j's private reference wire format to bypass validation.
 
 Default exposure can match GHA's workflow-level secret map; offer explicit
@@ -1081,8 +1099,11 @@ Test-driven fixes and upstream findings:
 
 Remaining release gates include the upstream race and cancellation cleanup,
 normalized trigger/source binding, runner profiles, full artifact protocol,
-incremental DAG/matrix scheduling, and trusted composition. Current c2j gaps are
-recorded in [the composition request](FEATURE_REQUEST_C2J_COMPOSED_WORKFLOW_OPS.md).
+generalized DAG/matrix compilation, and the public submission/wait interface.
+The [corrected capability audit](FEATURE_REQUEST_C2J_COMPOSED_WORKFLOW_OPS.md)
+records existing broker submission and dependency waits; those are not upstream
+blockers. A new regression proves C can finish after A while unrelated B has
+not executed, including after SQLite is reopened.
 M0/M1 are not complete in their full planned scope. No VM or cross-architecture
 placement qualification is claimed by local directory tests. Local Nix build
 validation was unavailable: this environment's `nix` launcher reports that it
