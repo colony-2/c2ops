@@ -1,46 +1,90 @@
-# act host executor: unsynchronized PTY shutdown flag
+# act: data race on the host runner PTY shutdown flag
 
-Observed with `github.com/nektos/act v0.2.89`, Go 1.27.1, Linux ARM64, while
-building c2ops' container-free single-job executor. This report has not been
-submitted upstream.
+## Environment
 
-Reproduce from this repository:
+- Unmodified `github.com/nektos/act v0.2.89` CLI built with Go's race detector.
+- Go 1.27.1, Linux ARM64, Bash and Node.js available on PATH.
+- One workflow, one job, one shell step; no custom Go integration or remote actions.
+- Host runner selected using the documented `-P ubuntu-latest=-self-hosted` option.
 
-```sh
-cd gha
-go test -race -count=1 ./internal/jobexec -run TestOnlySelectedJobRunsWithRecordedDependencyOutputs
+## Reproduction
+
+Build the stock CLI and create a minimal repository:
+
+```bash
+repro_dir=$(mktemp -d)
+mkdir -p "$repro_dir/bin" "$repro_dir/repo/.github/workflows"
+GOBIN="$repro_dir/bin" go install -race github.com/nektos/act@v0.2.89
+cd "$repro_dir/repo"
+git init -b main
+cat > .github/workflows/repro.yml <<'YAML'
+name: PTY race
+on: workflow_dispatch
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - run: printf 'hello from host runner\n'
+YAML
+git add .
+git -c user.name=Fixture -c user.email=fixture@example.test \
+  -c commit.gpgsign=false commit -m fixture
+"$repro_dir/bin/act" workflow_dispatch \
+  -W .github/workflows/repro.yml \
+  -P ubuntu-latest=-self-hosted \
+  --action-cache-path "$repro_dir/cache"
 ```
 
-The ordinary test succeeds. The race detector reports a write from
-`(*HostEnvironment).exec` in `pkg/container/host_environment.go:342`, concurrent
-with a read from `(*ptyWriter).Write` at line 190. The writer runs through
-`copyPtyOutput` in the goroutine started by `exec`. Even act's Node executable
-probe can trigger it; no Docker daemon, remote action or concurrent jobs are
-needed.
+The workflow step succeeds, but the process exits with race-detector status 66.
+This reproduced on the first run in the environment above. Repeat the final
+command if necessary because detection depends on scheduling.
 
-Relevant code in the pinned upstream version:
+Expected: the same workflow succeeds without a data-race report.
 
-```go
-// exec, after cmd.Run:
-writer.AutoStop = true
+## Observed report
 
-// ptyWriter.Write, on the copy goroutine:
-if w.AutoStop && len(buf) > 0 && buf[len(buf)-1] == 4 { ... }
+Relevant excerpt (addresses and intervening frames omitted):
+
+```text
+WARNING: DATA RACE
+Write ... by goroutine 29:
+  github.com/nektos/act/pkg/container.(*HostEnvironment).exec()
+      pkg/container/host_environment.go:342
+
+Previous read ... by goroutine 32:
+  github.com/nektos/act/pkg/container.(*ptyWriter).Write()
+      pkg/container/host_environment.go:190
+  ...
+  github.com/nektos/act/pkg/container.copyPtyOutput()
+      pkg/container/host_environment.go:266
+
+Goroutine 32 ... created at:
+  github.com/nektos/act/pkg/container.(*HostEnvironment).exec()
+      pkg/container/host_environment.go:330
+
+Found 2 data race(s)
 ```
 
-`AutoStop` is an ordinary bool with no lock or atomic synchronization. Suggested
-fix: make the shutdown flag atomic or coordinate shutdown with the copy goroutine;
-also audit failure/cancellation paths for joining output goroutines before
-returning and for stopping subprocess descendants. A public non-PTY host mode
-would be useful for noninteractive job execution, but must still drain output
-and preserve workflow command handling.
+The report also occurs during the runner's Node executable probe, before the
+workflow shell step. Concurrent workflow jobs are not required.
 
-Acceptance: the reproducer passes with `-race`; successful, failed and cancelled
-commands drain their output and leave no running copy goroutines/descendants;
-add-mask/output command handling and post steps still work.
+## Cause
 
-c2ops does not disable the race detector or fork act to hide this. Its normal
-executor tests and embedded integration suite pass. The integration suite can
-itself run with `-race`, but its compiled helper subprocess is a normal binary,
-so that check does not qualify act's internals. The new helper remains
-experimental; this issue is a production qualification gate.
+`ptyWriter.AutoStop` is an ordinary bool. The command goroutine sets it after
+`cmd.Run()` returns, while the PTY output-copy goroutine reads it in `Write`.
+There is no synchronization for that access. Writing the EOT byte to the PTY
+after setting the bool does not synchronize the preceding read/write access in
+Go's memory model.
+
+Use an atomic flag or explicitly coordinate shutdown with the copy goroutine.
+A regression test should run the host executor with `-race`, preserve trailing
+output and workflow commands, and join the copy goroutine on completion.
+Failure and cancellation paths also merit tests: `cmd.Run()` errors currently
+return before the normal output-drain wait. Those paths are additional review
+areas, not independently demonstrated failures in this reproduction.
+
+## Upstream references
+
+- [Documented host runner invocation](https://nektosact.com/usage/runners.html).
+- [PTY writer and executor in v0.2.89](https://github.com/nektos/act/blob/v0.2.89/pkg/container/host_environment.go#L181-L353).
+- [The CLI runner's normal execution path](https://github.com/nektos/act/blob/v0.2.89/pkg/runner/runner.go#L122-L218).

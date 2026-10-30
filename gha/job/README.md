@@ -1,6 +1,8 @@
 # `gha-job` (experimental)
 
 Runs one externally scheduled GitHub Actions job using act's exported Go API.
+The [API audit](ACT_API_AUDIT.md) compares this adapter with act's own runner and
+records the stock-CLI reproduction of the host-executor race.
 This is the first execution building block for the
 [c2j orchestration plan](../../PLAN_GHA_C2J_ORCHESTRATION.md), not the proposed
 `gha` `backend: c2j`. The existing `gha` backends keep their behavior.
