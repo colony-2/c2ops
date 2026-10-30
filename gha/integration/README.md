@@ -18,6 +18,22 @@ duplicate submission, shell failures, and an incompatible platform yielding
 before executing a task. Test deadlines and iteration limits detect stalls;
 they do not set default production op timeouts.
 
+`act_test.go` compiles `gha-job` once, overrides public selectors to the actual
+manifest with that executable, then runs it through c2j. Cases cover fan-out and
+fan-in across a SQLite reopen, overlapping children synchronized through a
+loopback HTTP barrier, failed/skipped jobs and `always()` reporting, named
+secrets/config, and diagnostics hydrated from JobDB after worker deletion.
+Each fixture has a Docker CLI sentinel and an unusable Docker socket.
+
+The worker temp root is short enough for Unix credential-socket paths. Worktrees,
+act state and helper staging files all live below it; tests can destroy it
+without deleting the database or source repository. Secret resolutions are
+counted outside SQLite to prove completed replay makes no further reads.
+
+`go test -race ./...` in this module checks the harness/worker processes. It does
+not instrument the normally compiled helper. The separate direct executor
+`-race` test currently exposes an [upstream act race](../../BUG_REPORT_ACT_HOST_EXECUTOR_RACE.md).
+
 The separate module keeps c2j/JobDB test dependencies out of the GHA executable's
 Nix closure. Tests added here should use public op coordinates and replace only
 their selectors with local manifests for compiled helpers. Do not mock a job's

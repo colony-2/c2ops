@@ -50,6 +50,7 @@ sequence:
 | `codex` | Go-backed Codex op with resumable sessions and outbox artifacts. | `./codex` | `nix:github:colony-2/c2ops/published#codex` |
 | `skill.run` | Codex-backed op that runs one requested skill and validates its structured output artifact. | `./codex/run_skill` | `nix:github:colony-2/c2ops/published#skill-run` |
 | `gha` | Go-backed op for running one GitHub Actions workflow. | `./gha` | `nix:github:colony-2/c2ops/published#gha` |
+| `gha-job` | Experimental [single Actions job executor](gha/job/README.md) for external c2j orchestration. | `./gha/job` | `nix:github:colony-2/c2ops/published#gha-job` |
 | `gha-many` | Go-backed op for running multiple GitHub Actions workflows in one invocation. | `./gha-many` | `nix:github:colony-2/c2ops/published#gha-many` |
 | `pydantic` | Python-backed alternative to `llm2`, implemented with PydanticAI. | `./pydantic` | `nix:github:colony-2/c2ops/published#pydantic` |
 | `aider` | Python-backed alternative to `codex`, implemented with Aider behind a `codex`-like contract. | `./aider` | `nix:github:colony-2/c2ops/published#aider` |

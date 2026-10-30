@@ -1,9 +1,10 @@
 # Run GitHub Actions jobs with c2j orchestration and act execution
 
-Status: implementation plan, updated 2026-10-30. This document changes no runtime
-behavior. All new op names, `backend: c2j`, runner profiles, and composite-op
-interfaces, source selection, and event metadata below are proposed contracts,
-not currently usable configuration.
+Status: implementation in progress, updated 2026-10-30. The embedded runtime
+harness and experimental `gha-job` executor are implemented; see their
+[harness](gha/integration/README.md) and [helper](gha/job/README.md) contracts.
+`backend: c2j`, generalized orchestration, runner profiles, the standard Actions
+artifact service, and normalized source/event interfaces below remain proposed.
 
 Agreed scope: populate workflow metadata from c2j and pass named credentials
 through c2j secrets. GitHub OIDC is explicitly unsupported for this implementation.
@@ -39,10 +40,11 @@ and compatibility tests; recognizing an execution platform string is insufficien
 
 ## 2. Baseline verified in this repository
 
-The inspected versions are `act v0.2.89` in `gha/go.mod` and c2j
-`v0.0.76-0.20261015024712-66010fb85af6` in the integration harness. Reconcile the
-c2j gaps below with its current main before implementation; do not assume a
-missing facility in this pinned version is still missing upstream.
+The original planning baseline used `act v0.2.89` and c2j
+`v0.0.76-0.20261015024712-66010fb85af6` from the earlier Codex integration module.
+The new GHA harness pins c2j `v0.0.110` and JobDB `v0.0.65`; section 12 records
+the implementation audit and remaining gaps against those versions. Recheck
+upstream contracts as each later milestone begins.
 
 | Existing behavior | Consequence for this work |
 | --- | --- |
@@ -1034,8 +1036,57 @@ sequence error handling.
 
 ## 12. Implementation milestones and acceptance tests
 
-Each milestone ends in a separate reviewed commit with its relevant tests passing.
-Keep implementation changes out of this planning commit.
+Each milestone ends in a separate commit with its relevant tests passing.
+
+### Implementation checkpoint (2026-10-30)
+
+Completed first vertical slice of M0/M1:
+
+- Real embedded SQLite JobDB and c2j `v0.0.110` workers, explicit lease pump,
+  restart/replay, failing command and incompatible-allocation tests.
+- An experimental compiled `gha-job` helper executes one selected job through
+  act's exported API, without rerunning predecessors. Tests cover shell/local
+  JavaScript/composite actions, explicit matrix selection, transitive dependency
+  statuses, skip/always behavior, raw event context, environment isolation,
+  named secrets/config, masking and multiline outputs.
+- Real c2j children fan out, overlap at a synchronization barrier, and fan in.
+  Reopening SQLite between completions preserves identities and avoids duplicate
+  execution. Failed Actions jobs remain collectable data for reporting jobs.
+- Diagnostics use c2j's durable object protocol. A test deletes worker files,
+  reopens SQLite and hydrates the log into a fresh directory without reading
+  secrets again. This is not yet the standard Actions artifact upload service.
+- `make -C gha test-fast` runs the pure and embedded suites without containers.
+  Existing native ARM/AMD CI runs them through `make test`; the Nix catalog also
+  builds and publishes the compiled helper on both architectures.
+
+Test-driven fixes and upstream findings:
+
+- act host mode starts with an empty workspace; use its built-in prepared-source
+  checkout shortcut before authored steps. Skipped jobs need empty outputs,
+  rather than the original unevaluated output expressions.
+- act's masked formatter masks message text, not arbitrary structured fields.
+  The helper masks message text before formatting and omits raw command fields;
+  secret-bearing outputs are suppressed.
+- c2j external `file://` artifacts remain external pointers. Durable diagnostics
+  must use the object outbox instead of assuming that the engine imports them.
+- Recipe input schemas do not accept arbitrary maps. Fixtures encode public
+  `needs` result maps as JSON strings and decode them at the child boundary.
+  Secret references must not take that path. Keep whitespace between nested
+  closing map braces in CEL templates: adjacent `}}` can be read as the template
+  terminator by the current parser.
+- A direct `go test -race` finds an upstream act host PTY race. See the
+  [reproducer](BUG_REPORT_ACT_HOST_EXECUTOR_RACE.md). Ordinary executor tests and
+  the embedded harness pass, including harness race checks; this does not make
+  act's host internals race-free.
+
+Remaining release gates include the upstream race and cancellation cleanup,
+normalized trigger/source binding, runner profiles, full artifact protocol,
+incremental DAG/matrix scheduling, and trusted composition. Current c2j gaps are
+recorded in [the composition request](FEATURE_REQUEST_C2J_COMPOSED_WORKFLOW_OPS.md).
+M0/M1 are not complete in their full planned scope. No VM or cross-architecture
+placement qualification is claimed by local directory tests. Local Nix build
+validation was unavailable: this environment's `nix` launcher reports that it
+cannot build packages; native builds remain in existing CI.
 
 ### Fast iteration: embedded runtime and disposable directories
 

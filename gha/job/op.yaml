@@ -1,0 +1,61 @@
+name: gha-job
+description: Executes one externally scheduled Actions job with act in the current worker environment (experimental)
+command: ["nix", "run", "github:colony-2/c2ops/published#gha-job", "--"]
+dependencies:
+  - nix:github:colony-2/c2ops/published#gha-job
+input_schema:
+  type: object
+  required: [workflow, job_id]
+  properties:
+    workflow:
+      type: string
+      description: Path to the workflow within the prepared worktree
+    job_id:
+      type: string
+    needs:
+      type: object
+      additionalProperties:
+        type: object
+        required: [conclusion]
+        properties:
+          conclusion:
+            type: string
+            enum: [success, failure, cancelled, skipped]
+          outputs:
+            type: object
+            additionalProperties: {type: string}
+    matrix:
+      type: object
+    event_name:
+      type: string
+      default: workflow_dispatch
+    event:
+      type: object
+    env:
+      type: object
+      additionalProperties: {type: string}
+    vars:
+      type: object
+      additionalProperties: {type: string}
+    secrets:
+      type: object
+      additionalProperties:
+        type: string
+        x-secret: true
+    worktree_path:
+      type: string
+      default: '{{ context.environment.op.worktree_path }}'
+output_schema:
+  type: object
+  required: [job_id, conclusion, outputs, diagnostics]
+  properties:
+    job_id: {type: string}
+    conclusion:
+      type: string
+      enum: [success, failure, cancelled, skipped]
+    outputs:
+      type: object
+      additionalProperties: {type: string}
+    diagnostics:
+      type: object
+      x-c2j-object-type: c2ops.gha.diagnostics/v1

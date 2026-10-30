@@ -2,9 +2,11 @@
 
 Go-backed op for running one GitHub Actions workflow.
 
-The proposed [c2j orchestration plan](../PLAN_GHA_C2J_ORCHESTRATION.md) describes
-running individual Actions jobs on separately scheduled workers using `act`.
-That backend is not implemented yet.
+The [c2j orchestration plan](../PLAN_GHA_C2J_ORCHESTRATION.md) describes running
+individual Actions jobs on separately scheduled workers using `act`. Its first
+building blocks are the experimental [single-job helper](job/README.md) and
+[embedded runtime harness](integration/README.md). The full `backend: c2j`
+entry point is not available yet.
 
 ## Selector
 

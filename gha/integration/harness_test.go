@@ -69,7 +69,24 @@ func newHarness(t *testing.T, recipes map[string]string) *harness {
 	})
 	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
 	t.Cleanup(cancel)
-	h := &harness{t: t, ctx: ctx, root: t.TempDir(), recipes: recipes, secrets: map[string]string{}}
+	// A short path keeps c2j's Unix Git-credential socket below sun_path's limit.
+	root, err := os.MkdirTemp("", "gha-it-")
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, os.RemoveAll(root)) })
+	h := &harness{t: t, ctx: ctx, root: root, recipes: recipes, secrets: map[string]string{}}
+	// Set once before starting workers. Concurrent invocations share this temp
+	// root but c2j/act allocate unique subdirectories; no goroutine changes env.
+	workerRoot := filepath.Join(h.root, "workers")
+	require.NoError(t, os.Mkdir(workerRoot, 0700))
+	t.Setenv("TMPDIR", workerRoot)
+	bin := filepath.Join(h.root, "bin")
+	require.NoError(t, os.Mkdir(bin, 0700))
+	dockerMarker := filepath.Join(h.root, "docker-invoked")
+	require.NoError(t, os.WriteFile(filepath.Join(bin, "docker"), []byte("#!/bin/sh\ntouch \"$GHA_DOCKER_SENTINEL\"\nexit 97\n"), 0700))
+	t.Setenv("GHA_DOCKER_SENTINEL", dockerMarker)
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("DOCKER_HOST", "unix://"+filepath.Join(h.root, "no-docker.sock"))
+	t.Cleanup(func() { require.NoFileExists(t, dockerMarker, "fast suite must never invoke Docker") })
 	h.repo = filepath.Join(h.root, "source")
 	require.NoError(t, os.Mkdir(h.repo, 0o700))
 	for _, args := range [][]string{
