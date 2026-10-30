@@ -50,7 +50,12 @@
     "kind": "go",
     "module": "gha",
     "subPackage": "job",
-    "runtime": ["gitMinimal", "bash", "coreutils", "nodejs_24"]
+    "runtime": [
+      "gitMinimal",
+      "bash",
+      "coreutils",
+      "nodejs_24"
+    ]
   },
   "rule_gate": {
     "path": "rule_gate",
@@ -85,5 +90,14 @@
     "path": "jev",
     "kind": "python",
     "runtime": []
+  },
+  "gha-workflow": {
+    "path": "gha/workflow",
+    "kind": "go",
+    "module": "gha",
+    "subPackage": "workflow",
+    "runtime": [
+      "gitMinimal"
+    ]
   }
 }

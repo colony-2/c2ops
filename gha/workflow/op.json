@@ -1,0 +1,131 @@
+{
+  "name": "gha-workflow",
+  "description": "Submits an Actions workflow as independently scheduled c2j child recipes and collects job results",
+  "command": [
+    "bin/gha-workflow"
+  ],
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": [
+          "submit",
+          "expand",
+          "collect"
+        ],
+        "default": "submit"
+      },
+      "workflow": {
+        "type": "string"
+      },
+      "worktree_path": {
+        "type": "string",
+        "default": "{{ context.environment.op.worktree_path }}"
+      },
+      "repository": {
+        "type": "string",
+        "default": "{{ context.git.repo }}"
+      },
+      "runner_profiles": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "labels",
+            "execution_needs"
+          ],
+          "properties": {
+            "labels": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "execution_needs": {
+              "type": "object"
+            }
+          }
+        }
+      },
+      "event_name": {
+        "type": "string",
+        "default": "workflow_dispatch"
+      },
+      "event": {
+        "type": "object"
+      },
+      "changed_paths": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "env": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "string"
+        }
+      },
+      "vars": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "string"
+        }
+      },
+      "secret_bindings": {
+        "type": "object",
+        "description": "GHA secret names mapped to c2j secret names; supply names, never secret values",
+        "additionalProperties": {
+          "type": "string"
+        }
+      },
+      "helper_op": {
+        "type": "string",
+        "default": "nix:github:colony-2/c2ops/published#gha-workflow"
+      },
+      "executor_op": {
+        "type": "string",
+        "default": "nix:github:colony-2/c2ops/published#gha-job"
+      },
+      "payload": {
+        "type": "string"
+      },
+      "needs": {
+        "type": "object"
+      },
+      "observations": {
+        "type": "array",
+        "items": {
+          "type": "object"
+        }
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "status": {
+        "type": "string"
+      },
+      "job_id": {
+        "type": "string"
+      },
+      "goal_id": {
+        "type": "string"
+      },
+      "tenant_id": {
+        "type": "string"
+      },
+      "jobs": {
+        "type": "object"
+      },
+      "conclusion": {
+        "type": "string"
+      },
+      "outputs": {
+        "type": "object"
+      }
+    }
+  }
+}

@@ -3,6 +3,10 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -15,7 +19,9 @@ import (
 
 type input struct {
 	jobexec.Request
-	WorktreePath string `json:"worktree_path"`
+	Payload        string `json:"payload,omitempty"`
+	WorkflowSHA256 string `json:"workflow_sha256,omitempty"`
+	WorktreePath   string `json:"worktree_path"`
 }
 
 func main() {
@@ -24,6 +30,17 @@ func main() {
 
 func run(ctx context.Context, in input) (extensioncmd.Result[jobexec.Result], error) {
 	var out extensioncmd.Result[jobexec.Result]
+	if in.Payload != "" {
+		raw, err := base64.StdEncoding.DecodeString(in.Payload)
+		if err != nil {
+			return out, err
+		}
+		secrets := in.Secrets
+		if err := json.Unmarshal(raw, &in.Request); err != nil {
+			return out, err
+		}
+		in.Secrets = secrets
+	}
 	if !filepath.IsAbs(in.WorktreePath) {
 		return out, fmt.Errorf("worktree_path must be absolute")
 	}
@@ -45,6 +62,12 @@ func run(ctx context.Context, in input) (extensioncmd.Result[jobexec.Result], er
 	content, err := os.ReadFile(path)
 	if err != nil {
 		return out, err
+	}
+	if in.WorkflowSHA256 != "" {
+		hash := sha256.Sum256(content)
+		if hex.EncodeToString(hash[:]) != in.WorkflowSHA256 {
+			return out, fmt.Errorf("workflow changed from the planned snapshot")
+		}
 	}
 	outbox := os.Getenv("C2J_OBJECT_OUTBOX")
 	if !filepath.IsAbs(outbox) {

@@ -7,6 +7,11 @@ input_schema:
   type: object
   required: [workflow, job_id]
   properties:
+    payload:
+      type: string
+      description: Base64 public execution request supplied by the workflow coordinator
+    workflow_sha256:
+      type: string
     workflow:
       type: string
       description: Path to the workflow within the prepared worktree

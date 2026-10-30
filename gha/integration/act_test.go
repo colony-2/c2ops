@@ -24,6 +24,7 @@ import (
 const publicJobOp = "nix:github:colony-2/c2ops/published#gha-job"
 
 var helperBinary string
+var workflowBinary string
 
 // Compile once, before the worker loop. Every invocation executes this binary;
 // neither the fixture manifest nor a live job invokes the Go toolchain.
@@ -35,6 +36,15 @@ func TestMain(m *testing.M) {
 	}
 	helperBinary = filepath.Join(dir, "gha-job")
 	build := exec.Command("go", "build", "-o", helperBinary, "./job")
+	build.Dir = ".."
+	build.Stdout, build.Stderr = os.Stderr, os.Stderr
+	if err := build.Run(); err != nil {
+		os.RemoveAll(dir)
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	workflowBinary = filepath.Join(dir, "gha-workflow")
+	build = exec.Command("go", "build", "-o", workflowBinary, "./workflow")
 	build.Dir = ".."
 	build.Stdout, build.Stderr = os.Stderr, os.Stderr
 	if err := build.Run(); err != nil {
