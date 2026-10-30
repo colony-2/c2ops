@@ -302,19 +302,49 @@ jobs:
 }
 
 func TestSubmittedWorkflowDuplicateBrokerSubmissions(t *testing.T) {
-	h := newHarness(t, nil)
-	installJobFixture(t, h, fanInWorkflow)
-	wrapper := filepath.Join(h.root, "repeat.sh")
-	require.NoError(t, os.WriteFile(wrapper, []byte(`set -e
+	for _, tc := range []struct {
+		name, source string
+		jobs         int
+	}{
+		{"dependencies", fanInWorkflow, 11},
+		{"matrix", `on: workflow_dispatch
+jobs:
+  build:
+    runs-on: local
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+        version: [20, 24]
+    outputs:
+      value: ${{ steps.build.outputs.value }}
+    steps:
+      - id: build
+        env:
+          ARCH: ${{ matrix.arch }}
+          VERSION: ${{ matrix.version }}
+        run: |
+          test "$ARCH" = amd64 -o "$ARCH" = arm64
+          test "$VERSION" = 20 -o "$VERSION" = 24
+          echo value=done >> "$GITHUB_OUTPUT"
+`, 8},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHarness(t, nil)
+			installJobFixture(t, h, tc.source)
+			wrapper := filepath.Join(h.root, "repeat.sh")
+			require.NoError(t, os.WriteFile(wrapper, []byte(`set -e
 payload=$(cat)
 printf '%s' "$payload" | "$1" > /dev/null
 printf '%s' "$payload" | "$1"
 `), 0600))
-	installWorkflowFixture(t, h, "bash", wrapper, workflowBinary)
-	root := h.submit(workflowRecipe(t, ""), nil)
-	result := h.drain(root)["run"].(map[string]any)
-	require.Equal(t, "success", result["status"])
-	require.Len(t, h.jobs(), 11, "repeating each broker invocation must reuse every logical job, shard and collector")
+			installWorkflowFixture(t, h, "bash", wrapper, workflowBinary)
+			root := h.submit(workflowRecipe(t, ""), nil)
+			result := h.drain(root)["run"].(map[string]any)
+			require.Equal(t, "success", result["status"])
+			require.Len(t, h.jobs(), tc.jobs, "repeating each broker invocation must reuse every logical job, shard and collector")
+		})
+	}
 }
 
 func TestSubmittedWorkflowPRAndPushConditions(t *testing.T) {

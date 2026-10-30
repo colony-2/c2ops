@@ -2,8 +2,10 @@ package jobexec
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 
 	"github.com/nektos/act/pkg/common"
@@ -113,6 +115,25 @@ func Prepare(ctx context.Context, in Request, workdir string) ([]Assignment, err
 	}
 	if len(matrices) > 256 {
 		return nil, fmt.Errorf("matrix exceeds 256 combinations")
+	}
+	// act's CartesianProduct ranges over a Go map, so multi-axis matrices can
+	// arrive in a different order on each retry. Shard IDs use this index;
+	// canonical JSON ordering keeps the index bound to the same assignment.
+	type canonicalMatrix struct {
+		value map[string]any
+		key   string
+	}
+	canonical := make([]canonicalMatrix, len(matrices))
+	for i, matrix := range matrices {
+		key, err := json.Marshal(matrix)
+		if err != nil {
+			return nil, fmt.Errorf("encode matrix assignment: %w", err)
+		}
+		canonical[i] = canonicalMatrix{matrix, string(key)}
+	}
+	sort.SliceStable(canonical, func(i, j int) bool { return canonical[i].key < canonical[j].key })
+	for i, matrix := range canonical {
+		matrices[i] = matrix.value
 	}
 	out := make([]Assignment, 0, len(matrices))
 	for _, matrix := range matrices {

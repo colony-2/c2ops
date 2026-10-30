@@ -63,9 +63,12 @@ matrix instances. Repeated names with different contents fail, incomplete
 uploads are omitted, and inherited uploads cannot be overwritten. Durable
 artifact references remain in the final result after worker cleanup.
 
-Every generated child ID is derived from the c2j invocation and logical job or
-matrix index. Retrying submission reuses those IDs. Each logical job waits only
-for its dependencies; an unrelated slow job does not block it. A failed process
+Every generated child ID is derived from the tenant, parent job, c2j invocation
+hash, and logical job or matrix index. Matrix assignments are canonically ordered
+before assigning indices. Retrying the same invocation reuses those IDs and
+waits on the existing submissions; a new invocation or parent job starts fresh
+children. Broker session IDs and tokens are not part of the identity. Each
+logical job waits only for its dependencies; an unrelated slow job does not block it. A failed process
 or infrastructure task becomes a dependency failure, allowing `always()` jobs
 to report. Matrix output collisions fail explicitly.
 
