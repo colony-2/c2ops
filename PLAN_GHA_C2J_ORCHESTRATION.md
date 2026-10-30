@@ -1,6 +1,6 @@
 # Run GitHub Actions jobs with c2j orchestration and act execution
 
-Status: proposed implementation plan, 2026-10-29. This document changes no runtime
+Status: implementation plan, updated 2026-10-30. This document changes no runtime
 behavior. All new op names, `backend: c2j`, runner profiles, and composite-op
 interfaces, source selection, and event metadata below are proposed contracts,
 not currently usable configuration.
@@ -1037,8 +1037,97 @@ sequence error handling.
 Each milestone ends in a separate reviewed commit with its relevant tests passing.
 Keep implementation changes out of this planning commit.
 
+### Fast iteration: embedded runtime and disposable directories
+
+Build the container-free test harness first, then add failing workflow cases as
+each bridge is implemented. Use real c2j recipes/workers and embedded JobDB;
+replace provisioning with disposable local directories. The harness must not
+implement its own dependency scheduler or mock a successful act result.
+
+The implementation audit on 2026-10-30 found c2j `v0.0.110` (main at
+`85f9c9011a9d80d2329dbb766de32351afc79444`) and JobDB `v0.0.65` (main at
+`6d86c38fc2341a8c22559906d6ed87e3ba9b2ba4`). c2j now exposes a `recipetest`
+runtime using embedded JobDB and real compiler/activity workers. Reuse those
+production APIs; use `recipetest` for declarative cases where suitable. Tests
+needing explicit stepping, database reopen, or controlled job order should use
+a thin fixture around `GetJobForRun`, `JobRunnable.Run`, and c2j's
+`executionruntime`, rather than copying the workflow engine. Recheck the other
+gaps identified against the older baseline as implementation reaches them.
+
+Harness layout and lifecycle:
+
+1. Create one test root containing a SQLite JobDB database, seeded local Git
+   repository, durable artifacts, and per-invocation directories. Keep the
+   integration module's c2j/JobDB dependencies separate from the packaged GHA
+   executable's runtime dependency graph.
+2. Register the real recipe worker and op activity workers, with synthetic named
+   secrets/config and explicit local source/helper overrides. Fixtures authored
+   with public op coordinates must resolve to the compiled checkout under test;
+   the fast suite requires no Nix download, GitHub API, or production credential.
+3. Submit the parent recipe through c2j. A bounded pump discovers runnable jobs,
+   acquires real leases, and runs them through the public JobDB worker API. Parent
+   waits must suspend durably so the same pump can run children. Keep submission,
+   dependency readiness, result recording, and retry/replay decisions in c2j/JobDB.
+4. Give every live act invocation its own worktree, HOME, temporary/cache paths,
+   event file, logs, and runtime files. Use explicit process directories and
+   environment; never change the test process's working directory or mutate its
+   environment while parallel jobs run. Directory isolation is a fixture boundary,
+   not a sandbox for untrusted workflow code.
+5. Run act's host execution mode for trusted shell, local JavaScript, and local
+   composite action fixtures. Reject Docker actions, services, and job containers
+   in this test mode before execution. A Docker command sentinel should fail if
+   accidentally invoked. No silent fallback to Docker or skipping these tests.
+6. Keep artifacts/results in JobDB across worker-directory deletion. Tests can
+   pump one job, suspend, destroy its files, rebuild the worker adapter, reopen
+   SQLite, and continue. Restarting the harness must not resubmit the root job or
+   rely on an in-memory list of previously submitted children.
+7. On completion or cancellation, join every worker before cleanup. On failure,
+   report job states, dependency waits, scheduling trace, and redacted act logs.
+   Use explicit test deadlines and iteration limits for stalled tests; these
+   are test controls, not new default op timeouts.
+
+Provide `Step(jobID)` for targeted transitions and `Drain(rootID)` for ordinary
+cases. The default deterministic pump may run one leased invocation at a time;
+tests for actual overlap use a bounded concurrent pump and synchronization
+barriers instead of timing sleeps. Only leased/live work gets a fresh directory.
+Calls for a terminal job must return its recorded result without executing an op.
+
+Start with these acceptance cases, adding them before the corresponding code:
+
+| Case | Evidence required from the real runtime |
+| --- | --- |
+| One job, then a dependency | act executes only the selected job; injected `needs` outputs work; predecessor sentinel is written once. |
+| Fan-out/fan-in | Distinct c2j child IDs and directories; the combining job sees both accepted results. |
+| Unrelated slow sibling | A downstream job becomes eligible after its own prerequisite, before the unrelated sibling completes. |
+| Failure/skip/report | Actual failing shell exit; skipped job performs no work; `always()` reporting remains eligible. |
+| Restart/replay | SQLite reopen and fresh workers recover the same jobs/results; completed tasks and secret reads are not repeated. |
+| Event metadata | PR-to-main and push-to-main select different jobs; planner and act agree on event/ref; filtered work resolves no job secrets. |
+| Configuration/secrets | Resolve synthetic c2j values at the execution boundary and forward to the named GHA contexts; no plaintext in durable public records/logs. |
+| Files/artifacts | Worker deletion followed by durable artifact hydration in another directory; no sibling workspace leakage. |
+| Matrices | Typed assignments, include/exclude, dependency-derived expansion, failure handling, and stable instance identities. |
+| Admission/cancellation | Incompatible allocation yields before running a shell; cancellation stops live subprocesses and leaves consistent terminal state. |
+
+Keep three test layers explicit:
+
+- Pure planner/reducer tests: fast table-driven checks for graph/condition/event
+  normalization and invalid inputs, with no worker or network.
+- Embedded integration tests: real JobDB, c2j, and act host execution. These run
+  in the normal test target on both existing Linux CI architectures. Loopback
+  artifact HTTP servers are allowed when testing the protocol; external action
+  downloads are replaced with pinned local fixtures.
+- Provisioned compatibility tests: existing native ARM/AMD Nix jobs plus explicit
+  Docker, VM, and nested-VM qualification. The fast harness can test admission
+  matching with synthetic allocation facts, but cannot prove hardware placement,
+  Docker networking/mounts, OS isolation, or accelerated nested virtualization.
+
+Implement one vertical case at a time through the same production helpers the
+packaged extension will use. Keep the public `backend: c2j` unavailable until
+the composition and artifact contracts are complete; passing the harness alone
+must not advertise unsupported production behavior.
+
 ### M0: Confirm contracts and prove the execution boundary
 
+- Implement the embedded harness and its own lifecycle/replay checks first.
 - Verify the current c2j composition, secret-forwarding, child lifecycle,
   allocation, and Nix handoff APIs against main.
 - Specify and qualify the proposed VM/capability demands with the execution
@@ -1150,6 +1239,9 @@ Use the existing single GitHub Actions workflow and native ARM64/AMD64 matrix.
 Run parser/reducer/secret contract tests in the normal Go suite. Run real-act
 tests with provisioned Docker or the isolated worker execution mode as needed.
 Use existing upload/download actions to exchange test evidence and artifacts.
+Run the container-free integration module through `make -C gha test`, so it is
+included in the existing `make test` CI step on both architectures. Provide a
+separate fast target for local iterations without other ops or Nix builds.
 
 True cross-worker scheduling needs an execution-aware c2j runtime plus two
 registered allocations/provisioners. Running the same unit suite in two GitHub
