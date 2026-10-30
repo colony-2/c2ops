@@ -279,6 +279,27 @@ nix flake check -L              # builds every op and runs package contract chec
 nix eval --json .#packages.aarch64-linux.codex.c2j
 ```
 
+### Build settings for development versus workers
+
+`max-jobs = 0` disables **Nix builds**, not c2j job execution or Go tests. It is
+appropriate for execution workers and the publication download check, where a
+missing cached package should fail instead of compiling on the worker.
+Development and CI need builds enabled to create changed packages and run their
+Nix contract checks. The test launcher still requires those packages to have
+been built first; its download-only setting is intentional.
+
+Some base images also install a `pre-build-hook` that rejects all builds. On a
+development instance of that image, enable builds for the check command only:
+
+```sh
+nix flake check -L --max-jobs 2 --cores 2 --option pre-build-hook ""
+```
+
+This requires a writable Nix store and the working native Nix installation.
+It leaves the image's default worker policy unchanged. CI's build job uses a
+build-enabled Nix installation; the separate publication verification explicitly
+disables builds to prove that complete packages can be downloaded from caches.
+
 The package checks compare installed and evaluation-time manifests and invoke
 every op with an empty PATH and invalid input from its read-only package
 directory. They also exercise a successful `rule_gate` invocation, check Python
