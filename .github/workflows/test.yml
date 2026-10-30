@@ -35,6 +35,7 @@ jobs:
           cache-dependency-path: |
             go.sum
             */go.sum
+            */*/go.sum
 
       - name: Set up Python
         uses: actions/setup-python@v6
