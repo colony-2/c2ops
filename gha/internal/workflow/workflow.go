@@ -118,7 +118,7 @@ func Submit(ctx context.Context, in Input) (Submission, error) {
 		return zero, fmt.Errorf("repository is required")
 	}
 	// Freeze the actual worker checkout rather than resolving a moving branch on
-	// each child. Require a reachable committed revision for independent workers.
+	// each child. Local commits are carried by the native snapshot bundle.
 	cmd := exec.CommandContext(ctx, "git", "-C", in.WorktreePath, "rev-parse", "HEAD")
 	raw, err := cmd.Output()
 	if err != nil {

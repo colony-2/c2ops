@@ -107,6 +107,7 @@ jobs:
           UV_NO_MANAGED_PYTHON: "1"
           C2OPS_TEST_FLAKE: path:${{ github.workspace }}
           C2OPS_TEST_NIX_PUBLICATION: "1"
+          C2OPS_TEST_GHA_ACTIONS: "1"
         run: make test
 
       - name: Check native Codex in the minimal worker image

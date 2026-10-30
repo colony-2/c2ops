@@ -75,8 +75,8 @@ func Plan(workflow, event string) ([]Job, error) {
 
 // Execute runs exactly one assigned job in act's host mode. Workdir must already
 // contain an isolated source snapshot. This is not a sandbox: the provisioner
-// supplies the process/OS isolation boundary. Remote actions, reusable workflows,
-// and Docker features are rejected until their bridges are implemented.
+// supplies the process/OS isolation boundary. Remote actions must be pinned;
+// reusable workflows and Docker actions require separate execution bridges.
 func Execute(ctx context.Context, in Request, opts Options) (Result, error) {
 	if !filepath.IsAbs(opts.Workdir) || !filepath.IsAbs(opts.StateDir) {
 		return Result{}, fmt.Errorf("absolute workdir and state directory are required")
@@ -235,8 +235,8 @@ func Execute(ctx context.Context, in Request, opts Options) (Result, error) {
 	ctx = common.WithJobErrorContainer(ctx)
 	// act's host executor starts with an empty workspace. Its built-in local
 	// checkout shortcut copies Config.Workdir without fetching an action or Git
-	// revision. Prepend that preparation step; authored remote actions still fail
-	// preflight. Assign IDs first so adding a step does not shift implicit IDs.
+	// revision. Prepend that preparation step. Assign IDs first so adding a
+	// step does not shift implicit IDs.
 	for i, step := range job.Steps {
 		if step.ID == "" {
 			step.ID = fmt.Sprint(i)

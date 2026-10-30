@@ -1,10 +1,29 @@
 # Run GitHub Actions jobs with c2j orchestration and act execution
 
-Status: implementation in progress, updated 2026-10-30. The embedded runtime
-harness and experimental `gha-job` executor are implemented; see their
-[harness](gha/integration/README.md) and [helper](gha/job/README.md) contracts.
-`backend: c2j`, generalized orchestration, runner profiles, the standard Actions
-artifact service, and normalized source/event interfaces below remain proposed.
+Status (2026-10-30): the initial `gha` `backend: c2j` is implemented and tested
+through real c2j workers and embedded JobDB. Use the executable contracts in
+[gha](gha/README.md), [orchestration](gha/workflow/README.md),
+[executor](gha/job/README.md), and [harness](gha/integration/README.md).
+The design sections below retain the broader roadmap; proposed examples are
+not substitutes for those current interfaces.
+
+Implemented: independent child DAGs and durable waits; static/dependency-driven
+matrix expansion; explicit runner-profile execution needs; dispatch/push/PR
+trigger filtering; named secret resolution at each executor; Git snapshot
+transfer for unpublished commits; private v4 artifact upload/download with
+JobDB publication/hydration; final result collection; deterministic submission
+IDs; the asynchronous public submit-then-await interface. The existing single
+CI workflow tests and builds both Linux architectures, including real pinned
+v4 artifact actions, and publishes all three compiled GHA binaries.
+
+Initial compatibility boundaries: `fail-fast: false` is required for matrices;
+`max-parallel`, distributed sibling cancellation, job timeouts and job-level
+continue-on-error remain unsupported. Reusable workflows, job/service/Docker
+actions, Actions caches, GitHub permissions/OIDC and protected environments are
+rejected or unavailable. `gha-many` retains its existing backends; callers can
+submit several `gha` steps from c2j. The upstream act host-runner race remains a
+production-qualification limitation. VM/nested-VM provisioning is separate
+execution-provider work, not implemented by an extension op.
 
 Agreed scope: populate workflow metadata from c2j and pass named credentials
 through c2j secrets. GitHub OIDC is explicitly unsupported for this implementation.
@@ -117,7 +136,7 @@ using the existing workflow and Cachix cache. Workers require no Go compiler.
 The desired call remains:
 
 ```yaml
-# Proposed interface; requires the composition bridge described below.
+# Design sketch; see gha/README.md for the implemented submit/await interface.
 op: nix:github:colony-2/c2ops/published#gha
 inputs:
   backend: c2j
@@ -1193,9 +1212,9 @@ Keep three test layers explicit:
   Docker networking/mounts, OS isolation, or accelerated nested virtualization.
 
 Implement one vertical case at a time through the same production helpers the
-packaged extension will use. Keep the public `backend: c2j` unavailable until
-the composition and artifact contracts are complete; passing the harness alone
-must not advertise unsupported production behavior.
+packaged extension will use. The public `backend: c2j` now exposes the tested composition and artifact
+contracts. Its documented restrictions remain enforced; passing the harness
+does not qualify the unsupported provisioning or cancellation cases.
 
 ### M0: Confirm contracts and prove the execution boundary
 

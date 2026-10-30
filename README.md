@@ -49,8 +49,9 @@ sequence:
 | `llm2` | Legacy Go-backed richer LLM op with files, tools, and structured output, compatible with `llm_inference2`. | `./llm2` | `nix:github:colony-2/c2ops/published#llm2` |
 | `codex` | Go-backed Codex op with resumable sessions and outbox artifacts. | `./codex` | `nix:github:colony-2/c2ops/published#codex` |
 | `skill.run` | Codex-backed op that runs one requested skill and validates its structured output artifact. | `./codex/run_skill` | `nix:github:colony-2/c2ops/published#skill-run` |
-| `gha` | Go-backed op for running one GitHub Actions workflow. | `./gha` | `nix:github:colony-2/c2ops/published#gha` |
+| `gha` | Run a workflow locally, on GitHub, or as independently scheduled c2j jobs. | `./gha` | `nix:github:colony-2/c2ops/published#gha` |
 | `gha-job` | Experimental [single Actions job executor](gha/job/README.md) for external c2j orchestration. | `./gha/job` | `nix:github:colony-2/c2ops/published#gha-job` |
+| `gha-workflow` | [Workflow orchestration helper](gha/workflow/README.md) used by `gha` with `backend: c2j`. | `./gha/workflow` | `nix:github:colony-2/c2ops/published#gha-workflow` |
 | `gha-many` | Go-backed op for running multiple GitHub Actions workflows in one invocation. | `./gha-many` | `nix:github:colony-2/c2ops/published#gha-many` |
 | `pydantic` | Python-backed alternative to `llm2`, implemented with PydanticAI. | `./pydantic` | `nix:github:colony-2/c2ops/published#pydantic` |
 | `aider` | Python-backed alternative to `codex`, implemented with Aider behind a `codex`-like contract. | `./aider` | `nix:github:colony-2/c2ops/published#aider` |
@@ -136,6 +137,11 @@ sequence:
     inputs:
       workflow: .github/workflows/ci.yml
 ```
+
+For separate ARM/AMD jobs with dependency joins, use `backend: c2j`, explicit
+`runner_profiles`, and a following `recipe.await_result` step. The
+[distributed workflow example](gha/README.md) also covers named secrets,
+PR/push metadata, and durable artifact transfer.
 
 ### `gha-many`
 

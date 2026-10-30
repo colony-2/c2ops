@@ -3,9 +3,9 @@
 Runs one externally scheduled GitHub Actions job using act's exported Go API.
 The [API audit](ACT_API_AUDIT.md) compares this adapter with act's own runner and
 records the stock-CLI reproduction of the host-executor race.
-This is the first execution building block for the
-[c2j orchestration plan](../../PLAN_GHA_C2J_ORCHESTRATION.md), not the proposed
-`gha` `backend: c2j`. The existing `gha` backends keep their behavior.
+The [`gha` c2j backend](../README.md) generates calls to this executor with
+explicit matrix assignments, dependency results, artifacts, and execution needs.
+It can also be called directly as shown below.
 
 ```yaml
 perms:
@@ -49,9 +49,12 @@ Inputs:
   materialized only at invocation. Names are case insensitive; collisions fail.
 - `worktree_path`: defaults to `context.environment.op.worktree_path`.
 
-Supported execution is trusted shell steps and local JavaScript/composite
-actions in act host mode. A built-in local checkout preparation step copies the
+Supported execution is trusted shell steps and local or full-SHA-pinned remote
+JavaScript/composite actions in act host mode. Nested remote action references
+must also use full commit SHAs. Docker and symlinked remote action manifests fail. A built-in local checkout preparation step copies the
 prepared source into act's disposable workspace without downloading checkout.
+Authored checkout steps with `with` options are rejected; the source snapshot
+is already selected by c2j.
 Every invocation gets a separate workspace, HOME and temporary/cache directory.
 Ambient credential environment variables are blanked; bind secrets explicitly.
 
@@ -61,7 +64,9 @@ matching `execution_needs`. Host mode is not an OS security boundary. It is mean
 to execute inside an appropriately isolated worker.
 
 The output has `job_id`, `conclusion`, string `outputs`, and a small `diagnostics`
-object reference (`c2ops.gha.diagnostics/v1`). The diagnostics object's `log` file
+object reference (`c2ops.gha.diagnostics/v1`), plus `artifacts` references
+(`c2ops.gha.artifacts/v1`). `artifact_inputs` accepts hydrated dependency artifact
+objects for the private v4 upload/download service. The diagnostics object's `log` file
 is backed by JobDB and survives worker deletion. Logs are also streamed to
 stderr. Secret-bearing job outputs are suppressed; logs mask named secrets and
 dynamic masks, including multiline values. Skipped jobs have empty outputs.
@@ -69,13 +74,21 @@ Shell failure is returned as `conclusion: failure` with a successful op envelope
 so a parent can schedule `always()` reporting. Invalid input and infrastructure
 errors fail the op. No implicit execution timeout is added.
 
-Remote actions, reusable workflows, job/services/Docker actions, permissions
-and OIDC, protected environments, concurrency groups, job timeouts and job-level
-continue-on-error are rejected pending their orchestration bridges. Standard
-upload/download artifact actions, caches, generalized DAG/matrix scheduling,
-source/event normalization and the composite public entry point remain planned.
-The helper requires c2j's object outbox; an external `file://` reference would
-not preserve its diagnostics after cleanup.
+Reusable workflows, job/services/Docker actions, workflow/job `permissions`,
+OIDC, protected environments, concurrency groups, job timeouts and job-level
+continue-on-error are rejected. Distributed matrices require `fail-fast: false`;
+`max-parallel` and sibling cancellation are not implemented. This initial backend
+does not implement Actions caches, cross-run artifact downloads or live discovery
+of unrelated jobs' artifacts. Run ordinary Docker build commands only on workers
+whose explicit profile supplies a usable isolated Docker daemon.
+
+Artifact compatibility is tested with `actions/upload-artifact` v4 at
+`ea165f8d65b6e75b540449e92b4886f43607fa02` and `actions/download-artifact` v4 at
+`d3f86a106a0bac45b974a628896c90dbdf5c8093`. Pin these complete SHAs in `uses`.
+Artifact names must be unique across producing jobs; immutable dependency
+snapshots cannot be overwritten. The c2j object outbox preserves logs and
+uploads after cleanup. Artifact download URLs returned by the Actions protocol
+are local and temporary; use the durable object references in the op result.
 
 Run `make -C gha test-fast` for the container-free tests. See the
 [harness README](../integration/README.md) for coverage. The extra direct act

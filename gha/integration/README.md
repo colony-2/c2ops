@@ -49,3 +49,16 @@ through c2j. Public JSON dependency results can cross recipe string inputs using
 Directories isolate trusted fixtures' files, not untrusted processes. This
 suite cannot qualify Docker networking, OS sandboxing, native remote placement,
 VM provisioning, or nested virtualization. Those remain provisioned tests.
+
+`workflow_test.go` tests the public `gha` c2j backend and the generated recipes:
+dynamic matrices from job outputs, runner profiles, named secret bindings,
+failed/skipped/reporting jobs, push filtering, duplicate broker submissions,
+restart replay, and unpublished source commits. The v4 protocol test deletes
+worker directories before downloading the accepted artifact from JobDB.
+
+CI sets `C2OPS_TEST_GHA_ACTIONS=1` in both native Linux jobs. This additionally
+fetches the pinned public upload/download actions and executes their real Node
+bundles through the same distributed path. Run it locally with
+`C2OPS_TEST_GHA_ACTIONS=1 make -C gha test-fast`. The default fast suite retains
+its no-external-actions contract. All fixture op references are authored using
+published coordinates and overridden explicitly to the compiled local binaries.

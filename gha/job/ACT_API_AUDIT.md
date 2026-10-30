@@ -30,7 +30,12 @@ The intentional adapter responsibilities are:
   keys from its process. Add only the caller/workflow environment and tools.
 - Prepend a source-preparation checkout using act's local checkout shortcut.
   Host mode creates an empty execution workspace; the shortcut copies the
-  supplied source snapshot. Authored remote actions remain rejected by preflight.
+  supplied source snapshot. Remote JavaScript/composite actions use act's `GoGitActionCache`; the
+  adapter requires full commit SHAs, including nested remote actions.
+- Reuse act's `artifacts.RoutesV4` with an invocation-local listener and
+  filesystem. Serialize route access because the route object mutates `AppURL`.
+  Add an exact random bearer capability, immutable dependency snapshots, ZIP
+  finalization checks, and JobDB outbox publication around that protocol.
 - Capture the model's final result and resolved job outputs. A shell failure can
   leave `rc.Executor()` without a Go error while setting `Job.Result` to failure;
   act's outer `handleFailure` normally inspects that field. The adapter returns

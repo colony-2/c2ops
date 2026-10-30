@@ -316,3 +316,45 @@ printf '%s' "$payload" | "$1"
 	require.Equal(t, "success", result["status"])
 	require.Len(t, h.jobs(), 11, "repeating each broker invocation must reuse every logical job, shard and collector")
 }
+
+func TestSubmittedWorkflowPRAndPushConditions(t *testing.T) {
+	for _, event := range []string{"pull_request", "push"} {
+		t.Run(event, func(t *testing.T) {
+			h := newHarness(t, nil)
+			installJobFixture(t, h, `on:
+  pull_request: {branches: [main]}
+  push: {branches: [main]}
+jobs:
+  pr:
+    if: github.event_name == 'pull_request' && github.base_ref == 'main'
+    runs-on: local
+    steps:
+      - run: |
+          test "$GITHUB_EVENT_NAME" = pull_request
+          test "$GITHUB_BASE_REF" = main
+          test "$GITHUB_HEAD_REF" = topic
+          node -e 'const e=JSON.parse(require("fs").readFileSync(process.env.GITHUB_EVENT_PATH)); if(e.number !== 42 || e.action !== "synchronize") process.exit(1)'
+  push:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: local
+    steps:
+      - run: test "$GITHUB_EVENT_NAME:$GITHUB_REF" = push:refs/heads/main
+`)
+			installWorkflowFixture(t, h)
+			metadata := "      event_name: push\n      event: {ref: refs/heads/main}"
+			if event == "pull_request" {
+				metadata = "      event_name: pull_request\n      event: {number: 42, pull_request: {base: {ref: main}, head: {ref: topic}}}"
+			}
+			root := h.submit(workflowRecipe(t, metadata), nil)
+			result := h.drain(root)["run"].(map[string]any)
+			require.Equal(t, "success", result["status"])
+			jobs := result["jobs"].(map[string]any)
+			selected, skipped := "push", "pr"
+			if event == "pull_request" {
+				selected, skipped = "pr", "push"
+			}
+			require.Equal(t, "success", jobs[selected].(map[string]any)["conclusion"])
+			require.Equal(t, "skipped", jobs[skipped].(map[string]any)["conclusion"])
+		})
+	}
+}
