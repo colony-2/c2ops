@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/colony-2/c2ops/gha/internal/jobexec"
@@ -43,6 +44,10 @@ func expand(ctx context.Context, in Input) (Submission, error) {
 	if err != nil {
 		return zero, err
 	}
+	broker.sourcePack, err = sourceBundle(ctx, in.WorktreePath, p.Input.BaseRevision, p.Input.Revision)
+	if err != nil {
+		return zero, err
+	}
 	var recipes []plannedRecipe
 	var ids []string
 	for i, assignment := range assignments {
@@ -52,6 +57,26 @@ func expand(ctx context.Context, in Input) (Submission, error) {
 		}
 		request.Workflow = p.Input.Workflow
 		request.Matrix = assignment.Matrix
+		artifactInputs := []any{}
+		ancestorIDs := make([]string, 0, len(in.Needs))
+		for id := range in.Needs {
+			ancestorIDs = append(ancestorIDs, id)
+		}
+		sort.Strings(ancestorIDs)
+		for _, id := range ancestorIDs {
+			need := in.Needs[id]
+			for _, ref := range need.Artifacts {
+				if ref == nil {
+					continue
+				}
+				if snapshot, ok := ref.(map[string]any); ok {
+					if original, ok := snapshot["ref"]; ok {
+						ref = original
+					}
+				}
+				artifactInputs = append(artifactInputs, ref)
+			}
+		}
 		secrets := map[string]any{}
 		names := []string{}
 		for key, name := range p.Input.SecretBindings {
@@ -59,7 +84,8 @@ func expand(ctx context.Context, in Input) (Submission, error) {
 			names = append(names, name)
 		}
 		// Keep GHA/public strings opaque across the recipe template evaluator.
-		inputs := map[string]any{"payload": encode(request), "workflow": p.Input.Workflow, "job_id": p.Job, "workflow_sha256": p.Hash, "secrets": secrets}
+		sort.Strings(names)
+		inputs := map[string]any{"artifact_inputs": artifactInputs, "payload": encode(request), "workflow": p.Input.Workflow, "job_id": p.Job, "workflow_sha256": p.Hash, "secrets": secrets}
 		step := node("execute", p.Input.ExecutorOp, inputs)
 		step["execution_needs"] = requirements
 		rec := map[string]any{"id": fmt.Sprintf("gha-%s-%d", p.Job, i), "sequence": []any{step}, "outputs": map[string]any{"result": "${{ sequence.execute.outputs }}"}}
@@ -73,14 +99,16 @@ func expand(ctx context.Context, in Input) (Submission, error) {
 	steps := []any{}
 	observations := []any{}
 	diagnostics := []any{}
+	uploaded := []any{}
 	for i, id := range ids {
 		step := fmt.Sprintf("wait%d", i)
 		steps = append(steps, await(step, id))
 		observations = append(observations, map[string]any{"status": "${{ sequence." + step + ".outputs.status }}", "outputs": map[string]any{"result": fmt.Sprintf("${{ sequence.%s.outputs.status == 'completed' ? {'job_id': sequence.%s.outputs.outputs.result.job_id, 'conclusion': sequence.%s.outputs.outputs.result.conclusion, 'outputs': sequence.%s.outputs.outputs.result.outputs} : {'conclusion': 'failure', 'outputs': {} } }}", step, step, step, step)}})
+		uploaded = append(uploaded, fmt.Sprintf("${{ sequence.%s.outputs.status == 'completed' && has(sequence.%s.outputs.outputs.result.artifacts) ? sequence.%s.outputs.outputs.result.artifacts[0] : null }}", step, step, step))
 		diagnostics = append(diagnostics, fmt.Sprintf("${{ sequence.%s.outputs.status == 'completed' ? sequence.%s.outputs.outputs.result.diagnostics : null }}", step, step))
 	}
 	steps = append(steps, node("collect", p.Input.HelperOp, map[string]any{"action": "collect", "observations": observations}))
-	result := map[string]any{"job_id": p.Job, "conclusion": "${{ sequence.collect.outputs.conclusion }}", "outputs": "${{ sequence.collect.outputs.outputs }}", "diagnostics": diagnostics}
+	result := map[string]any{"job_id": p.Job, "conclusion": "${{ sequence.collect.outputs.conclusion }}", "outputs": "${{ sequence.collect.outputs.outputs }}", "diagnostics": diagnostics, "artifacts": uploaded}
 	rec := map[string]any{"id": "gha-" + p.Job + "-result", "sequence": steps, "outputs": map[string]any{"result": result}}
 	recipes = append(recipes, plannedRecipe{broker.id("result"), rec})
 	var out Submission

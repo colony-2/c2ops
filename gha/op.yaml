@@ -22,6 +22,24 @@ input_schema:
         x-secret: true
     backend:
       type: string
+    runner_profiles:
+      type: array
+      items:
+        type: object
+        required: [labels, execution_needs]
+        properties:
+          labels: {type: array, items: {type: string}}
+          execution_needs: {type: object}
+    secret_bindings:
+      type: object
+      description: For backend c2j, map GHA secret names to c2j secret names (never resolved values)
+      additionalProperties: {type: string}
+    event_name: {type: string}
+    event: {type: object}
+    changed_paths: {type: array, items: {type: string}}
+    vars: {type: object, additionalProperties: {type: string}}
+    helper_op: {type: string}
+    executor_op: {type: string}
     runner_image:
       type: string
     container_architecture:
@@ -72,6 +90,10 @@ input_schema:
 output_schema:
   type: object
   properties:
+    job_id: {type: string}
+    goal_id: {type: string}
+    tenant_id: {type: string}
+    submitted_jobs: {type: object}
     status:
       type: string
     exit_code:

@@ -52,6 +52,9 @@ func Validate(source, id, workdir string) error {
 		if step == nil {
 			return fmt.Errorf("empty step")
 		}
+		if strings.HasPrefix(step.Uses, "actions/checkout@") && len(step.With) > 0 {
+			return fmt.Errorf("checkout options are unsupported with a frozen source snapshot")
+		}
 		if err := validateAction(workdir, step.Uses, map[string]bool{}); err != nil {
 			return err
 		}

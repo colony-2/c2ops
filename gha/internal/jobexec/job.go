@@ -27,6 +27,7 @@ type Result struct {
 	JobID       string            `json:"job_id"`
 	Conclusion  string            `json:"conclusion"`
 	Outputs     map[string]string `json:"outputs"`
+	Artifacts   []any             `json:"artifacts,omitempty"`
 	Diagnostics any               `json:"diagnostics,omitempty"`
 }
 
@@ -43,9 +44,11 @@ type Request struct {
 }
 
 type Options struct {
-	Workdir  string
-	StateDir string
-	Log      io.Writer
+	Workdir        string
+	StateDir       string
+	Log            io.Writer
+	ArtifactDir    string
+	ArtifactInputs []string
 }
 
 // Plan reuses act's static plan but preserves the original dependency edges.
@@ -111,6 +114,9 @@ func Execute(ctx context.Context, in Request, opts Options) (Result, error) {
 		if step == nil {
 			return Result{}, fmt.Errorf("empty step")
 		}
+		if strings.HasPrefix(step.Uses, "actions/checkout@") && len(step.With) > 0 {
+			return Result{}, fmt.Errorf("checkout options are unsupported with a frozen source snapshot")
+		}
 		if err := validateAction(opts.Workdir, step.Uses, map[string]bool{}); err != nil {
 			return Result{}, err
 		}
@@ -161,11 +167,27 @@ func Execute(ctx context.Context, in Request, opts Options) (Result, error) {
 			return Result{}, err
 		}
 	}
+	var bridge *artifactsBridge
+	if opts.ArtifactDir != "" {
+		bridge, err = startArtifacts(ctx, filepath.Join(state, "artifact-server"), opts.ArtifactDir, opts.ArtifactInputs)
+		if err != nil {
+			return Result{}, err
+		}
+		defer bridge.server.Close()
+		in.Env = copyMap(in.Env)
+		for k, v := range bridge.env() {
+			in.Env[k] = v
+		}
+	}
 	log := opts.Log
 	if log == nil {
 		log = io.Discard
 	}
-	factory := logFactory{writer: log, secrets: secretValues(in.Secrets)}
+	masks := secretValues(in.Secrets)
+	if bridge != nil {
+		masks = append(masks, bridge.token)
+	}
+	factory := logFactory{writer: log, secrets: masks}
 	ctx = common.WithLogger(ctx, factory.WithJobLogger())
 	ctx = runner.WithJobLoggerFactory(ctx, factory)
 	config := &runner.Config{
@@ -173,6 +195,7 @@ func Execute(ctx context.Context, in Request, opts Options) (Result, error) {
 		EventName: in.EventName, Env: copyMap(in.Env), Secrets: copyMap(in.Secrets), Vars: copyMap(in.Vars),
 		Token: in.Secrets["GITHUB_TOKEN"], Actor: "c2j", GitHubInstance: "github.com",
 		Platforms: map[string]string{}, AutoRemove: true, LogOutput: true, ActionOfflineMode: true,
+		ActionCache: pinnedActionCache{runner.GoGitActionCache{Path: filepath.Join(state, "actions")}},
 	}
 	// act host mode fills absent keys from os.Environ. Explicitly blank ambient
 	// values, then apply workflow/job/caller settings and isolated runtime paths.
@@ -225,6 +248,11 @@ func Execute(ctx context.Context, in Request, opts Options) (Result, error) {
 		return Result{}, err
 	}
 	execErr := execute(ctx)
+	if bridge != nil {
+		if err := bridge.close(); err != nil {
+			return Result{}, err
+		}
+	}
 	if ctx.Err() != nil {
 		return Result{}, ctx.Err()
 	}
@@ -239,7 +267,7 @@ func Execute(ctx context.Context, in Request, opts Options) (Result, error) {
 		outputs = map[string]string{}
 	}
 	for name, value := range outputs {
-		for _, mask := range maskValues(append(secretValues(in.Secrets), rc.Masks...)) {
+		for _, mask := range maskValues(append(masks, rc.Masks...)) {
 			if mask != "" && strings.Contains(value, mask) {
 				delete(outputs, name)
 				common.Logger(ctx).Warnf("Suppressing secret-bearing job output %q", name)
@@ -337,6 +365,9 @@ func validateAction(workdir, uses string, visited map[string]bool) error {
 		return fmt.Errorf("container actions are unsupported in host mode")
 	}
 	if !strings.HasPrefix(uses, "./") {
+		if strings.HasPrefix(uses, "actions/checkout@") || pinnedAction(uses) {
+			return nil
+		}
 		return fmt.Errorf("remote action %q requires a pinned action resolver", uses)
 	}
 	root, err := filepath.EvalSymlinks(workdir)

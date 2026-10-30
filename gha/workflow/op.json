@@ -12,7 +12,8 @@
         "enum": [
           "submit",
           "expand",
-          "collect"
+          "collect",
+          "source"
         ],
         "default": "submit"
       },
@@ -26,6 +27,10 @@
       "repository": {
         "type": "string",
         "default": "{{ context.git.repo }}"
+      },
+      "base_revision": {
+        "type": "string",
+        "default": "{{ context.git.resolved_hash }}"
       },
       "runner_profiles": {
         "type": "array",

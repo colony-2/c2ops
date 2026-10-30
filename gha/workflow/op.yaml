@@ -8,7 +8,7 @@ input_schema:
   properties:
     action:
       type: string
-      enum: [submit, expand, collect]
+      enum: [submit, expand, collect, source]
       default: submit
     workflow: {type: string}
     worktree_path:
@@ -17,6 +17,9 @@ input_schema:
     repository:
       type: string
       default: '{{ context.git.repo }}'
+    base_revision:
+      type: string
+      default: '{{ context.git.resolved_hash }}'
     runner_profiles:
       type: array
       items:

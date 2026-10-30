@@ -32,6 +32,7 @@ type Profile struct {
 	ExecutionNeeds map[string]any `json:"execution_needs"`
 }
 type Input struct {
+	BaseRevision   string            `json:"base_revision,omitempty"`
 	HelperOp       string            `json:"helper_op,omitempty"`
 	ExecutorOp     string            `json:"executor_op,omitempty"`
 	Action         string            `json:"action,omitempty"`
@@ -77,6 +78,8 @@ func Run(ctx context.Context, in Input) (any, error) {
 		return Submit(ctx, in)
 	case "expand":
 		return expand(ctx, in)
+	case "source":
+		return map[string]any{}, nil // c2j restored the submitted snapshot before invocation.
 	case "collect":
 		return collect(in.Observations)
 	default:
@@ -102,6 +105,9 @@ func Submit(ctx context.Context, in Input) (Submission, error) {
 	if in.Event == nil {
 		in.Event = map[string]any{}
 	}
+	if in.EventName == "pull_request" && in.Event["action"] == nil {
+		in.Event["action"] = "synchronize"
+	}
 	if in.Env == nil {
 		in.Env = map[string]string{}
 	}
@@ -119,6 +125,13 @@ func Submit(ctx context.Context, in Input) (Submission, error) {
 		return zero, fmt.Errorf("resolve source: %w", err)
 	}
 	in.Revision = strings.TrimSpace(string(raw))
+	if in.BaseRevision == "" {
+		in.BaseRevision = in.Revision
+	}
+	pack, err := sourceBundle(ctx, in.WorktreePath, in.BaseRevision, in.Revision)
+	if err != nil {
+		return zero, err
+	}
 	jobs, err := jobexec.Plan(string(source), in.EventName)
 	if err != nil {
 		return zero, err
@@ -151,6 +164,7 @@ func Submit(ctx context.Context, in Input) (Submission, error) {
 	if err != nil {
 		return zero, err
 	}
+	broker.sourcePack = pack
 	// Construct and validate every recipe before the first submission.
 	ids := map[string]string{}
 	for _, job := range jobs {
@@ -276,10 +290,13 @@ func validateBindings(in Input) error {
 // This is the c2j invocation-broker HTTP contract used by c2j submit. Its wire
 // shape is exercised against the real pinned c2j broker in integration tests.
 // No direct JobDB connection or lease credential is used by this client.
-type broker struct{ endpoint, token, session, tenant, parent, invocation string }
+type broker struct {
+	endpoint, token, session, tenant, parent, invocation string
+	sourcePack                                           []byte
+}
 
 func currentBroker() (broker, error) {
-	b := broker{os.Getenv("C2J_CHILD_JOB_ENDPOINT"), os.Getenv("C2J_CHILD_JOB_TOKEN"), os.Getenv("C2J_CHILD_JOB_SESSION_ID"), os.Getenv("C2J_CURRENT_TENANT_ID"), os.Getenv("C2J_CURRENT_JOB_ID"), os.Getenv("C2J_CURRENT_INVOCATION_HASH")}
+	b := broker{os.Getenv("C2J_CHILD_JOB_ENDPOINT"), os.Getenv("C2J_CHILD_JOB_TOKEN"), os.Getenv("C2J_CHILD_JOB_SESSION_ID"), os.Getenv("C2J_CURRENT_TENANT_ID"), os.Getenv("C2J_CURRENT_JOB_ID"), os.Getenv("C2J_CURRENT_INVOCATION_HASH"), nil}
 	if b.endpoint == "" || b.token == "" || b.session == "" || b.tenant == "" || b.parent == "" || b.invocation == "" {
 		return b, fmt.Errorf("c2j invocation child-submission broker is required")
 	}
@@ -291,11 +308,21 @@ func (b broker) id(key string) string {
 }
 func (b broker) submit(ctx context.Context, in Input, p plannedRecipe) (Submission, error) {
 	var out Submission
+	if len(b.sourcePack) > 0 {
+		// Seed c2j's native snapshot forwarding before any await operation, which
+		// cannot itself accept submitted artifacts.
+		bootstrap := node("source", in.HelperOp, map[string]any{"action": "source"})
+		bootstrap["artifacts"] = map[string]any{"__git_state_thin_pack__": "${{ context.artifacts['__git_state_thin_pack__'] }}"}
+		p.Recipe["sequence"] = append([]any{bootstrap}, p.Recipe["sequence"].([]any)...)
+	}
 	recipe, err := yaml.Marshal(p.Recipe)
 	if err != nil {
 		return out, err
 	}
-	request := map[string]any{"start": map[string]any{"tenantId": b.tenant, "job_id": p.ID, "recipe": p.Recipe["id"], "git": in.Revision, "context": map[string]any{"git": map[string]any{"repo": in.Repository, "ref": in.Revision, "resolved_hash": in.Revision}}}, "embedded_recipes": []any{map[string]any{"name": p.Recipe["id"], "yaml": recipe}}}
+	request := map[string]any{"start": map[string]any{"tenantId": b.tenant, "job_id": p.ID, "recipe": p.Recipe["id"], "git": in.BaseRevision, "context": map[string]any{"git": map[string]any{"repo": in.Repository, "ref": in.BaseRevision, "resolved_hash": in.BaseRevision}, "initial_commit": map[string]any{"hash": in.Revision, "parent_hash": in.BaseRevision}}}, "embedded_recipes": []any{map[string]any{"name": p.Recipe["id"], "yaml": recipe}}}
+	if len(b.sourcePack) > 0 {
+		request["artifacts"] = []any{map[string]any{"name": "__git_state_thin_pack__", "data": b.sourcePack}}
+	}
 	raw, err := json.Marshal(request)
 	if err != nil {
 		return out, err

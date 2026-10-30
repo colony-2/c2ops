@@ -1,22 +1,30 @@
 package integration
 
 import (
+	"archive/zip"
+	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/colony-2/jobdb/pkg/workflow"
 	"github.com/stretchr/testify/require"
 )
 
-func installWorkflowFixture(t *testing.T, h *harness) {
+func installWorkflowFixture(t *testing.T, h *harness, command ...string) {
 	raw, err := os.ReadFile("../workflow/op.json")
 	require.NoError(t, err)
 	var manifest map[string]any
 	require.NoError(t, json.Unmarshal(raw, &manifest))
 	manifest["command"] = []string{workflowBinary}
+	if len(command) > 0 {
+		manifest["command"] = command
+	}
 	delete(manifest, "dependencies")
 	raw, err = json.Marshal(manifest)
 	require.NoError(t, err)
@@ -24,14 +32,14 @@ func installWorkflowFixture(t *testing.T, h *harness) {
 }
 
 func workflowRecipe(t *testing.T, extra string) string {
-	return fmt.Sprintf(`id: full-workflow
+	return localRecipe(t, fmt.Sprintf(`id: full-workflow
 sequence:
   - id: launch
-    op: ./.c2/test-ops/gha-workflow
+    op: nix:github:colony-2/c2ops/published#gha-workflow
     inputs:
       workflow: .github/workflows/fixture.yml
-      helper_op: ./.c2/test-ops/gha-workflow
-      executor_op: ./.c2/test-ops/gha-job
+      helper_op: nix:github:colony-2/c2ops/published#gha-workflow
+      executor_op: nix:github:colony-2/c2ops/published#gha-job
       runner_profiles:
         - labels: [local]
           execution_needs: {platform: %s/%s}
@@ -43,7 +51,7 @@ sequence:
       wait: {on: job}
 outputs:
   run: '${{ sequence.done.outputs.outputs }}'
-`, runtime.GOOS, runtime.GOARCH, extra)
+`, runtime.GOOS, runtime.GOARCH, extra))
 }
 func TestSubmittedWorkflowRunsWholeDAGAndSurvivesRestart(t *testing.T) {
 	h := newHarness(t, nil)
@@ -150,4 +158,161 @@ jobs:
 	require.Equal(t, "skipped", run["status"])
 	require.Empty(t, run["jobs"])
 	require.Len(t, h.jobs(), 2)
+}
+
+func TestSubmittedWorkflowTransfersV4ArtifactsAfterWorkerDeletion(t *testing.T) {
+	var archive bytes.Buffer
+	writer := zip.NewWriter(&archive)
+	file, err := writer.CreateHeader(&zip.FileHeader{Name: "result.txt", Method: zip.Store})
+	require.NoError(t, err)
+	_, err = file.Write([]byte("durable artifact bytes"))
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+	h := newHarness(t, nil)
+	installJobFixture(t, h, `on: workflow_dispatch
+jobs:
+  upload:
+    runs-on: local
+    steps:
+      - run: node upload.js
+  download:
+    needs: upload
+    runs-on: local
+    outputs:
+      received: ${{ steps.download.outputs.received }}
+    steps:
+      - id: download
+        run: node download.js
+`)
+	shared := `const base=process.env.ACTIONS_RESULTS_URL+'twirp/github.actions.results.api.v1.ArtifactService/';
+async function rpc(method,extra){const response=await fetch(base+method,{method:'POST',headers:{Authorization:'Bearer '+process.env.ACTIONS_RUNTIME_TOKEN,'Content-Type':'application/json'},body:JSON.stringify({workflowRunBackendId:'1',workflowJobRunBackendId:'1',...extra})});if(!response.ok)throw new Error(await response.text());return response.json()}
+`
+	h.seed(map[string]string{
+		"upload.js":   shared + fmt.Sprintf(`(async()=>{const data=Buffer.from(%q,'base64');const created=await rpc('CreateArtifact',{name:'build',version:4});const put=await fetch(created.signedUploadUrl+'&comp=block',{method:'PUT',body:data});if(!put.ok)throw new Error(await put.text());await rpc('FinalizeArtifact',{name:'build',size:String(data.length)});})().catch(e=>{console.error(e);process.exit(1)});`, base64.StdEncoding.EncodeToString(archive.Bytes())),
+		"download.js": shared + `(async()=>{const listed=await rpc('ListArtifacts',{});if(listed.artifacts.length!==1)throw new Error('missing artifact');const url=await rpc('GetSignedArtifactURL',{name:'build'});const r=await fetch(url.signedUrl);const data=Buffer.from(await r.arrayBuffer());if(!data.includes(Buffer.from('durable artifact bytes')))throw new Error('wrong artifact bytes');require('fs').appendFileSync(process.env.GITHUB_OUTPUT,'received=yes\n');})().catch(e=>{console.error(e);process.exit(1)});`,
+	})
+	installWorkflowFixture(t, h)
+	root := h.submit(workflowRecipe(t, ""), nil)
+	require.Equal(t, workflow.JobRunSuspended, h.step(root).Status)
+	// Advance only upload's coordinator and its execution/result children.
+	for iteration := 0; iteration < 10; iteration++ {
+		for _, job := range h.jobs() {
+			var meta struct {
+				Recipe string `json:"recipe"`
+			}
+			require.NoError(t, json.Unmarshal(job.Metadata, &meta))
+			if strings.HasPrefix(meta.Recipe, "gha-upload") {
+				h.step(job.JobKey)
+			}
+		}
+	}
+	require.NoError(t, os.RemoveAll(filepath.Join(h.root, "workers")))
+	require.NoError(t, os.Mkdir(filepath.Join(h.root, "workers"), 0700))
+	h.reopen()
+	run := h.drain(root)["run"].(map[string]any)
+	require.Equal(t, "success", run["status"])
+	jobs := run["jobs"].(map[string]any)
+	require.Equal(t, "yes", jobs["download"].(map[string]any)["outputs"].(map[string]any)["received"])
+}
+
+func installGHAFixture(t *testing.T, h *harness) {
+	raw, err := os.ReadFile("../op.json")
+	require.NoError(t, err)
+	var manifest map[string]any
+	require.NoError(t, json.Unmarshal(raw, &manifest))
+	manifest["command"] = []string{ghaBinary}
+	delete(manifest, "dependencies")
+	raw, err = json.Marshal(manifest)
+	require.NoError(t, err)
+	h.seed(map[string]string{".c2/test-ops/gha/op.yaml": string(raw)})
+}
+
+func TestGHABackendC2J(t *testing.T) {
+	h := newHarness(t, nil)
+	installJobFixture(t, h, fanInWorkflow)
+	installWorkflowFixture(t, h)
+	installGHAFixture(t, h)
+	recipe := strings.Replace(workflowRecipe(t, "      backend: c2j"), "op: ./.c2/test-ops/gha-workflow", "op: ./.c2/test-ops/gha", 1)
+	root := h.submit(recipe, nil)
+	result := h.drain(root)["run"].(map[string]any)
+	require.Equal(t, "success", result["status"])
+}
+
+// CI enables this on both native architectures. Ordinary test-fast runs retain
+// their offline, container-free contract.
+func TestSubmittedWorkflowStandardArtifactActions(t *testing.T) {
+	if os.Getenv("C2OPS_TEST_GHA_ACTIONS") != "1" {
+		t.Skip("set C2OPS_TEST_GHA_ACTIONS=1 to fetch pinned public actions")
+	}
+	h := newHarness(t, nil)
+	installJobFixture(t, h, `on: workflow_dispatch
+jobs:
+  upload:
+    runs-on: local
+    steps:
+      - run: echo durable-standard-action > result.txt
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: result
+          path: result.txt
+  download:
+    needs: upload
+    runs-on: local
+    outputs:
+      received: ${{ steps.check.outputs.received }}
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: result
+          path: incoming
+      - id: check
+        run: |
+          test "$(cat incoming/result.txt)" = durable-standard-action
+          echo received=yes >> "$GITHUB_OUTPUT"
+`)
+	installWorkflowFixture(t, h)
+	root := h.submit(workflowRecipe(t, "      event: {repository: {full_name: fixture/test, name: test, owner: {login: fixture}}}"), nil)
+	result := h.drain(root)["run"].(map[string]any)
+	require.Equal(t, "success", result["status"])
+	jobs := result["jobs"].(map[string]any)
+	require.Equal(t, "yes", jobs["download"].(map[string]any)["outputs"].(map[string]any)["received"])
+}
+
+func TestSubmittedWorkflowTransfersUnpublishedSource(t *testing.T) {
+	h := newHarness(t, nil)
+	installJobFixture(t, h, `on: workflow_dispatch
+jobs:
+  read:
+    runs-on: local
+    steps:
+      - run: test "$(cat candidate.txt)" = unpublished
+`)
+	installWorkflowFixture(t, h)
+	recipe := strings.Replace(workflowRecipe(t, ""), "sequence:\n", `sequence:
+    - id: change
+      op: command_execution
+      inputs:
+        run: echo unpublished > candidate.txt
+`, 1)
+	root := h.submit(recipe, nil)
+	result := h.drain(root)["run"].(map[string]any)
+	require.Equal(t, "success", result["status"])
+	require.NotEqual(t, h.commit, result["revision"])
+	require.NoFileExists(t, filepath.Join(h.repo, "candidate.txt"))
+}
+
+func TestSubmittedWorkflowDuplicateBrokerSubmissions(t *testing.T) {
+	h := newHarness(t, nil)
+	installJobFixture(t, h, fanInWorkflow)
+	wrapper := filepath.Join(h.root, "repeat.sh")
+	require.NoError(t, os.WriteFile(wrapper, []byte(`set -e
+payload=$(cat)
+printf '%s' "$payload" | "$1" > /dev/null
+printf '%s' "$payload" | "$1"
+`), 0600))
+	installWorkflowFixture(t, h, "bash", wrapper, workflowBinary)
+	root := h.submit(workflowRecipe(t, ""), nil)
+	result := h.drain(root)["run"].(map[string]any)
+	require.Equal(t, "success", result["status"])
+	require.Len(t, h.jobs(), 11, "repeating each broker invocation must reuse every logical job, shard and collector")
 }

@@ -25,6 +25,7 @@ const publicJobOp = "nix:github:colony-2/c2ops/published#gha-job"
 
 var helperBinary string
 var workflowBinary string
+var ghaBinary string
 
 // Compile once, before the worker loop. Every invocation executes this binary;
 // neither the fixture manifest nor a live job invokes the Go toolchain.
@@ -52,6 +53,15 @@ func TestMain(m *testing.M) {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+	ghaBinary = filepath.Join(dir, "gha")
+	build = exec.Command("go", "build", "-o", ghaBinary, ".")
+	build.Dir = ".."
+	build.Stdout, build.Stderr = os.Stderr, os.Stderr
+	if err := build.Run(); err != nil {
+		os.RemoveAll(dir)
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 	code := m.Run()
 	os.RemoveAll(dir)
 	os.Exit(code)
@@ -67,8 +77,14 @@ func localRecipe(t *testing.T, recipe string) string {
 	walk = func(node *yaml.Node) {
 		if node.Kind == yaml.MappingNode {
 			for i := 0; i < len(node.Content); i += 2 {
-				if node.Content[i].Value == "op" && node.Content[i+1].Value == publicJobOp {
+				if (node.Content[i].Value == "op" || node.Content[i].Value == "executor_op") && node.Content[i+1].Value == publicJobOp {
 					node.Content[i+1].Value = "./.c2/test-ops/gha-job"
+				}
+				if node.Content[i].Value == "op" && node.Content[i+1].Value == "nix:github:colony-2/c2ops/published#gha" {
+					node.Content[i+1].Value = "./.c2/test-ops/gha"
+				}
+				if (node.Content[i].Value == "op" || node.Content[i].Value == "helper_op") && node.Content[i+1].Value == "nix:github:colony-2/c2ops/published#gha-workflow" {
+					node.Content[i+1].Value = "./.c2/test-ops/gha-workflow"
 				}
 			}
 		}

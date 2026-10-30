@@ -21,7 +21,9 @@ func validateTriggers(_ *model.Workflow, in Input) error {
 		pr, _ := in.Event["pull_request"].(map[string]any)
 		base, _ := pr["base"].(map[string]any)
 		head, _ := pr["head"].(map[string]any)
-		if in.Event["number"] == nil || base["ref"] == nil || head["ref"] == nil {
+		baseRef, _ := base["ref"].(string)
+		headRef, _ := head["ref"].(string)
+		if in.Event["number"] == nil || baseRef == "" || headRef == "" {
 			return fmt.Errorf("pull_request metadata requires number, pull_request.base.ref and pull_request.head.ref")
 		}
 	default:
@@ -48,6 +50,10 @@ func matchesTrigger(source []byte, in Input) (bool, error) {
 		return false, err
 	}
 	if document.On.Kind != yaml.MappingNode {
+		if in.EventName == "pull_request" {
+			action, _ := in.Event["action"].(string)
+			return action == "opened" || action == "synchronize" || action == "reopened", nil
+		}
 		return true, nil
 	}
 	var filters map[string]yaml.Node

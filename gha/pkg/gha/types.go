@@ -2,6 +2,7 @@ package gha
 
 import (
 	"context"
+	"github.com/colony-2/c2ops/gha/internal/workflow"
 )
 
 const (
@@ -14,7 +15,16 @@ const (
 	statusTimedOut  = "timed_out"
 )
 
+type RunnerProfile = workflow.Profile
 type RunInput struct {
+	RunnerProfiles        []RunnerProfile   `json:"runner_profiles,omitempty"`
+	SecretBindings        map[string]string `json:"secret_bindings,omitempty"`
+	EventName             string            `json:"event_name,omitempty"`
+	Event                 map[string]any    `json:"event,omitempty"`
+	ChangedPaths          []string          `json:"changed_paths,omitempty"`
+	Vars                  map[string]string `json:"vars,omitempty"`
+	HelperOp              string            `json:"helper_op,omitempty"`
+	ExecutorOp            string            `json:"executor_op,omitempty"`
 	Workflow              string            `json:"workflow" validate:"required"`
 	With                  map[string]any    `json:"with,omitempty"`
 	Env                   map[string]string `json:"env,omitempty"`
@@ -53,6 +63,10 @@ type RemoteInput struct {
 }
 
 type RunOutput struct {
+	JobID           string                       `json:"job_id,omitempty"`
+	GoalID          string                       `json:"goal_id,omitempty"`
+	TenantID        string                       `json:"tenant_id,omitempty"`
+	SubmittedJobs   map[string]string            `json:"submitted_jobs,omitempty"`
 	Status          string                       `json:"status"`
 	ExitCode        int                          `json:"exit_code"`
 	DurationSeconds int                          `json:"duration_seconds"`

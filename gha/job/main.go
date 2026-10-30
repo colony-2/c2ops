@@ -17,7 +17,12 @@ import (
 	"github.com/colony-2/c2ops/gha/internal/jobexec"
 )
 
+type snapshot struct {
+	Ref   any               `json:"ref"`
+	Files map[string]string `json:"files"`
+}
 type input struct {
+	ArtifactInputs []snapshot `json:"artifact_inputs,omitempty"`
 	jobexec.Request
 	Payload        string `json:"payload,omitempty"`
 	WorkflowSHA256 string `json:"workflow_sha256,omitempty"`
@@ -84,15 +89,26 @@ func run(ctx context.Context, in input) (extensioncmd.Result[jobexec.Result], er
 		return out, err
 	}
 	in.Request.Workflow = string(content)
+	artifactDir := filepath.Join(artifacts, "uploaded")
+	var sources []string
+	for _, snapshot := range in.ArtifactInputs {
+		path := snapshot.Files["data"]
+		if !filepath.IsAbs(path) {
+			return out, fmt.Errorf("artifact input requires hydrated data directory")
+		}
+		sources = append(sources, path)
+	}
 	result, runErr := jobexec.Execute(ctx, in.Request, jobexec.Options{
-		Workdir: root, StateDir: artifacts, Log: io.MultiWriter(os.Stderr, log),
+		ArtifactDir: artifactDir, ArtifactInputs: sources, Workdir: root, StateDir: artifacts, Log: io.MultiWriter(os.Stderr, log),
 	})
 	closeErr := log.Close()
 	// c2j seals this outbox file into a JobDB artifact before cleaning the
 	// invocation directory. An external file:// ref would not survive cleanup.
 	result.Diagnostics = map[string]string{"$object": "diagnostics"}
+	result.Artifacts = []any{map[string]string{"$object": "artifacts"}}
 	out.Output = result
 	out.Objects = map[string]extensioncmd.ObjectDraft{
+		"artifacts":   {Type: "c2ops.gha.artifacts/v1", Metadata: map[string]string{"job_id": in.JobID}, Files: map[string]string{"data": artifactDir}},
 		"diagnostics": {Type: "c2ops.gha.diagnostics/v1", Metadata: map[string]string{"job_id": in.JobID}, Files: map[string]string{"log": logPath}},
 	}
 	if runErr != nil {

@@ -7,6 +7,11 @@ input_schema:
   type: object
   required: [workflow, job_id]
   properties:
+    artifact_inputs:
+      type: array
+      items:
+        type: object
+        x-c2j-object-type: c2ops.gha.artifacts/v1
     payload:
       type: string
       description: Base64 public execution request supplied by the workflow coordinator
@@ -61,6 +66,11 @@ output_schema:
     outputs:
       type: object
       additionalProperties: {type: string}
+    artifacts:
+      type: array
+      items:
+        type: object
+        x-c2j-object-type: c2ops.gha.artifacts/v1
     diagnostics:
       type: object
       x-c2j-object-type: c2ops.gha.diagnostics/v1
