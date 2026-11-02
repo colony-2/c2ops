@@ -2,7 +2,7 @@
 
 Collection of c2j extension ops.
 
-Every op in this repo reads one JSON object from stdin and writes one JSON object to stdout as `{"output": ...}`. Ops are packaged for `x86_64-linux` and `aarch64-linux`, with CI configured to publish to the **colony2** Cachix cache. See [package setup and publishing](./NIX_PACKAGES.md) and the [extension contract](./EXTENSION_OPS.md).
+Every op in this repo reads one JSON object from stdin and writes one JSON object to stdout as `{"output": ...}`. Ops are packaged for `x86_64-linux`, `aarch64-linux`, and Apple Silicon macOS (`aarch64-darwin`), with CI configured to publish to the **colony2** Cachix cache. See [package setup and publishing](./NIX_PACKAGES.md) and the [extension contract](./EXTENSION_OPS.md).
 
 Useful CLI diagnostics go to stderr while stdout stays reserved for JSON.
 See [stderr handling by op](./STDERR_DIAGNOSTICS.md) for live forwarding,
@@ -11,8 +11,8 @@ artifact capture, and intentionally quiet probes.
 ## Recipe Form
 
 Use an explicit package selector on the **`published` branch**. CI advances it
-only after tests, Cachix uploads, and download-only checks pass on both AMD64
-and ARM64. While a new `main` commit is building or fails, `published` continues
+only after tests, Cachix uploads, and download-only checks pass on Linux AMD64, Linux ARM64,
+and Apple Silicon macOS. While a new `main` commit is building or fails, `published` continues
 to select the previous available release:
 
 ```yaml

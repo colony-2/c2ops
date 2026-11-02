@@ -94,7 +94,7 @@ let
       meta = {
         description = manifest.description;
         mainProgram = name;
-        platforms = [ "x86_64-linux" "aarch64-linux" ];
+        platforms = [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" ];
         license = lib.licenses.asl20;
       };
     };

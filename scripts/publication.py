@@ -11,7 +11,7 @@ import sys
 
 from op_test import PUBLIC_FLAKE, ROOT
 
-SYSTEMS = ("x86_64-linux", "aarch64-linux")
+SYSTEMS = ("x86_64-linux", "aarch64-linux", "aarch64-darwin")
 STORE_PATH = re.compile(r"/nix/store/[0-9abcdfghijklmnpqrsvwxyz]{32}-[^/\s]+")
 
 

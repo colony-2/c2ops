@@ -22,6 +22,8 @@ jobs:
             system: x86_64-linux
           - runner: ubuntu-24.04-arm
             system: aarch64-linux
+          - runner: macos-15
+            system: aarch64-darwin
     runs-on: ${{ matrix.runner }}
 
     steps:
@@ -111,6 +113,7 @@ jobs:
         run: make test
 
       - name: Check native Codex in the minimal worker image
+        if: runner.os == 'Linux'
         env:
           C2OPS_TEST_FLAKE: path:${{ github.workspace }}
         run: python3 scripts/check-codex-worker.py
@@ -129,7 +132,7 @@ jobs:
           skipAddingSubstituter: true
           pathsToPush: ${{ steps.packages.outputs.paths }}
 
-  # needs waits for both architectures, including Cachix's post-job uploads.
+  # needs waits for all platforms, including Cachix's post-job uploads.
   verify:
     needs: test
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
@@ -141,6 +144,8 @@ jobs:
             system: x86_64-linux
           - runner: ubuntu-24.04-arm
             system: aarch64-linux
+          - runner: macos-15
+            system: aarch64-darwin
     runs-on: ${{ matrix.runner }}
     env:
       NIX_SYSTEM: ${{ matrix.system }}

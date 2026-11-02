@@ -13,7 +13,7 @@ parser.add_argument("package", type=Path)
 parser.add_argument("manifest", type=Path)
 parser.add_argument("coordinate")
 parser.add_argument("--compiled-executable", type=Path)
-parser.add_argument("--system", choices=("x86_64-linux", "aarch64-linux"))
+parser.add_argument("--system", choices=("x86_64-linux", "aarch64-linux", "aarch64-darwin"))
 args = parser.parse_args()
 
 package = args.package
@@ -35,9 +35,14 @@ if args.compiled_executable:
     assert os.access(compiled, os.X_OK), "compiled payload must be executable"
     with compiled.open("rb") as binary:
         header = binary.read(20)
-    assert header[:6] == b"\x7fELF\x02\x01", "expected a compiled ELF64 executable, not a source launcher"
-    machine = {"x86_64-linux": 62, "aarch64-linux": 183}[args.system]
-    assert int.from_bytes(header[18:20], "little") == machine, "wrong binary architecture"
+    if args.system == "aarch64-darwin":
+        assert header[:4] == b"\xcf\xfa\xed\xfe", "expected a compiled Mach-O64 executable, not a source launcher"
+        assert int.from_bytes(header[4:8], "little") == 0x0100000C, "wrong binary architecture"
+        assert int.from_bytes(header[12:16], "little") == 2, "expected a Mach-O executable"
+    else:
+        assert header[:6] == b"\x7fELF\x02\x01", "expected a compiled ELF64 executable, not a source launcher"
+        machine = {"x86_64-linux": 62, "aarch64-linux": 183}[args.system]
+        assert int.from_bytes(header[18:20], "little") == machine, "wrong binary architecture"
     assert (executable.resolve() == compiled.resolve()
             or os.fsencode(compiled) in executable.read_bytes()), "launcher must reference the compiled payload"
     for root in (package, compiled.parent.parent):

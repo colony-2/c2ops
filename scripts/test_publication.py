@@ -16,11 +16,15 @@ class PublicationTests(unittest.TestCase):
             for name in package_names()
         }}
 
-    def read(self, data):
+    def read(self, data, system="aarch64-linux"):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "packages.json"
             path.write_text(json.dumps(data))
-            return read_manifest(path, "a" * 40, "aarch64-linux")
+            return read_manifest(path, "a" * 40, system)
+
+    def test_apple_silicon_artifact(self):
+        data = {**self.data, "system": "aarch64-darwin"}
+        self.assertEqual(self.read(data, "aarch64-darwin"), data)
 
     def test_artifact_identity_and_completeness(self):
         self.assertEqual(self.read(self.data), self.data)

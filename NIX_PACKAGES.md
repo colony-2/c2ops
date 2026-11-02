@@ -1,7 +1,8 @@
 # Nix packages and Cachix
 
-The flake exports all 12 ops for `x86_64-linux` and `aarch64-linux`. Each package
-has an evaluation-time `c2j` manifest, a matching `share/c2j/op.json`, and a
+The flake exports all ops for `x86_64-linux`, `aarch64-linux`, and Apple Silicon
+macOS (`aarch64-darwin`). Each package has an evaluation-time `c2j` manifest,
+a matching `share/c2j/op.json`, and a
 JSON-speaking executable under `bin/`. `flake.lock` pins all Nix evaluation and
 build inputs. There is no default op: select the attribute explicitly.
 
@@ -47,7 +48,7 @@ shell read the same [configuration](./nix/pnpm-build-policy.json). See
 [pnpm's build settings](https://pnpm.io/settings#allowbuilds).
 
 Use the named **`published`** ref in package selectors. CI advances this branch
-only after both architectures finish testing, uploading, and verifying downloads:
+only after all three platforms finish testing, uploading, and verifying downloads:
 
 ```yaml
 sequence:
@@ -88,8 +89,9 @@ See [Nix's negative lookup cache setting](https://nix.dev/manual/nix/stable/comm
 ## What is packaged
 
 All Go ops are compiled by `buildGoModule` during the CI Nix build. The resulting
-runtime closure contains a native ELF executable for the selected architecture;
-it contains neither the op's Go source nor the Go compiler. `bin/<op>` is a small
+runtime closure contains a native ELF executable on Linux or Mach-O executable
+on macOS for the selected architecture; it contains neither the op's Go source
+nor the Go compiler. `bin/<op>` is a small
 shell launcher that sets runtime paths and executes that compiled binary from
 the Nix store. Seeing a shell launcher does not mean the op compiles on startup.
 The package build rejects a runtime dependency on Go, and package checks verify
@@ -190,22 +192,25 @@ sequence:
 ## CI and publishing
 
 [The existing test workflow](./.github/workflows/test.yml) builds packages and
-runs integration and unit tests on native GitHub Actions runners for both Linux
-architectures. Integration tests override the public coordinates with the current
-checkout; they cannot accidentally test the published branch instead. It uses
+runs integration and unit tests on native GitHub Actions runners for Linux AMD64,
+Linux ARM64, and Apple Silicon macOS (`macos-15`). Integration tests override the
+public coordinates with the current checkout; they cannot accidentally test the
+published branch instead. It uses
 `cachix/install-nix-action` to install Nix, `cachix/cachix-action` to publish, and
 `actions/upload-artifact` / `actions/download-artifact` to transfer exact selectors
 and output paths. Everything runs in this single workflow:
 
-1. `test`: build and test on AMD64 and ARM64, then upload through the Cachix
-   action's post-job phase. Record all 12 op outputs plus `codex-cli` and `aider-cli`.
-2. `verify`: wait for **both complete test jobs**, then use a separate native
+1. `test`: build and test on all three platforms, then upload through the Cachix
+   action's post-job phase. Record every op output plus `codex-cli` and `aider-cli`.
+   The Docker-based minimal Linux worker check runs only on Linux; native package
+   contract and CLI checks also run on macOS.
+2. `verify`: wait for **all three complete test jobs**, then use a separate native
    matrix to download every recorded runtime closure into an empty Nix store.
    Only `cache.nixos.org` and the configured Cachix cache are used. Signature
    verification stays enabled; local and remote builds are disabled, including
    a rejecting build hook for derivations with `preferLocalBuild`. Retain verified
    op closures using per-revision Cachix pins before allowing promotion.
-3. `promote`: wait for both verification jobs, then fast-forward `published` to
+3. `promote`: wait for all three verification jobs, then fast-forward `published` to
    the exact tested SHA. It creates the branch on the first successful publication.
    Older late-finishing runs and reruns leave a newer `published` untouched.
    The branch update uses a normal, non-forced Git push, which also guards races.
@@ -216,6 +221,11 @@ publication cycle. Pull requests and dispatches on other branches cannot publish
 or promote. A failed build, upload, download, signature check, or pin leaves
 `published` unchanged. A verification job that succeeds while its sibling fails
 may leave pins for that unpromoted candidate; those can be removed later.
+
+macOS packages are built and tested on macOS. A Linux coordinator can dispatch
+Nix builds to a [remote macOS builder](https://nix.dev/manual/nix/stable/advanced-topics/distributed-builds.html),
+but a Linux runner alone cannot execute the Darwin binaries and package checks.
+This workflow uses a native macOS runner for both building and cache verification.
 
 One-time repository setup:
 
@@ -388,7 +398,7 @@ The fixture suite also reads every Go `op.yaml`, prepares its declared package
 through c2j, and executes its qualified command from an empty directory with Go
 blocked. These tests check all seven Go ops, including a successful policy check
 and real native Codex version probes. The same test flake override applies to
-both each manifest's dependency and command. Both CI architectures run this suite.
+both each manifest's dependency and command. All three CI platforms run this suite.
 
 The test harness itself needs Go, Python, uv, Node, pnpm, and Git; `nix develop`
 provides them. Python unit-test libraries may be downloaded by uv. `scripts/with-tools.go`
