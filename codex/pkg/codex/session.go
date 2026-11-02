@@ -196,6 +196,13 @@ func (s *sessionExecution) publish() (*checkpoint.Marker, map[string]checkpoint.
 }
 
 func exportSessionHome(source, target string) error {
+	// The CLI can record canonical paths while the caller uses a symlinked
+	// ancestor (for example /var -> /private/var on macOS). Compare and
+	// relativize rollout paths using the same canonical filesystem root.
+	source, err := filepath.EvalSymlinks(source)
+	if err != nil {
+		return fmt.Errorf("resolve session home: %w", err)
+	}
 	if err := os.MkdirAll(target, 0700); err != nil {
 		return err
 	}
@@ -264,6 +271,11 @@ func exportSessionHome(source, target string) error {
 			return err
 		}
 		if filepath.IsAbs(e.path) {
+			e.path, err = filepath.EvalSymlinks(e.path)
+			if err != nil {
+				rows.Close()
+				return fmt.Errorf("resolve rollout path: %w", err)
+			}
 			if err := ensureDescendantPath(source, e.path, "rollout"); err != nil {
 				rows.Close()
 				return err

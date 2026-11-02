@@ -181,6 +181,88 @@ func TestSessionExportIncludesWALAndRejectsIncompleteState(t *testing.T) {
 	require.Nil(t, drafts)
 }
 
+func TestSessionExportWithSymlinkedAncestor(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		aliasHome    bool
+		aliasRollout bool
+	}{
+		{name: "aliased home", aliasHome: true},
+		{name: "aliased rollout", aliasRollout: true},
+		{name: "both aliased", aliasHome: true, aliasRollout: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root, err := filepath.EvalSymlinks(t.TempDir())
+			require.NoError(t, err)
+			alias := filepath.Join(t.TempDir(), "alias")
+			require.NoError(t, os.Symlink(root, alias))
+			home := filepath.Join(root, "workdir", "home")
+			seedTestSession(t, home, "id")
+			rollout := filepath.Join(home, "sessions", "id.jsonl")
+			if tc.aliasHome {
+				home = filepath.Join(alias, "workdir", "home")
+			}
+			if tc.aliasRollout {
+				rollout = filepath.Join(alias, "workdir", "home", "sessions", "id.jsonl")
+			}
+			db, err := openStateDB(filepath.Join(home, "state_5.sqlite"))
+			require.NoError(t, err)
+			_, err = db.Exec("UPDATE threads SET rollout_path = ? WHERE id = 'id'", rollout)
+			require.NoError(t, err)
+			require.NoError(t, db.Close())
+
+			s := &sessionExecution{runtimeVersion: "0.157.1", home: home, id: "id", outbox: t.TempDir()}
+			_, drafts, err := s.publish()
+			require.NoError(t, err)
+			draft := drafts["session"]
+			exportedDB, err := openStateDB(filepath.Join(draft.Files["home"], "state_5.sqlite"))
+			require.NoError(t, err)
+			var path, cwd string
+			require.NoError(t, exportedDB.QueryRow("SELECT rollout_path, cwd FROM threads WHERE id = 'id'").Scan(&path, &cwd))
+			require.NoError(t, exportedDB.Close())
+			require.Equal(t, "sessions/id.jsonl", path)
+			require.Empty(t, cwd)
+
+			// Export must not rewrite the running session's index.
+			db, err = openStateDB(filepath.Join(home, "state_5.sqlite"))
+			require.NoError(t, err)
+			require.NoError(t, db.QueryRow("SELECT rollout_path FROM threads WHERE id = 'id'").Scan(&path))
+			require.NoError(t, db.Close())
+			require.Equal(t, rollout, path)
+			require.NoError(t, os.RemoveAll(root))
+
+			restored := &sessionExecution{home: t.TempDir()}
+			require.NoError(t, restored.restore(&SessionInput{
+				Metadata: draft.Metadata.(SessionMetadata), Files: draft.Files,
+			}, t.TempDir()))
+			assertFileContent(t, filepath.Join(restored.home, "sessions", "id.jsonl"), "original")
+		})
+	}
+}
+
+func TestSessionExportRejectsOutsideRollout(t *testing.T) {
+	for _, throughSymlink := range []bool{false, true} {
+		t.Run(fmt.Sprintf("symlink=%t", throughSymlink), func(t *testing.T) {
+			home := t.TempDir()
+			seedTestSession(t, home, "id")
+			outside := filepath.Join(t.TempDir(), "outside.jsonl")
+			require.NoError(t, os.WriteFile(outside, []byte("outside"), 0600))
+			rollout := outside
+			if throughSymlink {
+				rollout = filepath.Join(home, "outside.jsonl")
+				require.NoError(t, os.Symlink(outside, rollout))
+			}
+			db, err := openStateDB(filepath.Join(home, "state_5.sqlite"))
+			require.NoError(t, err)
+			_, err = db.Exec("UPDATE threads SET rollout_path = ? WHERE id = 'id'", rollout)
+			require.NoError(t, err)
+			require.NoError(t, db.Close())
+			err = exportSessionHome(home, filepath.Join(t.TempDir(), "export"))
+			require.ErrorContains(t, err, "escapes workdir")
+		})
+	}
+}
+
 func TestSessionRejectsLegacyInputsAndInvalidState(t *testing.T) {
 	for _, payload := range []string{`{"sessionId":"old"}`, `{"sessionId":""}`, `{"resume_context":{}}`, `{"session":null}`} {
 		var execInput ExecOpInput

@@ -64,7 +64,10 @@ func TestCompatibilityRunAndRunSkill(t *testing.T) {
 	require.Equal(t, output.SessionID, skillOutput.SessionID)
 	require.NotNil(t, skillOutput.Session)
 	require.Equal(t, os.Getenv("C2OPS_CODEX_COMPAT_RESUME_VERSION"), skillOutput.Objects[skillOutput.Session.Name].Metadata.(SessionMetadata).RuntimeVersion)
-	assertFileContent(t, filepath.Join(second.WorktreeRoot, "resumed-path.txt"), second.WorktreeRoot+"\n")
+	// The CLI resolves symlinked ancestors before starting the resumed shell.
+	resolvedWorktree, err := filepath.EvalSymlinks(second.WorktreeRoot)
+	require.NoError(t, err)
+	assertFileContent(t, filepath.Join(second.WorktreeRoot, "resumed-path.txt"), resolvedWorktree+"\n")
 	assertFileContent(t, filepath.Join(second.ArtifactOutbox, "skill-result.json"), `{"summary":"skill result"}`)
 	_, err = os.Stat(first.WorkDirRoot)
 	require.True(t, os.IsNotExist(err), "resume must not recreate old paths")

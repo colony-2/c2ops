@@ -120,7 +120,12 @@ func TestLiveExecuteResumesSessionKnowledge(t *testing.T) {
 	if secondResult.Status != StatusCompleted {
 		t.Fatalf("expected second execution to complete, got %q: %s", secondResult.Status, secondResult.ErrorMessage)
 	}
-	assertFileContent(t, filepath.Join(second.WorktreeRoot, "resumed-path.txt"), second.WorktreeRoot+"\n")
+	// The CLI resolves symlinked ancestors before starting the resumed shell.
+	resolvedWorktree, err := filepath.EvalSymlinks(second.WorktreeRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertFileContent(t, filepath.Join(second.WorktreeRoot, "resumed-path.txt"), resolvedWorktree+"\n")
 	if _, err := os.Stat(first.CodexHome); !os.IsNotExist(err) {
 		t.Fatal("resume recreated the old home")
 	}
