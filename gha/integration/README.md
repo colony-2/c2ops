@@ -30,8 +30,10 @@ survives a SQLite reopen, and finishes before B has executed. This demonstrates
 incremental dependency scheduling with existing native child starts/waits;
 neither a batch barrier nor a new wait-any operation is required.
 
-The worker temp root is short enough for Unix credential-socket paths. Worktrees,
-act state and helper staging files all live below it; tests can destroy it
+The harness creates a private temporary root under `/tmp`, independent of the
+inherited `TMPDIR`, to keep Unix credential-socket paths within macOS's limit.
+Worktrees, act state and helper staging files all live below the worker root;
+tests can destroy it
 without deleting the database or source repository. Secret resolutions are
 counted outside SQLite to prove completed replay makes no further reads.
 

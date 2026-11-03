@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/colony-2/c2j/pkg/worker/compiler"
@@ -14,6 +15,11 @@ import (
 )
 
 func TestHarnessExecutesRealRecipeAndReopensCompletedResult(t *testing.T) {
+	// macOS supplies a long TMPDIR; worker credential sockets must still fit
+	// within Unix socket path limits. Exceed Linux's limit too for coverage there.
+	longTemp := filepath.Join(t.TempDir(), strings.Repeat("long-temp-", 12))
+	require.NoError(t, os.Mkdir(longTemp, 0700))
+	t.Setenv("TMPDIR", longTemp)
 	h := newHarness(t, nil)
 	root := h.submit(`id: root
 sequence:

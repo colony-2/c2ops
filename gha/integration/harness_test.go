@@ -69,8 +69,9 @@ func newHarness(t *testing.T, recipes map[string]string) *harness {
 	})
 	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
 	t.Cleanup(cancel)
-	// A short path keeps c2j's Unix Git-credential socket below sun_path's limit.
-	root, err := os.MkdirTemp("", "gha-it-")
+	// Use /tmp explicitly: macOS's inherited TMPDIR is too long once workers
+	// append c2j-git-<random>/resolver.sock (sun_path allows only 103 bytes).
+	root, err := os.MkdirTemp("/tmp", "gha-it-")
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, os.RemoveAll(root)) })
 	h := &harness{t: t, ctx: ctx, root: root, recipes: recipes, secrets: map[string]string{}}
