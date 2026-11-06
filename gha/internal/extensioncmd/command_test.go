@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/colony-2/c2ops/gha/internal/execution"
 	"github.com/stretchr/testify/require"
 )
 
@@ -107,4 +108,31 @@ func runWithCapturedStdio(t *testing.T, stdin []byte, fn func() int) ([]byte, st
 	require.NoError(t, err)
 
 	return stdout, string(stderr), code
+}
+
+func TestExecutionRequiredControl(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		result Result[testOutput]
+		err    error
+		code   int
+	}{
+		{"handoff", Result[testOutput]{ExecutionRequired: &execution.Requirements{Base: execution.String("macos*")}}, nil, 75},
+		{"mixed", Result[testOutput]{Output: testOutput{Reply: "bad"}, ExecutionRequired: &execution.Requirements{Base: execution.String("macos*")}}, nil, 1},
+		{"objects", Result[testOutput]{Objects: map[string]ObjectDraft{"x": {}}, ExecutionRequired: &execution.Requirements{Base: execution.String("macos*")}}, nil, 1},
+		{"empty", Result[testOutput]{ExecutionRequired: &execution.Requirements{}}, nil, 1},
+		{"cancelled", Result[testOutput]{ExecutionRequired: &execution.Requirements{Base: execution.String("macos*")}}, context.Canceled, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout, _, code := runWithCapturedStdio(t, []byte(`{}`), func() int {
+				return Run(func(context.Context, map[string]any) (Result[testOutput], error) { return tc.result, tc.err })
+			})
+			require.Equal(t, tc.code, code)
+			if code == 75 {
+				require.JSONEq(t, `{"execution_required":{"base":"macos*"}}`, string(stdout))
+			} else {
+				require.Empty(t, stdout)
+			}
+		})
+	}
 }

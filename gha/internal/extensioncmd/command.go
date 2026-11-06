@@ -9,6 +9,8 @@ import (
 	"os/signal"
 	"reflect"
 	"syscall"
+
+	"github.com/colony-2/c2ops/gha/internal/execution"
 )
 
 type ExternalRef struct {
@@ -23,9 +25,10 @@ type ArtifactRef struct {
 }
 
 type Result[O any] struct {
-	Output       O
-	ArtifactRefs map[string]ArtifactRef
-	Objects      map[string]ObjectDraft
+	Output            O
+	ExecutionRequired *execution.Requirements
+	ArtifactRefs      map[string]ArtifactRef
+	Objects           map[string]ObjectDraft
 }
 
 // ObjectDraft is the c2j extension outbox protocol. Files must be staged under
@@ -67,6 +70,29 @@ func Run[I any, O any](run func(context.Context, I) (Result[O], error)) int {
 	}
 
 	result, err := run(ctx, input)
+	if result.ExecutionRequired != nil {
+		if err == nil {
+			err = ctx.Err()
+		}
+		if err == nil {
+			err = result.ExecutionRequired.Validate()
+		}
+		ordinary := envelope[O]{Output: result.Output, ArtifactRefs: result.ArtifactRefs, Objects: result.Objects}
+		if err == nil && (hasEnvelopeData(ordinary) || len(result.Objects) > 0) {
+			err = fmt.Errorf("execution_required cannot be combined with outputs or artifacts")
+		}
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		if err = json.NewEncoder(os.Stdout).Encode(struct {
+			Required *execution.Requirements `json:"execution_required"`
+		}{result.ExecutionRequired}); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		return 75
+	}
 	env := envelope[O]{
 		Output:       result.Output,
 		ArtifactRefs: result.ArtifactRefs,

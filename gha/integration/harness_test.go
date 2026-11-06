@@ -60,6 +60,7 @@ type harness struct {
 	secrets       map[string]string
 	deniedSecrets map[string]bool
 	secretReads   int
+	allocation    *execution.Allocation
 }
 
 func newHarness(t *testing.T, recipes map[string]string) *harness {
@@ -164,7 +165,11 @@ func (h *harness) open() {
 	_, err = db.CreateCell(h.ctx, jobdb.CreateCellRequest{TenantID: tenant, Name: "fixture", Repo: h.repoID, RequestID: "fixture-cell"})
 	require.NoError(h.t, err)
 	platform := runtime.GOOS + "/" + runtime.GOARCH
-	h.runtime = executionruntime.New(db, execution.Allocation{SchemaVersion: 1, Platform: &platform})
+	allocation := execution.Allocation{SchemaVersion: 1, Platform: &platform}
+	if h.allocation != nil {
+		allocation = *h.allocation
+	}
+	h.runtime = executionruntime.New(db, allocation)
 	engine, err := jobworkflow.NewEngineBuilder().WithRuntime(h.runtime).WithWorkerTenantId(tenant).BuildEngine()
 	require.NoError(h.t, err)
 	h.engine = jobdbschema.WorkflowEngine{Engine: engine, Registry: db}
@@ -206,7 +211,7 @@ func (h *harness) submit(text string, inputs map[string]any) jobdb.JobKey {
 		TenantId: tenant, Cell: "fixture", CellRepo: h.repoID, RecipeName: def.GetMetadata().ID, Inputs: inputs, GitRef: h.commit,
 		JobContext: contextual.JobContext{
 			Workflow: contextual.WorkflowContext{CellName: "fixture"},
-			GitBase:  contextual.GitBaseContext{BaseRepo: h.repo, BaseRef: h.commit, ResolvedBaseHash: h.commit, GitAuthor: "GHA fixture <fixture@example.test>"},
+			GitBase:  contextual.GitBaseContext{BaseRepo: h.repoID, BaseRef: h.commit, ResolvedBaseHash: h.commit, GitAuthor: "GHA fixture <fixture@example.test>"},
 		},
 	}, h.engine, *def)
 	require.NoError(h.t, err)

@@ -2,7 +2,7 @@
 
 Go-backed op for running one GitHub Actions workflow.
 
-`backend: c2j` submits each Actions job as independently scheduled c2j work,
+The default `backend: c2j` submits each Actions job as independently scheduled c2j work,
 using act to evaluate and execute that job. It returns a result-job ID immediately;
 use a subsequent `recipe.await_result` to wait durably. The local and GitHub
 backends retain their existing synchronous behavior.
@@ -76,6 +76,85 @@ See [workflow semantics](workflow/README.md), the
 [container-free test harness](integration/README.md). This backend remains
 experimental pending native worker qualification; the host-executor correction is consumed from the immutable private fork recorded in [the source pin](../nix/act-source.json). Source builders must follow the [private-prefetch instructions](../NIX_PACKAGES.md#private-gha-build-input).
 
+## Execution negotiation
+
+With c2j v0.0.120 or a compatible newer runtime, set `execution_mode: negotiate`
+to resolve `runs-on` through the built-in catalog. Each job or matrix assignment
+checks `C2J_EXECUTION_ALLOCATION` before execution. An insufficient allocation
+returns an exit-75 handoff; c2j resumes the same task on a suitable worker.
+
+```yaml
+sequence:
+  - id: ci
+    op: nix:github:colony-2/c2ops/published#gha
+    inputs:
+      backend: c2j
+      execution_mode: negotiate
+      workflow: .github/workflows/ci.yml
+  - id: result
+    op: recipe.await_result
+    inputs:
+      target: {job: '${{ sequence.ci.outputs.job_id }}'}
+      wait: {on: job}
+```
+
+Catalog `2026-11-06.1` maps Ubuntu 24.04/26.04 AMD64 and ARM64 labels to
+`ubuntu-26.04-amd64` and `ubuntu-26.04-arm64`. ARM labels use the `-arm` suffix.
+Ubuntu `latest` aliases are pinned to this catalog. macOS 14/15 ARM64 map to
+`macos-sequoia-15.7.7-arm64`. These are compatibility substitutions, not copies
+of GitHub's complete software images. Diagnostics record the authored labels,
+selected requirements, and mapping source.
+
+Ubuntu larger-runner convenience labels add `-Ncore`, for example
+`ubuntu-24.04-16core` or `ubuntu-26.04-arm-64core`:
+
+| CPU | AMD64 memory | ARM64 memory |
+| --- | --- | --- |
+| 2 | 8G | 8G |
+| 4 | 16G | 16G |
+| 8 | 32G | 32G |
+| 16 | 64G | 64G |
+| 32 | 128G | 128G |
+| 64 | 256G | 208G |
+| 96 | 384G | unsupported |
+
+These convenience names are local conventions; GitHub organizations can assign
+other meanings to custom names. Standard Ubuntu defaults to 4 CPU / 16Gi;
+standard macOS to 3 CPU / 8Gi. `macos-14-xlarge`, `macos-15-xlarge`, and the
+separately pinned `macos-latest-xlarge` request 5 CPU / 14G on Sequoia. `G` is
+decimal and `Gi` is binary. CPU/memory matching does not promise a particular
+chip, GPU, SDK, or SSD size.
+
+Windows, Intel macOS (including `-large`), newer macOS releases, GPU types,
+Ubuntu 22.04, and unknown labels have no default mapping. Standard `macos-latest`
+denotes a newer OS and is unsupported by this catalog. Profiles can explicitly
+override release choices while preserving known OS/architecture constraints:
+
+```yaml
+runner_profiles:
+  - labels: [my-large-builder]
+    runner_type: {image: ubuntu-26.04, architecture: arm64, size: 64core}
+  - labels: [macos-latest]
+    execution_required:
+      base: macos-sequoia-15.7.7-arm64
+      resources: {cpu: "8", memory: "32Gi", ephemeral-storage: "40Gi"}
+      capabilities: [network]
+```
+
+A matching profile replaces the catalog mapping in full; ambiguous matches fail.
+Use exactly one of `runner_type` or `execution_required` per negotiated profile.
+Multi-label selectors need an explicit profile. Labels-only `runs-on` objects
+are supported; runner groups remain unsupported.
+
+Requirements accept only `base`, `resources`, and `capabilities`. The allocation's
+`packages` array is informational prepared-dependency metadata. Declare software
+dependencies through recipes or extension manifests. Missing allocation metadata
+or an unsupported schema fails before execution. Skipped jobs need no allocation.
+
+The default `execution_mode: static` preserves the existing required
+`runner_profiles[].execution_needs` configuration. Mode and profile forms must
+agree. Local/GitHub backends do not accept `execution_mode`.
+
 ## Selector
 
 Use this op from the repo root as:
@@ -102,7 +181,7 @@ op: nix:github:colony-2/c2ops/published#gha
 - `with`
 - `env`
 - `secrets`
-- `backend` (`local`, `github`, or `c2j`)
+- `backend` (`c2j` by default; `local` and `github` are explicit alternatives)
 - For `c2j`: `runner_profiles`, `secret_bindings`, optional `source_credential`, `event_name`, `event`,
   `changed_paths`, `vars`; optional `helper_op` and `executor_op` overrides
 - `runner_image`
@@ -128,12 +207,21 @@ there or ordinary package preparation fails without fallback.
 
 ## Recipe
 
+The default backend submits asynchronous c2j work. Use catalog-based negotiation
+and await the returned job ID:
+
 ```yaml
 sequence:
   - id: ci
     op: nix:github:colony-2/c2ops/published#gha
     inputs:
       workflow: .github/workflows/ci.yml
+      execution_mode: negotiate
+  - id: result
+    op: recipe.await_result
+    inputs:
+      target: {job: '${{ sequence.ci.outputs.job_id }}'}
+      wait: {on: job}
 ```
 
 ## Outputs

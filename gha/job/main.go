@@ -8,9 +8,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/colony-2/c2ops/gha/internal/execution"
+	"github.com/colony-2/c2ops/gha/internal/runners"
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/colony-2/c2ops/gha/internal/extensioncmd"
@@ -36,6 +39,9 @@ func main() {
 func run(ctx context.Context, in input) (extensioncmd.Result[jobexec.Result], error) {
 	var out extensioncmd.Result[jobexec.Result]
 	if in.Payload != "" {
+		if in.Required != nil || in.Profiles != nil || in.Placement != nil || in.ExecutionMode != "" {
+			return out, fmt.Errorf("placement inputs cannot be combined with payload")
+		}
 		raw, err := base64.StdEncoding.DecodeString(in.Payload)
 		if err != nil {
 			return out, err
@@ -74,6 +80,68 @@ func run(ctx context.Context, in input) (extensioncmd.Result[jobexec.Result], er
 			return out, fmt.Errorf("workflow changed from the planned snapshot")
 		}
 	}
+	in.Request.Workflow = string(content)
+	mode := in.ExecutionMode
+	if mode != "" && mode != "static" && mode != "negotiate" {
+		return out, fmt.Errorf("unknown execution_mode %q", mode)
+	}
+	supplied := in.Required != nil || in.Profiles != nil || in.Placement != nil
+	if mode == "static" && supplied {
+		return out, fmt.Errorf("static execution cannot contain negotiated requirements")
+	}
+	negotiated := mode == "negotiate" || supplied
+	var placement *runners.Resolution
+	var allocation execution.Environment
+	if negotiated {
+		sources := 0
+		for _, present := range []bool{in.Required != nil, in.Profiles != nil, in.Placement != nil} {
+			if present {
+				sources++
+			}
+		}
+		if sources > 1 {
+			return out, fmt.Errorf("supply only one placement requirement source")
+		}
+		prepared, err := jobexec.Preflight(ctx, in.Request, root)
+		if err != nil {
+			return out, err
+		}
+		in.Request = prepared.Request
+		if prepared.Enabled {
+			switch {
+			case in.Placement != nil:
+				if !slices.Equal(in.Placement.Labels, prepared.Labels) {
+					return out, fmt.Errorf("planned runner labels changed")
+				}
+				placement = in.Placement
+			case in.Required != nil:
+				placement = &runners.Resolution{Version: runners.Version, Source: "explicit execution_required", Labels: prepared.Labels, Required: *in.Required}
+			default:
+				resolved, err := runners.Resolve(prepared.Labels, in.Profiles)
+				if err != nil {
+					return out, err
+				}
+				placement = &resolved
+			}
+			if err := runners.ValidatePlacement(prepared.Labels, placement.Required); err != nil {
+				return out, err
+			}
+			allocation, err = execution.ReadEnvironment()
+			if err != nil {
+				return out, err
+			}
+			mismatches, err := execution.Compare(placement.Required, allocation)
+			if err != nil {
+				return out, err
+			}
+			fmt.Fprintf(os.Stderr, "gha-job %s: %s; labels=%v requirements=%s\n", in.JobID, placement.Source, placement.Labels, requirementJSON(placement.Required))
+			if len(mismatches) > 0 {
+				fmt.Fprintf(os.Stderr, "gha-job %s: execution allocation insufficient: %v\n", in.JobID, mismatches)
+				out.ExecutionRequired = &placement.Required
+				return out, nil
+			}
+		}
+	}
 	outbox := os.Getenv("C2J_OBJECT_OUTBOX")
 	if !filepath.IsAbs(outbox) {
 		return out, fmt.Errorf("C2J_OBJECT_OUTBOX is required for durable job diagnostics")
@@ -89,7 +157,11 @@ func run(ctx context.Context, in input) (extensioncmd.Result[jobexec.Result], er
 		return out, err
 	}
 	in.Request.Workflow = string(content)
+	defer log.Close()
 	artifactDir := filepath.Join(artifacts, "uploaded")
+	if err := os.MkdirAll(artifactDir, 0700); err != nil {
+		return out, err
+	}
 	var sources []string
 	for _, snapshot := range in.ArtifactInputs {
 		path := snapshot.Files["data"]
@@ -109,10 +181,12 @@ func run(ctx context.Context, in input) (extensioncmd.Result[jobexec.Result], er
 	out.Output = result
 	out.Objects = map[string]extensioncmd.ObjectDraft{
 		"artifacts":   {Type: "c2ops.gha.artifacts/v1", Metadata: map[string]string{"job_id": in.JobID}, Files: map[string]string{"data": artifactDir}},
-		"diagnostics": {Type: "c2ops.gha.diagnostics/v1", Metadata: map[string]string{"job_id": in.JobID}, Files: map[string]string{"log": logPath}},
+		"diagnostics": {Type: "c2ops.gha.diagnostics/v1", Metadata: map[string]any{"job_id": in.JobID, "placement": placement, "prepared_packages": allocation.Packages}, Files: map[string]string{"log": logPath}},
 	}
 	if runErr != nil {
 		return out, runErr
 	}
 	return out, closeErr
 }
+
+func requirementJSON(r execution.Requirements) string { raw, _ := json.Marshal(r); return string(raw) }

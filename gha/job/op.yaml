@@ -60,6 +60,97 @@ input_schema:
     worktree_path:
       type: string
       default: '{{ context.environment.op.worktree_path }}'
+    runner_profiles:
+      items:
+        additionalProperties: false
+        oneOf:
+          - required:
+              - execution_needs
+          - required:
+              - execution_required
+          - required:
+              - runner_type
+        properties:
+          execution_needs:
+            type: object
+          execution_required:
+            additionalProperties: false
+            minProperties: 1
+            properties:
+              base:
+                minLength: 1
+                type: string
+              capabilities:
+                items:
+                  type: string
+                type: array
+              resources:
+                additionalProperties: false
+                properties:
+                  cpu:
+                    minLength: 1
+                    type: string
+                  ephemeral-storage:
+                    minLength: 1
+                    type: string
+                  memory:
+                    minLength: 1
+                    type: string
+                type: object
+            type: object
+          labels:
+            items:
+              type: string
+            minItems: 1
+            type: array
+          runner_type:
+            additionalProperties: false
+            properties:
+              architecture:
+                type: string
+              image:
+                type: string
+              size:
+                type: string
+            required:
+              - image
+              - architecture
+              - size
+            type: object
+        required:
+          - labels
+        type: object
+      type: array
+    execution_mode:
+      enum:
+        - static
+        - negotiate
+      type: string
+    execution_required:
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        base:
+          minLength: 1
+          type: string
+        capabilities:
+          items:
+            type: string
+          type: array
+        resources:
+          additionalProperties: false
+          properties:
+            cpu:
+              minLength: 1
+              type: string
+            ephemeral-storage:
+              minLength: 1
+              type: string
+            memory:
+              minLength: 1
+              type: string
+          type: object
+      type: object
 output_schema:
   type: object
   required: [job_id, conclusion, outputs, diagnostics]

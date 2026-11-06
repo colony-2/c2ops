@@ -28,6 +28,14 @@ outputs:
   workflow: '${{ sequence.result.outputs.outputs }}'
 ```
 
+Set `execution_mode: negotiate` for the [built-in runner catalog](../README.md#execution-negotiation)
+and optional negotiated profiles (`execution_required` or `runner_type`). Each
+concrete child checks its allocation and yields independently when insufficient.
+Its frozen payload carries the selected requirements; the generated execute
+node has no duplicate static `execution_needs`. The default static mode retains
+the profile form shown above. Child submissions include the runtime's current
+cell name, as required by c2j v0.0.120.
+
 `secret_bindings` contains c2j secret **names**, never resolved values. Each
 executor resolves the named secrets through its secret-marked inputs. If the
 caller restricts `perms`, grant `jobdb.jobs.submit: true` as well as the required

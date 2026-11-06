@@ -12,6 +12,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/colony-2/c2ops/gha/internal/execution"
+	"github.com/colony-2/c2ops/gha/internal/runners"
 	"github.com/nektos/act/pkg/common"
 	"github.com/nektos/act/pkg/model"
 	"github.com/nektos/act/pkg/runner"
@@ -32,18 +34,22 @@ type Result struct {
 }
 
 type Request struct {
-	Repository       string                 `json:"repository,omitempty"`
-	Revision         string                 `json:"revision,omitempty"`
-	SourceCredential string                 `json:"source_credential,omitempty"`
-	Workflow         string                 `json:"workflow"`
-	JobID            string                 `json:"job_id"`
-	Needs            map[string]Result      `json:"needs,omitempty"`
-	Matrix           map[string]interface{} `json:"matrix,omitempty"`
-	EventName        string                 `json:"event_name,omitempty"`
-	Event            json.RawMessage        `json:"event,omitempty"`
-	Env              map[string]string      `json:"env,omitempty"`
-	Vars             map[string]string      `json:"vars,omitempty"`
-	Secrets          map[string]string      `json:"secrets,omitempty"`
+	Repository       string                  `json:"repository,omitempty"`
+	Revision         string                  `json:"revision,omitempty"`
+	SourceCredential string                  `json:"source_credential,omitempty"`
+	ExecutionMode    string                  `json:"execution_mode,omitempty"`
+	Required         *execution.Requirements `json:"execution_required,omitempty"`
+	Profiles         []runners.Profile       `json:"runner_profiles,omitempty"`
+	Placement        *runners.Resolution     `json:"placement,omitempty"`
+	Workflow         string                  `json:"workflow"`
+	JobID            string                  `json:"job_id"`
+	Needs            map[string]Result       `json:"needs,omitempty"`
+	Matrix           map[string]interface{}  `json:"matrix,omitempty"`
+	EventName        string                  `json:"event_name,omitempty"`
+	Event            json.RawMessage         `json:"event,omitempty"`
+	Env              map[string]string       `json:"env,omitempty"`
+	Vars             map[string]string       `json:"vars,omitempty"`
+	Secrets          map[string]string       `json:"secrets,omitempty"`
 }
 
 type Options struct {
@@ -84,8 +90,13 @@ func Execute(ctx context.Context, in Request, opts Options) (Result, error) {
 	if !filepath.IsAbs(opts.Workdir) || !filepath.IsAbs(opts.StateDir) {
 		return Result{}, fmt.Errorf("absolute workdir and state directory are required")
 	}
-	if err := validateFeatures(in.Workflow, in.JobID); err != nil {
+	prepared, err := Preflight(ctx, in, opts.Workdir)
+	if err != nil {
 		return Result{}, err
+	}
+	in = prepared.Request
+	if !prepared.Enabled {
+		return Result{JobID: in.JobID, Conclusion: "skipped", Outputs: map[string]string{}}, nil
 	}
 	wf, err := model.ReadWorkflow(strings.NewReader(in.Workflow), false)
 	if err != nil {
@@ -93,72 +104,10 @@ func Execute(ctx context.Context, in Request, opts Options) (Result, error) {
 	}
 	wf.File = "workflow.yml"
 	job := wf.GetJob(in.JobID)
-	if job == nil {
-		return Result{}, fmt.Errorf("unknown job %q", in.JobID)
-	}
-	in.Secrets, err = normalizeNames(in.Secrets)
-	if err != nil {
-		return Result{}, fmt.Errorf("secrets: %w", err)
-	}
-	in.Vars, err = normalizeNames(in.Vars)
-	if err != nil {
-		return Result{}, fmt.Errorf("vars: %w", err)
-	}
-	if job.Uses != "" {
-		return Result{}, fmt.Errorf("reusable workflows require orchestration support")
-	}
-	if job.RawContainer.Kind != 0 || len(job.Services) > 0 {
-		return Result{}, fmt.Errorf("job containers and service containers are unsupported in host mode")
-	}
-	if len(job.Steps) == 0 {
-		return Result{}, fmt.Errorf("job requires at least one step")
-	}
-	for _, step := range job.Steps {
-		if step == nil {
-			return Result{}, fmt.Errorf("empty step")
-		}
-		if _, err := checkoutHistory(step); err != nil {
-			return Result{}, err
-		}
-		if err := validateAction(opts.Workdir, step.Uses, map[string]bool{}); err != nil {
-			return Result{}, err
-		}
-	}
-	ancestors, err := dependencyIDs(wf, in.JobID)
-	if err != nil {
-		return Result{}, err
-	}
-	allowed := map[string]bool{}
-	for _, id := range ancestors {
-		allowed[id] = true
-	}
+	freezeRunsOn(job, prepared.Labels)
 	for id, result := range in.Needs {
-		dependency := wf.GetJob(id)
-		if dependency == nil || !allowed[id] || (result.JobID != "" && result.JobID != id) {
-			return Result{}, fmt.Errorf("invalid dependency job %q", id)
-		}
-		switch result.Conclusion {
-		case "success", "failure", "cancelled", "skipped":
-		default:
-			return Result{}, fmt.Errorf("invalid dependency conclusion for %q", id)
-		}
-		dependency.Outputs = copyMap(result.Outputs)
-		dependency.Result = result.Conclusion
-	}
-	for _, id := range ancestors {
-		if _, ok := in.Needs[id]; !ok {
-			return Result{}, fmt.Errorf("missing dependency result for %q", id)
-		}
-	}
-	if in.EventName == "" {
-		in.EventName = "workflow_dispatch"
-	}
-	if len(in.Event) == 0 {
-		in.Event = json.RawMessage(`{}`)
-	}
-	var event map[string]any
-	if err := json.Unmarshal(in.Event, &event); err != nil || event == nil {
-		return Result{}, fmt.Errorf("event must be a JSON object")
+		wf.GetJob(id).Outputs = copyMap(result.Outputs)
+		wf.GetJob(id).Result = result.Conclusion
 	}
 	state, err := os.MkdirTemp(opts.StateDir, "act-job-*")
 	if err != nil {
@@ -247,7 +196,7 @@ func Execute(ctx context.Context, in Request, opts Options) (Result, error) {
 	if err := selectMatrix(ctx, rc, in.Matrix); err != nil {
 		return Result{}, err
 	}
-	if err := rc.ExprEval.EvaluateYamlNode(ctx, &job.RawRunsOn); err != nil {
+	if err := evaluateRunsOn(ctx, rc); err != nil {
 		return Result{}, fmt.Errorf("runs-on: %w", err)
 	}
 	if len(job.RunsOn()) == 0 {
@@ -433,4 +382,86 @@ func validateAction(workdir, uses string, visited map[string]bool) error {
 		}
 	}
 	return nil
+}
+
+// validateRequest only reads source and validates public execution inputs.
+func validateRequest(in Request, workdir string) (Request, *model.Workflow, *model.Job, error) {
+	if err := validateFeatures(in.Workflow, in.JobID); err != nil {
+		return Request{}, nil, nil, err
+	}
+	wf, err := model.ReadWorkflow(strings.NewReader(in.Workflow), false)
+	if err != nil {
+		return Request{}, nil, nil, err
+	}
+	wf.File = "workflow.yml"
+	job := wf.GetJob(in.JobID)
+	if job == nil {
+		return Request{}, nil, nil, fmt.Errorf("unknown job %q", in.JobID)
+	}
+	in.Secrets, err = normalizeNames(in.Secrets)
+	if err != nil {
+		return Request{}, nil, nil, fmt.Errorf("secrets: %w", err)
+	}
+	in.Vars, err = normalizeNames(in.Vars)
+	if err != nil {
+		return Request{}, nil, nil, fmt.Errorf("vars: %w", err)
+	}
+	if job.Uses != "" {
+		return Request{}, nil, nil, fmt.Errorf("reusable workflows require orchestration support")
+	}
+	if job.RawContainer.Kind != 0 || len(job.Services) > 0 {
+		return Request{}, nil, nil, fmt.Errorf("job containers and service containers are unsupported in host mode")
+	}
+	if len(job.Steps) == 0 {
+		return Request{}, nil, nil, fmt.Errorf("job requires at least one step")
+	}
+	for _, step := range job.Steps {
+		if step == nil {
+			return Request{}, nil, nil, fmt.Errorf("empty step")
+		}
+		if _, err := checkoutHistory(step); err != nil {
+			return Request{}, nil, nil, err
+		}
+		if err := validateAction(workdir, step.Uses, map[string]bool{}); err != nil {
+			return Request{}, nil, nil, err
+		}
+	}
+	ancestors, err := dependencyIDs(wf, in.JobID)
+	if err != nil {
+		return Request{}, nil, nil, err
+	}
+	allowed := map[string]bool{}
+	for _, id := range ancestors {
+		allowed[id] = true
+	}
+	for id, result := range in.Needs {
+		dependency := wf.GetJob(id)
+		if dependency == nil || !allowed[id] || (result.JobID != "" && result.JobID != id) {
+			return Request{}, nil, nil, fmt.Errorf("invalid dependency job %q", id)
+		}
+		switch result.Conclusion {
+		case "success", "failure", "cancelled", "skipped":
+		default:
+			return Request{}, nil, nil, fmt.Errorf("invalid dependency conclusion for %q", id)
+		}
+		dependency.Outputs = copyMap(result.Outputs)
+		dependency.Result = result.Conclusion
+	}
+	for _, id := range ancestors {
+		if _, ok := in.Needs[id]; !ok {
+			return Request{}, nil, nil, fmt.Errorf("missing dependency result for %q", id)
+		}
+	}
+	if in.EventName == "" {
+		in.EventName = "workflow_dispatch"
+	}
+	if len(in.Event) == 0 {
+		in.Event = json.RawMessage(`{}`)
+	}
+	var event map[string]any
+	if err := json.Unmarshal(in.Event, &event); err != nil || event == nil {
+		return Request{}, nil, nil, fmt.Errorf("event must be a JSON object")
+	}
+
+	return in, wf, job, nil
 }

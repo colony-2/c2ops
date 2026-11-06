@@ -17,6 +17,7 @@ const (
 
 type RunnerProfile = workflow.Profile
 type RunInput struct {
+	ExecutionMode         string            `json:"execution_mode,omitempty"`
 	RunnerProfiles        []RunnerProfile   `json:"runner_profiles,omitempty"`
 	SourceCredential      string            `json:"source_credential,omitempty"`
 	SecretBindings        map[string]string `json:"secret_bindings,omitempty"`

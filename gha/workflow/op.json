@@ -33,25 +33,98 @@
         "default": "{{ context.git.resolved_hash }}"
       },
       "runner_profiles": {
-        "type": "array",
         "items": {
-          "type": "object",
-          "required": [
-            "labels",
-            "execution_needs"
+          "additionalProperties": false,
+          "oneOf": [
+            {
+              "required": [
+                "execution_needs"
+              ]
+            },
+            {
+              "required": [
+                "execution_required"
+              ]
+            },
+            {
+              "required": [
+                "runner_type"
+              ]
+            }
           ],
           "properties": {
-            "labels": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
             "execution_needs": {
               "type": "object"
+            },
+            "execution_required": {
+              "additionalProperties": false,
+              "minProperties": 1,
+              "properties": {
+                "base": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "capabilities": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "resources": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "cpu": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "ephemeral-storage": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "memory": {
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                }
+              },
+              "type": "object"
+            },
+            "labels": {
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            "runner_type": {
+              "additionalProperties": false,
+              "properties": {
+                "architecture": {
+                  "type": "string"
+                },
+                "image": {
+                  "type": "string"
+                },
+                "size": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "image",
+                "architecture",
+                "size"
+              ],
+              "type": "object"
             }
-          }
-        }
+          },
+          "required": [
+            "labels"
+          ],
+          "type": "object"
+        },
+        "type": "array"
       },
       "source_credential": {
         "type": "string",
@@ -106,6 +179,13 @@
         "items": {
           "type": "object"
         }
+      },
+      "execution_mode": {
+        "enum": [
+          "static",
+          "negotiate"
+        ],
+        "type": "string"
       }
     }
   },

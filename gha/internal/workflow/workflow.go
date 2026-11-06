@@ -20,15 +20,15 @@ import (
 	"strings"
 
 	"github.com/colony-2/c2ops/gha/internal/jobexec"
+	"github.com/colony-2/c2ops/gha/internal/runners"
 	"github.com/nektos/act/pkg/model"
 	"gopkg.in/yaml.v3"
 )
 
-type Profile struct {
-	Labels         []string       `json:"labels"`
-	ExecutionNeeds map[string]any `json:"execution_needs"`
-}
+type Profile = runners.Profile
 type Input struct {
+	SourceCredential string            `json:"source_credential,omitempty"`
+	ExecutionMode    string            `json:"execution_mode,omitempty"`
 	BaseRevision     string            `json:"base_revision,omitempty"`
 	HelperOp         string            `json:"helper_op,omitempty"`
 	ExecutorOp       string            `json:"executor_op,omitempty"`
@@ -43,7 +43,6 @@ type Input struct {
 	Event            map[string]any    `json:"event,omitempty"`
 	Env              map[string]string `json:"env,omitempty"`
 	Vars             map[string]string `json:"vars,omitempty"`
-	SourceCredential string            `json:"source_credential,omitempty"`
 	SecretBindings   map[string]string `json:"secret_bindings,omitempty"`
 	// Payload is opaque public metadata. Encoding prevents c2j from interpreting
 	// Actions expressions in strings transported through generated recipe inputs.
@@ -271,10 +270,19 @@ func validateBindings(in Input) error {
 	if in.SourceCredential != "" && !seen[strings.ToUpper(in.SourceCredential)] {
 		return fmt.Errorf("source_credential must name an explicit secret_bindings alias")
 	}
+	if in.ExecutionMode == "negotiate" {
+		return runners.ValidateProfiles(in.Profiles)
+	}
+	if in.ExecutionMode != "" && in.ExecutionMode != "static" {
+		return fmt.Errorf("unknown execution_mode %q", in.ExecutionMode)
+	}
 	if len(in.Profiles) == 0 {
 		return fmt.Errorf("runner_profiles is required; runs-on labels must have explicit execution needs")
 	}
 	for _, p := range in.Profiles {
+		if p.Required != nil || p.Type != nil {
+			return fmt.Errorf("static profiles require execution_needs")
+		}
 		if len(p.Labels) == 0 || len(p.ExecutionNeeds) == 0 {
 			return fmt.Errorf("each runner profile needs labels and execution_needs")
 		}

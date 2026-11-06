@@ -231,16 +231,20 @@ func installGHAFixture(t *testing.T, h *harness) {
 }
 
 func TestGHABackendC2J(t *testing.T) {
-	h := newHarness(t, nil)
-	installJobFixture(t, h, fanInWorkflow)
-	installWorkflowFixture(t, h)
-	installGHAFixture(t, h)
-	recipe := strings.Replace(workflowRecipe(t, "      backend: c2j"), "op: ./.c2/test-ops/gha-workflow", "op: ./.c2/test-ops/gha", 1)
-	root := h.submit(recipe, nil)
-	completed := h.drain(root)
-	result := completed["run"].(map[string]any)
-	require.Equal(t, "success", result["status"])
-	saveEvidence(t, "facade-submission-result.json", map[string]any{"caller_job_id": root.JobId, "completed": completed})
+	for _, tc := range []struct{ name, extra string }{{"default", ""}, {"explicit", "      backend: c2j"}} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHarness(t, nil)
+			installJobFixture(t, h, fanInWorkflow)
+			installWorkflowFixture(t, h)
+			installGHAFixture(t, h)
+			rec := strings.Replace(workflowRecipe(t, tc.extra), "op: ./.c2/test-ops/gha-workflow", "op: ./.c2/test-ops/gha", 1)
+			root := h.submit(rec, nil)
+			completed := h.drain(root)
+			result := completed["run"].(map[string]any)
+			require.Equal(t, "success", result["status"])
+			saveEvidence(t, "facade-submission-result.json", map[string]any{"caller_job_id": root.JobId, "completed": completed})
+		})
+	}
 }
 
 // CI enables this on both native architectures. Ordinary test-fast runs retain

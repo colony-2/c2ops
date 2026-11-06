@@ -72,9 +72,18 @@ history repository retains no origin or preparation credential configuration.
 Every invocation gets a separate workspace, HOME and temporary/cache directory.
 Ambient credential environment variables are blanked; bind secrets explicitly.
 
-`runs-on` labels do **not** provision a runner here: all labels execute in the
-assigned host environment. The calling c2j recipe/provisioner must map them to
-matching `execution_needs`. Host mode is not an OS security boundary. It is meant
+Set `execution_mode: negotiate` to use the [runner catalog](../README.md#execution-negotiation),
+or supply `execution_required` or negotiated `runner_profiles` directly. The
+executor checks allocation before creating logs, starting artifact services,
+fetching actions, or executing steps. Insufficient allocations yield through
+c2j's exit-75 protocol. Direct requirements/profiles enable negotiation implicitly;
+supply only one source and do not combine it with `execution_mode: static` or a
+coordinator payload. Generated payloads freeze resolved requirements across
+resume. c2j v0.0.120 is the tested runtime.
+
+Calls without these inputs keep caller-managed placement: `runs-on` labels do
+not provision a runner, and the calling recipe must supply matching
+`execution_needs`. Host mode is not an OS security boundary. It is meant
 to execute inside an appropriately isolated worker.
 
 The output has `job_id`, `conclusion`, string `outputs`, and a small `diagnostics`

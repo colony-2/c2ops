@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/colony-2/c2ops/gha/internal/jobexec"
+	"github.com/colony-2/c2ops/gha/internal/runners"
 )
 
 func expand(ctx context.Context, in Input) (Submission, error) {
@@ -52,9 +53,19 @@ func expand(ctx context.Context, in Input) (Submission, error) {
 	var ids []string
 	identities := []instanceIdentity{}
 	for i, assignment := range assignments {
-		requirements, err := matchProfile(p.Input.Profiles, assignment.Labels)
-		if err != nil {
-			return zero, err
+		var requirements map[string]any
+		if p.Input.ExecutionMode == "negotiate" {
+			resolved, err := runners.Resolve(assignment.Labels, p.Input.Profiles)
+			if err != nil {
+				return zero, err
+			}
+			request.ExecutionMode = "negotiate"
+			request.Placement = &resolved
+		} else {
+			requirements, err = matchProfile(p.Input.Profiles, assignment.Labels)
+			if err != nil {
+				return zero, err
+			}
 		}
 		request.Workflow = p.Input.Workflow
 		request.Matrix = assignment.Matrix
@@ -88,7 +99,9 @@ func expand(ctx context.Context, in Input) (Submission, error) {
 		sort.Strings(names)
 		inputs := map[string]any{"artifact_inputs": artifactInputs, "payload": encode(request), "workflow": p.Input.Workflow, "job_id": p.Job, "workflow_sha256": p.Hash, "secrets": secrets}
 		step := node("execute", p.Input.ExecutorOp, inputs)
-		step["execution_needs"] = opaqueRequirements(requirements)
+		if requirements != nil {
+			step["execution_needs"] = opaqueRequirements(requirements)
+		}
 		rec := map[string]any{"id": fmt.Sprintf("gha-%s-%d", p.Job, i), "sequence": []any{step}, "outputs": map[string]any{"result": "${{ sequence.execute.outputs }}"}}
 		if len(names) > 0 {
 			rec["perms"] = map[string]any{"jobdb": map[string]any{"secrets": map[string]any{"resolve": names}}}
@@ -99,7 +112,17 @@ func expand(ctx context.Context, in Input) (Submission, error) {
 		if matrix == nil {
 			matrix = map[string]any{}
 		}
-		identities = append(identities, instanceIdentity{matrix, assignment.Labels, requirements, id})
+		identity := instanceIdentity{matrix, assignment.Labels, requirements, id}
+		if request.Placement != nil {
+			selected, err := json.Marshal(request.Placement.Required)
+			if err != nil {
+				return zero, err
+			}
+			if err := json.Unmarshal(selected, &identity.ExecutionNeeds); err != nil {
+				return zero, err
+			}
+		}
+		identities = append(identities, identity)
 		recipes = append(recipes, plannedRecipe{id, rec})
 	}
 	steps := []any{}

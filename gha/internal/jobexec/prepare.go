@@ -71,20 +71,7 @@ func Prepare(ctx context.Context, in Request, workdir string) ([]Assignment, err
 	ctx = common.WithLogger(ctx, logFactory{writer: io.Discard}.WithJobLogger())
 	in.Env = repositoryEnvironment(ctx, workdir, in.Env)
 	newContext := func(matrix map[string]any) (*runner.RunContext, error) {
-		wf, err := model.ReadWorkflow(strings.NewReader(in.Workflow), false)
-		if err != nil {
-			return nil, err
-		}
-		wf.File = "workflow.yml"
-		for id, result := range in.Needs {
-			if j := wf.GetJob(id); j != nil {
-				j.Result = result.Conclusion
-				j.Outputs = copyMap(result.Outputs)
-			}
-		}
-		rc := &runner.RunContext{Config: &runner.Config{Workdir: workdir, EventName: in.EventName, Env: copyMap(in.Env), Vars: in.Vars, GitHubInstance: "github.com", Actor: "c2j"}, Run: &model.Run{Workflow: wf, JobID: in.JobID}, EventJSON: string(in.Event), Matrix: matrix, StepResults: map[string]*model.StepResult{}}
-		rc.ExprEval = rc.NewExpressionEvaluator(ctx)
-		return rc, nil
+		return evaluationContext(ctx, in, workdir, matrix)
 	}
 	rc, err := newContext(nil)
 	if err != nil {
@@ -142,7 +129,7 @@ func Prepare(ctx context.Context, in Request, workdir string) ([]Assignment, err
 		if err != nil {
 			return nil, err
 		}
-		if err := rc.ExprEval.EvaluateYamlNode(ctx, &rc.Run.Job().RawRunsOn); err != nil {
+		if err := evaluateRunsOn(ctx, rc); err != nil {
 			return nil, err
 		}
 		labels := rc.Run.Job().RunsOn()
@@ -171,4 +158,114 @@ func validateMatrixShape(node yaml.Node) error {
 		}
 	}
 	return nil
+}
+
+// Prepared contains only frozen public evaluation data; no runtime state exists yet.
+type Prepared struct {
+	Request Request
+	Enabled bool
+	Labels  []string
+}
+
+func Preflight(ctx context.Context, in Request, workdir string) (Prepared, error) {
+	ctx = common.WithLogger(ctx, logFactory{writer: io.Discard}.WithJobLogger())
+	in, _, _, err := validateRequest(in, workdir)
+	if err != nil {
+		return Prepared{}, err
+	}
+	out := Prepared{Request: in}
+	rc, err := evaluationContext(ctx, in, workdir, nil)
+	if err != nil {
+		return out, err
+	}
+	enabled, err := runner.EvalBool(ctx, rc.ExprEval, rc.Run.Job().If.Value, exprparser.DefaultStatusCheckSuccess)
+	if err != nil {
+		return out, err
+	}
+	if !enabled {
+		return out, nil
+	}
+	rc, err = evaluationContext(ctx, in, workdir, in.Matrix)
+	if err != nil {
+		return out, err
+	}
+	if err := selectMatrix(ctx, rc, in.Matrix); err != nil {
+		return out, err
+	}
+	if err := evaluateRunsOn(ctx, rc); err != nil {
+		return out, err
+	}
+	labels := rc.Run.Job().RunsOn()
+	if len(labels) == 0 {
+		return out, fmt.Errorf("job requires runs-on")
+	}
+	out.Enabled = true
+	out.Labels = labels
+	return out, nil
+}
+
+func evaluateRunsOn(ctx context.Context, rc *runner.RunContext) error {
+	node := &rc.Run.Job().RawRunsOn
+	if err := rc.ExprEval.EvaluateYamlNode(ctx, node); err != nil {
+		return err
+	}
+	if node.Kind == yaml.MappingNode {
+		if len(node.Content) != 2 || node.Content[0].Value != "labels" {
+			return fmt.Errorf("runs-on groups and additional constraints are unsupported")
+		}
+		*node = *node.Content[1]
+	}
+	if node.Kind != yaml.ScalarNode && node.Kind != yaml.SequenceNode {
+		return fmt.Errorf("runs-on must be a label or label array")
+	}
+	if node.Kind == yaml.SequenceNode {
+		for _, n := range node.Content {
+			if n.Kind != yaml.ScalarNode || n.Tag != "!!str" {
+				return fmt.Errorf("runs-on labels must be strings")
+			}
+		}
+	} else if node.Tag != "!!str" {
+		return fmt.Errorf("runs-on label must be a string")
+	}
+	return nil
+}
+
+// evaluationContext is shared by expansion and single-assignment preflight.
+// It intentionally supplies no secrets or host allocation to expressions.
+func evaluationContext(ctx context.Context, in Request, workdir string, matrix map[string]any) (*runner.RunContext, error) {
+	if in.EventName == "" {
+		in.EventName = "workflow_dispatch"
+	}
+	if len(in.Event) == 0 {
+		in.Event = json.RawMessage(`{}`)
+	}
+	vars, err := normalizeNames(in.Vars)
+	if err != nil {
+		return nil, err
+	}
+	in.Vars = vars
+	wf, err := model.ReadWorkflow(strings.NewReader(in.Workflow), false)
+	if err != nil {
+		return nil, err
+	}
+	wf.File = "workflow.yml"
+	for id, result := range in.Needs {
+		if j := wf.GetJob(id); j != nil {
+			j.Result = result.Conclusion
+			j.Outputs = copyMap(result.Outputs)
+		}
+	}
+	rc := &runner.RunContext{Config: &runner.Config{Workdir: workdir, EventName: in.EventName, Env: copyMap(in.Env), Vars: in.Vars, GitHubInstance: "github.com", Actor: "c2j"}, Run: &model.Run{Workflow: wf, JobID: in.JobID}, EventJSON: string(in.Event), Matrix: matrix, StepResults: map[string]*model.StepResult{}}
+	rc.ExprEval = rc.NewExpressionEvaluator(ctx)
+	return rc, nil
+}
+
+// Freeze placement before act receives execution-only secrets/environment.
+// act may evaluate runs-on again while constructing the host executor.
+func freezeRunsOn(job *model.Job, labels []string) {
+	node := yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
+	for _, label := range labels {
+		node.Content = append(node.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: label})
+	}
+	job.RawRunsOn = node
 }

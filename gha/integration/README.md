@@ -7,7 +7,7 @@ the repository's existing private-module credentials on the first download. No D
 Nix build, GitHub API or model credentials are needed.
 
 `harness_test.go` supplies a temporary Git repository, SQLite JobDB with blob
-storage, real c2j recipe/compiler/activity workers, native allocation facts, and
+storage, real c2j recipe/compiler/activity workers, schema-1 or schema-2 allocation facts, and
 a synthetic secret provider. `submit`, `step`, `drain`, and `reopen` let tests
 pause at durable boundaries and resume with new workers. The pump calls
 JobDB's `GetJobForRun`; JobDB owns leasing/readiness and c2j owns child submission
@@ -86,7 +86,7 @@ its no-external-actions contract. All fixture op references are authored using
 published coordinates and overridden explicitly to the compiled local binaries.
 
 
-The harness uses c2j v0.0.118, registers a fixture cell with trusted local
+The harness uses c2j v0.0.120, registers a fixture cell with trusted local
 embedding authority, and maps that identity to its disposable Git repository
 through an explicit Git executable fixture. This accommodates c2j's current
 registered-cell contract without a public/private network dependency.
@@ -116,3 +116,13 @@ Condition-disabled singleton and matrix jobs exercise completed empty collection
 Separately labelled fault fixtures replace helper processes or relax only a test
 executor's output schema to reach missing, unknown, malformed and absent-diagnostic
 collection paths. Those fixtures are not positive execution evidence.
+
+`negotiation_test.go` exercises actual exit-75 handoff and resume with c2j
+v0.0.120, including insufficient replacement allocation, SQLite reopen, deletion
+of worker directories, completed-step replay, and public `gha` matrix execution.
+`matcher_test.go` compares the production matcher's validation and compatibility
+decisions with c2j's matcher; production binaries do not import private runtime
+modules. The harness explicitly registers a fixture cell and maps its portable
+repository identity to a local source using a Git CLI wrapper that delegates to
+real Git. Grouped fixture jobs use distinct step names to avoid collisions in
+c2j's native execution-log artifact names.

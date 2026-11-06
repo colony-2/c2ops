@@ -13,7 +13,7 @@ import (
 
 var backendFactory = func(name string) (workflowBackend, error) {
 	switch strings.TrimSpace(name) {
-	case "", backendLocal:
+	case backendLocal:
 		return actBackendFactory(), nil
 	case backendGitHub:
 		return &githubBackend{}, nil
@@ -23,6 +23,10 @@ var backendFactory = func(name string) (workflowBackend, error) {
 }
 
 func Run(ctx context.Context, input RunInput) (RunResult, error) {
+	input.Backend = strings.TrimSpace(input.Backend)
+	if input.Backend == "" {
+		input.Backend = "c2j"
+	}
 	if input.Backend == "c2j" {
 		if input.Timeout != "" || input.RunnerImage != "" || input.ContainerArchitecture != "" || input.Remote != nil || input.ContinueOnError {
 			return RunResult{}, fmt.Errorf("backend c2j uses runner_profiles and collected conclusions; timeout, runner_image, container_architecture, remote and continue_on_error are unsupported")
@@ -37,8 +41,11 @@ func Run(ctx context.Context, input RunInput) (RunResult, error) {
 		if input.With != nil {
 			event["inputs"] = input.With
 		}
-		submitted, err := workflow.Submit(ctx, workflow.Input{BaseRevision: input.GitContext.ResolvedBaseHash, Workflow: input.Workflow, WorktreePath: input.GitContext.WorktreePath, Repository: input.GitContext.BaseRepo, Profiles: input.RunnerProfiles, SecretBindings: input.SecretBindings, SourceCredential: input.SourceCredential, EventName: input.EventName, Event: event, ChangedPaths: input.ChangedPaths, Env: input.Env, Vars: input.Vars, HelperOp: input.HelperOp, ExecutorOp: input.ExecutorOp})
+		submitted, err := workflow.Submit(ctx, workflow.Input{ExecutionMode: input.ExecutionMode, BaseRevision: input.GitContext.ResolvedBaseHash, Workflow: input.Workflow, WorktreePath: input.GitContext.WorktreePath, Repository: input.GitContext.BaseRepo, Profiles: input.RunnerProfiles, SecretBindings: input.SecretBindings, SourceCredential: input.SourceCredential, EventName: input.EventName, Event: event, ChangedPaths: input.ChangedPaths, Env: input.Env, Vars: input.Vars, HelperOp: input.HelperOp, ExecutorOp: input.ExecutorOp})
 		return RunResult{Output: RunOutput{Status: submitted.Status, JobID: submitted.JobID, GoalID: submitted.GoalID, TenantID: submitted.TenantID, SubmittedJobs: submitted.Jobs}}, err
+	}
+	if input.ExecutionMode != "" {
+		return RunResult{}, fmt.Errorf("execution_mode requires backend c2j")
 	}
 	result, err := executeRun(ctx, input, input.GitContext)
 	artifactRefs, artifactErr := buildArtifactRefs(result.ArtifactRefs)

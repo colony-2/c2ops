@@ -128,7 +128,8 @@ sequence:
 
 ### `gha`
 
-Use for a single workflow run.
+Use for a single workflow run. The default backend is `c2j`; choose
+`backend: local` explicitly for synchronous local act execution.
 
 ```yaml
 sequence:
@@ -136,10 +137,16 @@ sequence:
     op: nix:github:colony-2/c2ops/published#gha
     inputs:
       workflow: .github/workflows/ci.yml
+      execution_mode: negotiate
+  - id: result
+    op: recipe.await_result
+    inputs:
+      target: {job: '${{ sequence.ci.outputs.job_id }}'}
+      wait: {on: job}
 ```
 
-For separate ARM/AMD jobs with dependency joins, use `backend: c2j`, explicit
-`runner_profiles`, and a following `recipe.await_result` step. The
+The default backend supports separate ARM/AMD jobs and dependency joins.
+Use the built-in runner catalog or override it with `runner_profiles`. The
 [distributed workflow example](gha/README.md) also covers named secrets,
 PR/push metadata, and durable artifact transfer.
 
