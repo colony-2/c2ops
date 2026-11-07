@@ -56,3 +56,6 @@ server/colony2/colony2
 # Nix build result links
 /result
 /result-*
+
+# Build hooks are source, not generated build output.
+!/.c2/recipes/hooks/build/

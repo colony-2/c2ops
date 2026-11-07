@@ -1,0 +1,310 @@
+# Native Linux arm64 only. Settings/documents are deliberately not artifact-bound.
+id: c2ops-native-verify
+inputs:
+  target_directory: ${{ inputs.target_directory }}
+  candidate: ${{ inputs.candidate }}
+  base: ${{ inputs.base }}
+sequence:
+- id: manifests
+  op: command_execution
+  const: true
+  execution_needs:
+    packages: &id001
+    - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#python3
+    - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#go_1_26
+    - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#gitMinimal
+    - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#gnumake
+    - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#uv
+    - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#nodejs_24
+    - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#pnpm
+    - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#gcc
+    - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#nix
+    - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#bash
+    - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#coreutils
+    - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#jq
+  inputs:
+    env:
+      VERIFY_ROOT: ${{ context.environment.op.worktree_path }}
+      VERIFY_OUTBOX: ${{ context.environment.op.outbox }}
+      VERIFY_TARGET: ${{ inputs.target_directory }}
+      VERIFY_CANDIDATE: ${{ inputs.candidate }}
+      VERIFY_BASE: ${{ inputs.base }}
+    run: python3 "$VERIFY_ROOT/scripts/verify.py" check manifests
+- id: tooling
+  op: command_execution
+  const: true
+  execution_needs:
+    packages: *id001
+  inputs:
+    env:
+      VERIFY_ROOT: ${{ context.environment.op.worktree_path }}
+      VERIFY_OUTBOX: ${{ context.environment.op.outbox }}
+      VERIFY_TARGET: ${{ inputs.target_directory }}
+      VERIFY_CANDIDATE: ${{ inputs.candidate }}
+      VERIFY_BASE: ${{ inputs.base }}
+    run: python3 "$VERIFY_ROOT/scripts/verify.py" check tooling
+- id: llm
+  op: command_execution
+  const: true
+  execution_needs:
+    packages: *id001
+  inputs:
+    env:
+      VERIFY_ROOT: ${{ context.environment.op.worktree_path }}
+      VERIFY_OUTBOX: ${{ context.environment.op.outbox }}
+      VERIFY_TARGET: ${{ inputs.target_directory }}
+      VERIFY_CANDIDATE: ${{ inputs.candidate }}
+      VERIFY_BASE: ${{ inputs.base }}
+    run: python3 "$VERIFY_ROOT/scripts/verify.py" check llm
+- id: llm2
+  op: command_execution
+  const: true
+  execution_needs:
+    packages: *id001
+  inputs:
+    env:
+      VERIFY_ROOT: ${{ context.environment.op.worktree_path }}
+      VERIFY_OUTBOX: ${{ context.environment.op.outbox }}
+      VERIFY_TARGET: ${{ inputs.target_directory }}
+      VERIFY_CANDIDATE: ${{ inputs.candidate }}
+      VERIFY_BASE: ${{ inputs.base }}
+    run: python3 "$VERIFY_ROOT/scripts/verify.py" check llm2
+- id: gha
+  op: command_execution
+  const: true
+  execution_needs:
+    packages: *id001
+  inputs:
+    env:
+      VERIFY_ROOT: ${{ context.environment.op.worktree_path }}
+      VERIFY_OUTBOX: ${{ context.environment.op.outbox }}
+      VERIFY_TARGET: ${{ inputs.target_directory }}
+      VERIFY_CANDIDATE: ${{ inputs.candidate }}
+      VERIFY_BASE: ${{ inputs.base }}
+    run: python3 "$VERIFY_ROOT/scripts/verify.py" check gha
+- id: gha_many
+  op: command_execution
+  const: true
+  execution_needs:
+    packages: *id001
+  inputs:
+    env:
+      VERIFY_ROOT: ${{ context.environment.op.worktree_path }}
+      VERIFY_OUTBOX: ${{ context.environment.op.outbox }}
+      VERIFY_TARGET: ${{ inputs.target_directory }}
+      VERIFY_CANDIDATE: ${{ inputs.candidate }}
+      VERIFY_BASE: ${{ inputs.base }}
+    run: python3 "$VERIFY_ROOT/scripts/verify.py" check gha-many
+- id: gha_runtime
+  op: command_execution
+  const: true
+  execution_needs:
+    packages: *id001
+  inputs:
+    env:
+      VERIFY_ROOT: ${{ context.environment.op.worktree_path }}
+      VERIFY_OUTBOX: ${{ context.environment.op.outbox }}
+      VERIFY_TARGET: ${{ inputs.target_directory }}
+      VERIFY_CANDIDATE: ${{ inputs.candidate }}
+      VERIFY_BASE: ${{ inputs.base }}
+    run: python3 "$VERIFY_ROOT/scripts/verify.py" check gha-runtime
+- id: codex
+  op: command_execution
+  const: true
+  execution_needs:
+    packages: *id001
+  inputs:
+    env:
+      VERIFY_ROOT: ${{ context.environment.op.worktree_path }}
+      VERIFY_OUTBOX: ${{ context.environment.op.outbox }}
+      VERIFY_TARGET: ${{ inputs.target_directory }}
+      VERIFY_CANDIDATE: ${{ inputs.candidate }}
+      VERIFY_BASE: ${{ inputs.base }}
+    run: python3 "$VERIFY_ROOT/scripts/verify.py" check codex
+- id: rule_gate
+  op: command_execution
+  const: true
+  execution_needs:
+    packages: *id001
+  inputs:
+    env:
+      VERIFY_ROOT: ${{ context.environment.op.worktree_path }}
+      VERIFY_OUTBOX: ${{ context.environment.op.outbox }}
+      VERIFY_TARGET: ${{ inputs.target_directory }}
+      VERIFY_CANDIDATE: ${{ inputs.candidate }}
+      VERIFY_BASE: ${{ inputs.base }}
+    run: python3 "$VERIFY_ROOT/scripts/verify.py" check rule-gate
+- id: aider
+  op: command_execution
+  const: true
+  execution_needs:
+    packages: *id001
+  inputs:
+    env:
+      VERIFY_ROOT: ${{ context.environment.op.worktree_path }}
+      VERIFY_OUTBOX: ${{ context.environment.op.outbox }}
+      VERIFY_TARGET: ${{ inputs.target_directory }}
+      VERIFY_CANDIDATE: ${{ inputs.candidate }}
+      VERIFY_BASE: ${{ inputs.base }}
+    run: python3 "$VERIFY_ROOT/scripts/verify.py" check aider
+- id: litellm
+  op: command_execution
+  const: true
+  execution_needs:
+    packages: *id001
+  inputs:
+    env:
+      VERIFY_ROOT: ${{ context.environment.op.worktree_path }}
+      VERIFY_OUTBOX: ${{ context.environment.op.outbox }}
+      VERIFY_TARGET: ${{ inputs.target_directory }}
+      VERIFY_CANDIDATE: ${{ inputs.candidate }}
+      VERIFY_BASE: ${{ inputs.base }}
+    run: python3 "$VERIFY_ROOT/scripts/verify.py" check litellm
+- id: pydantic
+  op: command_execution
+  const: true
+  execution_needs:
+    packages: *id001
+  inputs:
+    env:
+      VERIFY_ROOT: ${{ context.environment.op.worktree_path }}
+      VERIFY_OUTBOX: ${{ context.environment.op.outbox }}
+      VERIFY_TARGET: ${{ inputs.target_directory }}
+      VERIFY_CANDIDATE: ${{ inputs.candidate }}
+      VERIFY_BASE: ${{ inputs.base }}
+    run: python3 "$VERIFY_ROOT/scripts/verify.py" check pydantic
+- id: jev
+  op: command_execution
+  const: true
+  execution_needs:
+    packages: *id001
+  inputs:
+    env:
+      VERIFY_ROOT: ${{ context.environment.op.worktree_path }}
+      VERIFY_OUTBOX: ${{ context.environment.op.outbox }}
+      VERIFY_TARGET: ${{ inputs.target_directory }}
+      VERIFY_CANDIDATE: ${{ inputs.candidate }}
+      VERIFY_BASE: ${{ inputs.base }}
+    run: python3 "$VERIFY_ROOT/scripts/verify.py" check jev
+- id: kimi
+  op: command_execution
+  const: true
+  execution_needs:
+    packages: *id001
+  inputs:
+    env:
+      VERIFY_ROOT: ${{ context.environment.op.worktree_path }}
+      VERIFY_OUTBOX: ${{ context.environment.op.outbox }}
+      VERIFY_TARGET: ${{ inputs.target_directory }}
+      VERIFY_CANDIDATE: ${{ inputs.candidate }}
+      VERIFY_BASE: ${{ inputs.base }}
+    run: python3 "$VERIFY_ROOT/scripts/verify.py" check kimi
+- id: nix_metadata
+  op: command_execution
+  const: true
+  execution_needs:
+    packages: *id001
+  inputs:
+    env:
+      VERIFY_ROOT: ${{ context.environment.op.worktree_path }}
+      VERIFY_OUTBOX: ${{ context.environment.op.outbox }}
+      VERIFY_TARGET: ${{ inputs.target_directory }}
+      VERIFY_CANDIDATE: ${{ inputs.candidate }}
+      VERIFY_BASE: ${{ inputs.base }}
+    run: python3 "$VERIFY_ROOT/scripts/verify.py" check nix-metadata
+- id: nix_process
+  op: command_execution
+  const: true
+  execution_needs:
+    packages: *id001
+  inputs:
+    env:
+      VERIFY_ROOT: ${{ context.environment.op.worktree_path }}
+      VERIFY_OUTBOX: ${{ context.environment.op.outbox }}
+      VERIFY_TARGET: ${{ inputs.target_directory }}
+      VERIFY_CANDIDATE: ${{ inputs.candidate }}
+      VERIFY_BASE: ${{ inputs.base }}
+    run: python3 "$VERIFY_ROOT/scripts/verify.py" check nix-process
+- id: report
+  op: command_execution
+  const: true
+  execution_needs:
+    packages:
+    - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#python3
+  artifacts:
+    manifests.log: ${{ sequence.manifests.artifacts['manifests.log'] }}
+    manifests.json: ${{ sequence.manifests.artifacts['manifests.json'] }}
+    tooling.log: ${{ sequence.tooling.artifacts['tooling.log'] }}
+    tooling.json: ${{ sequence.tooling.artifacts['tooling.json'] }}
+    llm.log: ${{ sequence.llm.artifacts['llm.log'] }}
+    llm.json: ${{ sequence.llm.artifacts['llm.json'] }}
+    llm2.log: ${{ sequence.llm2.artifacts['llm2.log'] }}
+    llm2.json: ${{ sequence.llm2.artifacts['llm2.json'] }}
+    gha.log: ${{ sequence.gha.artifacts['gha.log'] }}
+    gha.json: ${{ sequence.gha.artifacts['gha.json'] }}
+    gha-many.log: ${{ sequence.gha_many.artifacts['gha-many.log'] }}
+    gha-many.json: ${{ sequence.gha_many.artifacts['gha-many.json'] }}
+    gha-runtime.log: ${{ sequence.gha_runtime.artifacts['gha-runtime.log'] }}
+    gha-runtime.json: ${{ sequence.gha_runtime.artifacts['gha-runtime.json'] }}
+    codex.log: ${{ sequence.codex.artifacts['codex.log'] }}
+    codex.json: ${{ sequence.codex.artifacts['codex.json'] }}
+    rule-gate.log: ${{ sequence.rule_gate.artifacts['rule-gate.log'] }}
+    rule-gate.json: ${{ sequence.rule_gate.artifacts['rule-gate.json'] }}
+    aider.log: ${{ sequence.aider.artifacts['aider.log'] }}
+    aider.json: ${{ sequence.aider.artifacts['aider.json'] }}
+    litellm.log: ${{ sequence.litellm.artifacts['litellm.log'] }}
+    litellm.json: ${{ sequence.litellm.artifacts['litellm.json'] }}
+    pydantic.log: ${{ sequence.pydantic.artifacts['pydantic.log'] }}
+    pydantic.json: ${{ sequence.pydantic.artifacts['pydantic.json'] }}
+    jev.log: ${{ sequence.jev.artifacts['jev.log'] }}
+    jev.json: ${{ sequence.jev.artifacts['jev.json'] }}
+    kimi.log: ${{ sequence.kimi.artifacts['kimi.log'] }}
+    kimi.json: ${{ sequence.kimi.artifacts['kimi.json'] }}
+    nix-metadata.log: ${{ sequence.nix_metadata.artifacts['nix-metadata.log'] }}
+    nix-metadata.json: ${{ sequence.nix_metadata.artifacts['nix-metadata.json'] }}
+    nix-process.log: ${{ sequence.nix_process.artifacts['nix-process.log'] }}
+    nix-process.json: ${{ sequence.nix_process.artifacts['nix-process.json'] }}
+  inputs:
+    env:
+      VERIFY_ROOT: ${{ context.environment.op.worktree_path }}
+      VERIFY_INBOX: ${{ context.environment.op.inbox }}
+      VERIFY_OUTBOX: ${{ context.environment.op.outbox }}
+      VERIFY_STATUS_MANIFESTS: ${{ sequence.manifests.outputs.stdout }}
+      VERIFY_STATUS_TOOLING: ${{ sequence.tooling.outputs.stdout }}
+      VERIFY_STATUS_LLM: ${{ sequence.llm.outputs.stdout }}
+      VERIFY_STATUS_LLM2: ${{ sequence.llm2.outputs.stdout }}
+      VERIFY_STATUS_GHA: ${{ sequence.gha.outputs.stdout }}
+      VERIFY_STATUS_GHA_MANY: ${{ sequence.gha_many.outputs.stdout }}
+      VERIFY_STATUS_GHA_RUNTIME: ${{ sequence.gha_runtime.outputs.stdout }}
+      VERIFY_STATUS_CODEX: ${{ sequence.codex.outputs.stdout }}
+      VERIFY_STATUS_RULE_GATE: ${{ sequence.rule_gate.outputs.stdout }}
+      VERIFY_STATUS_AIDER: ${{ sequence.aider.outputs.stdout }}
+      VERIFY_STATUS_LITELLM: ${{ sequence.litellm.outputs.stdout }}
+      VERIFY_STATUS_PYDANTIC: ${{ sequence.pydantic.outputs.stdout }}
+      VERIFY_STATUS_JEV: ${{ sequence.jev.outputs.stdout }}
+      VERIFY_STATUS_KIMI: ${{ sequence.kimi.outputs.stdout }}
+      VERIFY_STATUS_NIX_METADATA: ${{ sequence.nix_metadata.outputs.stdout }}
+      VERIFY_STATUS_NIX_PROCESS: ${{ sequence.nix_process.outputs.stdout }}
+    run: python3 "$VERIFY_ROOT/scripts/verify.py" aggregate
+outputs:
+  api_version: c2.build-hook/v1
+  status: ${{ sequence.report.outputs.stdout }}
+  summary: Native manifests, tooling, operation and nested contracts, Nix metadata and installed processes completed. Inspect
+    verification.md and per-task evidence; exclusions are recorded.
+  artifact_refs: '${{ {''manifests.log'': sequence.manifests.artifacts[''manifests.log''], ''manifests.json'': sequence.manifests.artifacts[''manifests.json''],
+    ''tooling.log'': sequence.tooling.artifacts[''tooling.log''], ''tooling.json'': sequence.tooling.artifacts[''tooling.json''],
+    ''llm.log'': sequence.llm.artifacts[''llm.log''], ''llm.json'': sequence.llm.artifacts[''llm.json''], ''llm2.log'': sequence.llm2.artifacts[''llm2.log''],
+    ''llm2.json'': sequence.llm2.artifacts[''llm2.json''], ''gha.log'': sequence.gha.artifacts[''gha.log''], ''gha.json'':
+    sequence.gha.artifacts[''gha.json''], ''gha-many.log'': sequence.gha_many.artifacts[''gha-many.log''], ''gha-many.json'':
+    sequence.gha_many.artifacts[''gha-many.json''], ''gha-runtime.log'': sequence.gha_runtime.artifacts[''gha-runtime.log''],
+    ''gha-runtime.json'': sequence.gha_runtime.artifacts[''gha-runtime.json''], ''codex.log'': sequence.codex.artifacts[''codex.log''],
+    ''codex.json'': sequence.codex.artifacts[''codex.json''], ''rule-gate.log'': sequence.rule_gate.artifacts[''rule-gate.log''],
+    ''rule-gate.json'': sequence.rule_gate.artifacts[''rule-gate.json''], ''aider.log'': sequence.aider.artifacts[''aider.log''],
+    ''aider.json'': sequence.aider.artifacts[''aider.json''], ''litellm.log'': sequence.litellm.artifacts[''litellm.log''],
+    ''litellm.json'': sequence.litellm.artifacts[''litellm.json''], ''pydantic.log'': sequence.pydantic.artifacts[''pydantic.log''],
+    ''pydantic.json'': sequence.pydantic.artifacts[''pydantic.json''], ''jev.log'': sequence.jev.artifacts[''jev.log''], ''jev.json'':
+    sequence.jev.artifacts[''jev.json''], ''kimi.log'': sequence.kimi.artifacts[''kimi.log''], ''kimi.json'': sequence.kimi.artifacts[''kimi.json''],
+    ''nix-metadata.log'': sequence.nix_metadata.artifacts[''nix-metadata.log''], ''nix-metadata.json'': sequence.nix_metadata.artifacts[''nix-metadata.json''],
+    ''nix-process.log'': sequence.nix_process.artifacts[''nix-process.log''], ''nix-process.json'': sequence.nix_process.artifacts[''nix-process.json''],
+    ''verification.md'': sequence.report.artifacts[''verification.md''], ''verification.json'': sequence.report.artifacts[''verification.json'']}
+    }}'
