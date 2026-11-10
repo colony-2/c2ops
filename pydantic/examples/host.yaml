@@ -1,0 +1,16 @@
+id: host-bound-inference
+input_schema:
+  base_url: {type: string, required: true}
+  model: {type: string, required: true}
+  api_key: {type: string, secret: true, required: true}
+  prompt: {type: string, required: true}
+sequence:
+  - id: discussion
+    include: ./inference.yaml
+    inputs:
+      base_url: '${{ inputs.base_url }}'
+      model: '${{ inputs.model }}'
+      api_key: '${{ inputs.api_key }}'
+      prompt: '${{ inputs.prompt }}'
+outputs:
+  response: '${{ sequence.discussion.outputs.response }}'

@@ -1,0 +1,27 @@
+id: inference
+input_schema:
+  base_url: {type: string, required: true}
+  model: {type: string, required: true}
+  api_key: {type: string, secret: true, required: true}
+  prompt: {type: string, required: true}
+sequence:
+  - id: answer
+    # Replace this ref only after the package at that commit passes release checks.
+    op: nix:github:colony-2/c2ops/REPLACE_WITH_VERIFIED_COMMIT#pydantic
+    timeout: 45s
+    inputs:
+      api:
+        base_url: '${{ inputs.base_url }}'
+        api_key: '${{ inputs.api_key }}'
+      default_provider: openai
+      default_model: '${{ inputs.model }}'
+      invocation_timeout: 30
+      prompt: '${{ inputs.prompt }}'
+      response_schema:
+        type: object
+        additionalProperties: false
+        properties:
+          answer: {type: string}
+        required: [answer]
+outputs:
+  response: '${{ sequence.answer.outputs.response }}'

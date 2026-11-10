@@ -26,12 +26,8 @@ origin = Path(importlib.util.find_spec("pydantic").origin).resolve()
 assert origin.is_relative_to(Path(sys.argv[2])), origin
 
 if sys.argv[3] == "pydantic":
+    from pydantic_ai.models.openai import OpenAIChatModel
+    from pydantic_ai.providers.openai import OpenAIProvider
+    from pydantic_ai.output import StructuredDict
     from pydantic_ai import Agent
-
-    # The slim distribution needs explicitly selected provider libraries.
-    # Construct each supported provider without making a network request.
-    os.environ.update(OPENAI_API_KEY="test", ANTHROPIC_API_KEY="test", GOOGLE_API_KEY="test")
-    model_name = runpy.run_path(str(script))["model_name"]
-    for provider, model in (("openai", "gpt-4.1"), ("anthropic", "claude-sonnet-4-5"), ("gemini", "gemini-2.5-flash")):
-        Agent(model_name(provider, model))
-    Agent(model_name("gemini", "google-gla:gemini-2.5-flash"))
+    Agent(OpenAIChatModel("fixture", provider=OpenAIProvider(base_url="https://example.invalid/root/", api_key="fixture")), output_type=StructuredDict({"type": "object"}))

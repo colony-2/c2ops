@@ -28,6 +28,11 @@ in {
     ${lib.optionalString (builtins.elem name [ "pydantic" "litellm" "jev" ]) ''
       ${package.pythonEnv}/bin/python ${../scripts/check-python-runtime.py} ${../. + "/${name}/main.py"} ${pkgs.python3Packages.pydantic} ${name}
     ''}
+    ${lib.optionalString (name == "pydantic") ''
+      PYTHONPATH=${pkgs.python3Packages.pyyaml}/${pkgs.python3.sitePackages} \
+        ${package.pythonEnv}/bin/python ${../pydantic}/test_binding.py \
+        --module ${package}/libexec/main.py --launcher ${package}/bin/pydantic
+    ''}
     ${lib.optionalString (name == "aider") ''
       HOME=$(mktemp -d) timeout 30 ${lib.getExe packages.aider-cli} --version
     ''}

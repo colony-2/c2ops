@@ -1,180 +1,93 @@
-# `pydantic`
+# Directly bound structured inference
 
-PydanticAI-backed op with an interface similar to the existing `llm_inference2` op.
+`pydantic` sends a prompt to the host-selected OpenAI-compatible HTTPS root and
+returns a JSON Schema-validated structured answer. Every call requires `api` with
+`base_url` and secret string `api_key`, `default_provider: openai`, an unqualified
+`default_model`, object `response_schema`, nonempty `prompt` and finite positive
+`invocation_timeout` in seconds. Optional settings are `system_prompt`,
+`temperature`, positive integer `max_tokens`, `top_p`, and `stop_sequences`.
+`metadata` must be an object; its entries are discarded. No metadata is sent to
+the provider or copied to results.
 
-## Selector
+This is a breaking replacement. Ambient credentials, provider aliases, `api_keys`,
+file context, sandboxing and external tools have been removed. Unknown fields
+(including legacy fields with false/empty values) fail validation before requests.
+There is no legacy mode or binding switch. The StructuredDict final-result tool
+is the only tool sent to the model.
 
-Use this op from the repo root as:
+The URL is the exact API root: `https://host.example/custom/api` becomes
+`https://host.example/custom/api/chat/completions`. Only trailing slashes are
+normalized; no `/v1` is inferred. Roots require HTTPS, host and valid port.
+Userinfo, query/fragment delimiters, backslashes, percent encoding, repeated path
+separators and dot segments are rejected. Credentials and binding strings cannot
+contain whitespace or controls. Content, metadata and provider output cannot
+change bindings. URL syntax checks do not authorize a destination: cortex-assistant
+must enforce its trusted endpoint/model policy.
 
-```yaml
-op: ./pydantic
+Clients are request-scoped, with TLS verification, no environment proxies or
+credential/project fallback, and no redirects (including same-origin redirects).
+Every attempt checks the complete destination before attaching the credential.
+Provider retries are limited to one; structured repair is limited to one. Local
+Draft 2020-12 validation enforces nested constraints because pinned StructuredDict
+alone advertises the schema without validating its nested values. Recursive or
+unresolvable references, remote references, `$id`, `$dynamicRef` and `$recursiveRef`
+are unsupported and rejected before clients are created. The local validator's
+registry cannot retrieve remote schemas. Unsupported normalization fails safely.
+
+A monotonic deadline covers validation and inference, transport backoff and
+structured repair. Expiry cancels the request and closes both clients. The caller
+should use a larger outer activity deadline (for example, 45s around a 30s
+invocation) and budget separately for package resolution/startup and forced
+process termination. Those outer bounds remain runtime responsibilities.
+
+Success uses `{"output": {"response": "{...}", "model": "...", "usage": {...}}}`.
+`response` is a JSON string; `model` is the selected model rather than untrusted
+provider metadata. Usage contains prompt, completion and total token counts.
+Provider metadata is always `{}`. Failure emits a stable `pydantic: validation`,
+`authentication`, `provider`, `malformed-result` or `timeout` diagnostic and exits
+1 with no success output. Raw exceptions and provider bodies are never printed.
+SDK debug logging and agent instrumentation are disabled. Results containing the
+credential are suppressed; a diagnostic containing it is also suppressed, even
+when a short credential coincides with a category. The operation creates no
+artifacts or telemetry and does not alter environment variables.
+
+`op.yaml` is the source route: `uv run --script ./main.py`, with Python/uv declared
+as worker dependencies and exact direct Python pins in main.py. uv resolves its
+own transitive dependencies; it is not the locked Nix environment. `op.json` is
+the generated package manifest using `bin/pydantic`. The Nix wrapper includes
+Python and the locked libraries, and needs neither Go nor uv at invocation. The
+implementation is a single main.py, which the existing installer copies fully.
+No immutable selector for this change is verified until its package is built,
+tested, published and downloaded on a clean worker. `published` is mutable.
+
+[host.yaml](examples/host.yaml) declares public endpoint/model/prompt and a secret
+scalar key and forwards them through an ordinary include to
+[inference.yaml](examples/inference.yaml). At submission bind `api_key` to
+`${{ context.secrets.your_host_key }}` rather than fetching it in Cortex. Replace
+the example's explicit placeholder with the verified immutable commit before
+use. The leaf marks the same recipe input secret and the operation marks
+`api.api_key` with `x-secret: true`. The host controls the leaf's response schema.
+Actual include propagation, assistant schema/citation semantics, durable
+discussions, runtime deadlines and storage/retention tests belong to
+cortex-assistant. Operation fixtures do not establish those behaviors.
+
+Runtime-managed secret inputs may still be retained by JobDB or execution
+records. Operation output scans establish no runtime retention or deletion
+policy. The owner must check those boundaries separately on c2j v0.0.122 and
+JobDB v0.0.74; this change does not modify those targets or Go 1.26.
+
+Run deterministic tests with the pinned interpreter:
+
+```sh
+python pydantic/test_binding.py
+# Against actual installed bytes, using the package's Python plus test-only PyYAML:
+python pydantic/test_binding.py --module "$package/libexec/main.py" --launcher "$package/bin/pydantic"
 ```
 
-Nix package selector:
-
-```yaml
-op: nix:github:colony-2/c2ops/published#pydantic
-```
-
-## What It Does
-
-- Reads one JSON payload from stdin
-- Runs with a packaged Python interpreter and locked dependencies
-- Shares the direct dependency pins in [main.py](./main.py); Nix locks all transitive dependencies
-- Returns JSON via the extension-op `{"output": ...}` envelope
-
-## Requirements
-
-- A c2j worker configured for the [`colony2` cache](../NIX_PACKAGES.md); Python and libraries are packaged
-- Provider API keys supplied either:
-  - in `api_keys`
-  - or already present in the process environment
-
-Supported provider key mapping:
-
-- `openai` -> `OPENAI_API_KEY`
-- `anthropic` -> `ANTHROPIC_API_KEY`
-- `gemini` -> `GEMINI_API_KEY`
-
-## Inputs
-
-This op follows the `llm_inference2` input shape:
-
-- `default_provider`
-- `default_model`
-- `prompt`
-- `system_prompt`
-- `api_keys`
-- `temperature`, `max_tokens`, `top_p`, `stop_sequences`
-- `files`
-- `tools`
-- `execute_tools`
-- `response_schema`
-- `enable_sandbox`, `allowed_paths`, `restricted_paths`
-- `default_working_dir`, `tool_working_dir`
-- `enable_tool_execution`, `max_tool_rounds`, `continue_on_tool_error`, `tool_timeout`
-- `metadata`
-
-## File Handling
-
-Files are currently included as prompt context.
-
-- Text-like files are embedded in the prompt body
-- Non-text files are represented as placeholders
-- `max_file_context_size` is enforced against the supplied file bytes
-
-This is compatibility-oriented, not native multimodal file transport.
-
-## Tool Handling
-
-Tool definitions are exposed to the model through PydanticAI external tools.
-
-Current behavior:
-
-- If `execute_tools` is `false`, tool calls are surfaced in `tool_calls`
-- If `execute_tools` is `true`, the script executes a built-in file tool subset
-
-Auto-executed tool names currently supported:
-
-- `write_file`
-- `read_file`
-- `delete_file`
-- `list_files`
-- `create_directory`
-
-If you provide other tool names:
-
-- they can still be proposed by the model
-- but auto-execution will fail unless you extend the script
-
-## Sandbox
-
-When `enable_sandbox` is true, file operations are validated against:
-
-- `allowed_paths`
-- `restricted_paths`
-- a built-in restricted-path list
-- simple sensitive-path checks
-
-This is path-policy validation inside the op, not OS-level isolation.
-
-## Example
-
-```yaml
-sequence:
-  - id: plan_change
-    op: ./pydantic
-    inputs:
-      default_provider: openai
-      default_model: gpt-4.1
-      api_keys:
-        openai: "${{ context.secrets.openai_api_key }}"
-      prompt: Review these files and propose a patch plan.
-      files:
-        - path: README.md
-          type: markdown
-          content: "${{ files.readme_b64 }}"
-```
-
-Git-backed recipe example:
-
-```yaml
-sequence:
-  - id: plan_change
-    op: nix:github:colony-2/c2ops/published#pydantic
-    inputs:
-      default_provider: openai
-      default_model: gpt-4.1
-      api_keys:
-        openai: "${{ context.secrets.openai_api_key }}"
-      prompt: Review these files and propose a patch plan.
-```
-
-Tool execution example:
-
-```yaml
-sequence:
-  - id: edit_file
-    op: ./pydantic
-    inputs:
-      default_provider: anthropic
-      default_model: claude-sonnet-4-5
-      prompt: Create a notes file with today's deployment checklist.
-      tools:
-        - name: write_file
-          description: Write or update a file
-          parameters:
-            type: object
-            properties:
-              path:
-                type: string
-              content:
-                type: string
-            required: [path, content]
-      execute_tools: true
-      enable_tool_execution: true
-      max_tool_rounds: 3
-      tool_working_dir: "{{ context.environment.op.worktree_path }}"
-```
-
-## Outputs
-
-- `response`
-- `model`
-- `finish_reason`
-- `usage`
-- `tool_calls`
-- `tool_results`
-- `tool_execution_errors`
-- `tool_rounds_used`
-- `files_written`
-- `files_read`
-- `files_deleted`
-- `execution_time_ms`
-- `provider_metadata`
-- `telemetry`
-
-## Notes
-
-- This is the best fit for the current `llm2` surface among off-the-shelf frameworks, but it is not feature-identical to the old Go implementation.
-- The strongest compatibility today is structured output plus file-tool loops for local file operations.
+The trusted fixture invoker may pass `--fixture-loopback` to the process, or call
+`infer(..., test_loopback=True)` from Python. These permit HTTP only on literal
+127.0.0.1 or ::1. Neither manifest supplies this argument and no invocation field
+can enable it. Never add the fixture argument to a deployed manifest. Tests keep
+authorized-header observations in memory, outside output scans, and scan child
+stdout/stderr, operation-created files, and unexpected telemetry requests. No
+Docker or live provider is needed.

@@ -160,6 +160,7 @@ sequence:
       VERIFY_CANDIDATE: ${{ inputs.candidate }}
       VERIFY_BASE: ${{ inputs.base }}
     run: python3 "$VERIFY_ROOT/scripts/verify.py" check litellm
+# Builds locally and consumes installed bytes in this same task.
 - id: pydantic
   op: command_execution
   const: true

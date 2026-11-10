@@ -19,7 +19,7 @@ let
     pydantic = pythonRuntime.withPackages (p: [
       (p.callPackage ./pydantic-ai.nix { })
       (p.callPackage ./anthropic-compat.nix { })
-      p.openai p.tiktoken p.google-genai
+      p.openai p.tiktoken p.google-genai p.jsonschema
     ]);
     litellm = pythonRuntime.withPackages (p: [ p.litellm ]);
     jev = pythonRuntime.withPackages (p: [ (p.callPackage ./typesafe-sdk.nix { }) ]);

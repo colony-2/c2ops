@@ -22,7 +22,7 @@ HELD = {
     'worker-image': 'scripts/check-codex-worker.py requires Docker daemon/image execution.',
     'public-actions': 'C2OPS_TEST_GHA_ACTIONS remains unset; real public Actions/service actions and remote CI held.',
     'publication': 'C2OPS_TEST_NIX_PUBLICATION remains unset; four real cache tests, Cachix record/verify/push/pin and promote-published held.',
-    'nix-build-checks': 'Nix check derivations require local builds; worker max-jobs=0 prohibits them. Native metadata and installed process equivalents run separately without changing policy.',
+    'nix-build-checks': 'Pydantic package and native check build locally with one job/core. Other operation checks retain cached realization.',
     'release': 'Signing, publication and deployment require external infrastructure/credentials and are held even if available.',
 }
 _ACTIVE = None
@@ -87,8 +87,32 @@ def execute(name, checks):
         checks.run(['uv', 'run', 'scripts/check-manifest-schemas.py'])
     elif name == 'tooling':
         checks.run(['make', 'test-tools'])
-    elif name in ('llm', 'llm2', 'gha', 'gha-many', 'rule-gate', 'aider', 'litellm', 'pydantic'):
+    elif name in ('llm', 'llm2', 'gha', 'gha-many', 'rule-gate', 'aider', 'litellm'):
         checks.go('rule_gate' if name == 'rule-gate' else name)
+    elif name == 'pydantic':
+        # Build and consume in this task: local paths are evidence, not distribution.
+        system = {'arm64': 'aarch64'}.get(platform.machine(), platform.machine()) + '-linux'
+        selector = '.#packages.' + system + '.pydantic'
+        contract = '.#checks.' + system + '.pydantic'
+        if not checks.run([*NIX, 'build', '--no-link', '--no-write-lock-file',
+                           '--max-jobs', '1', '--cores', '1', '--print-out-paths', selector, contract]):
+            return
+        data = checks.metadata(selector, 'p: { path = p.outPath; python = p.pythonEnv.outPath; drv = p.drvPath; }')
+        if data is None:
+            return
+        checks.log.write((json.dumps({'installed_candidate': data, 'system': system}) + '\n').encode())
+        # PyYAML is a fixture dependency, not an operation invocation dependency.
+        rev = json.loads((checks.root / 'flake.lock').read_text())['nodes']['nixpkgs']['locked']['rev']
+        yaml = checks.metadata('github:NixOS/nixpkgs/' + rev + '#python3Packages.pyyaml',
+                               'p: { path = p.outPath; site = p.pythonModule.sitePackages; }')
+        if yaml is None:
+            return
+        checks.env['PYTHONPATH'] = yaml['path'] + '/' + yaml['site']
+        checks.run([data['python'] + '/bin/python', 'pydantic/test_binding.py'])
+        checks.run([data['python'] + '/bin/python', 'pydantic/test_binding.py',
+                    '--module', data['path'] + '/libexec/main.py',
+                    '--launcher', data['path'] + '/bin/pydantic'])
+        checks.run([*NIX, 'path-info', '--json', '--recursive', data['path']])
     elif name == 'gha-runtime':
         checks.go('gha/integration')
     elif name == 'codex':

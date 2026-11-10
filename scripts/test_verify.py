@@ -114,7 +114,7 @@ with open(sys.argv[2]+'.log','wb') as log:
             proc = subprocess.Popen([sys.executable, '-c', driver, str(Path(verify.__file__)), str(pidfile)])
             import time
             deadline = time.monotonic() + 5
-            while not pidfile.exists() and time.monotonic() < deadline:
+            while (not pidfile.exists() or not pidfile.read_text()) and time.monotonic() < deadline:
                 time.sleep(0.01)
             try:
                 self.assertTrue(pidfile.exists())

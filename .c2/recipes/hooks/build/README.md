@@ -38,12 +38,15 @@ Makefiles:
 | Native flake metadata without building | `nix_metadata` |
 | Installed native package process contracts, payload architecture, Python dependency/provider contracts and CLI versions | `nix_process` |
 
-`nix_process` invokes the same check scripts as `nix/checks.nix` directly and
-realizes only native cached package outputs with local and remote builds
-disabled. A missing cache output is a failed check, not a skip. It does not
-build the `runCommand` check derivations: those need local builds, prohibited
-by the worker's `max-jobs=0` policy. Metadata and installed process checks
-remain mandatory; no policy override is attempted.
+`pydantic` builds the current scratch checkout's native package and package check
+with `--max-jobs 1 --cores 1 --no-link`, retaining normal substitutes and
+sandboxing. In that same task it runs the deterministic suite against source
+and the installed payload/launcher and records output and closure identities.
+Local store paths establish local verification, not portable delivery.
+
+`nix_process` retains cache-only realization for the other operation process
+checks. Publication, immutable selectors and clean-worker ordinary resolution
+remain post-merge obligations (P02/P03).
 
 Held coverage: other platform matrix entries; Docker-based minimal Codex worker
 image tests; opt-in public GHA/service actions and remote CI; the four real Nix

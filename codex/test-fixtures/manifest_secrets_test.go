@@ -21,7 +21,7 @@ func TestManifestCredentialReferences(t *testing.T) {
 	}{
 		{"jev", []string{"api_key"}},
 		{"llm2", []string{"api_keys", "arbitrary_provider"}},
-		{"pydantic", []string{"api_keys", "arbitrary_provider"}},
+		{"pydantic", []string{"api", "api_key"}},
 		{"gha", []string{"secrets", "arbitrary_secret"}},
 		{"gha/job", []string{"secrets", "arbitrary_secret"}},
 		{"gha-many", []string{"workflows", "[]", "secrets", "arbitrary_secret"}},
