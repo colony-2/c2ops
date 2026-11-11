@@ -39,115 +39,63 @@ type openAIServer struct {
 	handler  func(openAIRequest, int) (int, any)
 }
 
-func TestPydanticOpIntegration(t *testing.T) {
-	t.Run("structured response with file context", func(t *testing.T) {
-		server := newOpenAIServer(t, func(req openAIRequest, _ int) (int, any) {
-			sawFileContext := strings.Contains(latestUserContent(req.Body), "### File Context ###")
-			return http.StatusOK, toolCallCompletionResponse(
-				modelName(req.Body),
-				"call_final",
-				"final_result",
-				fmt.Sprintf(`{"saw_file_context":%t}`, sawFileContext),
-			)
-		})
-		defer server.Close()
+func boundInput(server *openAIServer) map[string]any {
+	return map[string]any{
+		"api":              map[string]any{"base_url": server.BaseURL(), "api_key": "synthetic-process-key"},
+		"default_provider": "openai", "default_model": "fixture-model",
+		"prompt": "Return the bound answer", "invocation_timeout": 10,
+		"response_schema": map[string]any{"type": "object", "additionalProperties": false,
+			"properties": map[string]any{"answer": map[string]any{"type": "string"}}, "required": []string{"answer"}},
+	}
+}
 
-		env, stdout, stderr, err := runPackagedOp(t, map[string]any{
-			"default_provider": "openai",
-			"default_model":    "gpt-4.1",
-			"prompt":           "summarize the supplied file",
-			"api_keys": map[string]any{
-				"openai": "dummy",
-			},
-			"response_schema": map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"saw_file_context": map[string]any{"type": "boolean"},
-				},
-				"required": []string{"saw_file_context"},
-			},
-			"files": []map[string]any{
-				{
-					"path":    "README.md",
-					"type":    "markdown",
-					"content": "fixture file body",
-				},
-			},
-		}, localOpenAIEnv(server))
+func TestPydanticOpIntegration(t *testing.T) {
+	server := newOpenAIServer(t, func(req openAIRequest, _ int) (int, any) {
+		return http.StatusOK, toolCallCompletionResponse(modelName(req.Body), "final", firstToolName(req.Body), `{"answer":"bound"}`)
+	})
+	defer server.Close()
+	t.Run("explicit bound structured response", func(t *testing.T) {
+		env, stdout, stderr, err := runPackagedOp(t, boundInput(server), nil)
 		require.NoError(t, err, "stdout=%s stderr=%s", stdout, stderr)
 		require.Empty(t, filterIgnorablePythonOpStderr(stderr))
-
-		responseText := env.Output["response"].(string)
 		var response map[string]any
-		require.NoError(t, json.Unmarshal([]byte(responseText), &response))
-		require.Equal(t, true, response["saw_file_context"])
-		require.Equal(t, "gpt-4.1", env.Output["model"])
-
+		require.NoError(t, json.Unmarshal([]byte(env.Output["response"].(string)), &response))
+		require.Equal(t, map[string]any{"answer": "bound"}, response)
+		require.Equal(t, "fixture-model", env.Output["model"])
 		requests := server.Requests()
 		require.Len(t, requests, 1)
-		require.Equal(t, "required", requests[0].Body["tool_choice"])
-		require.Equal(t, "final_result", firstToolName(requests[0].Body))
-		require.Contains(t, latestUserContent(requests[0].Body), "fixture file body")
+		require.Equal(t, "/v1/chat/completions", requests[0].Path)
+		require.Equal(t, "fixture-model", requests[0].Body["model"])
+		require.True(t, requests[0].Header.Get("Authorization") == "Bearer synthetic-process-key", "explicit credential was not used")
+		require.Equal(t, "Return the bound answer", latestUserContent(requests[0].Body))
 	})
-
-	t.Run("tool execution writes file", func(t *testing.T) {
-		server := newOpenAIServer(t, func(req openAIRequest, index int) (int, any) {
-			if index == 0 {
-				return http.StatusOK, toolCallCompletionResponse(
-					modelName(req.Body),
-					"call_1",
-					"write_file",
-					`{"path":"note.txt","content":"hello from tool"}`,
-				)
-			}
-			return http.StatusOK, chatCompletionResponse(modelName(req.Body), "completed after 1 tool results")
+	for _, field := range []string{"api_keys", "files", "file_handling", "tools", "execute_tools", "enable_tool_execution", "tool_working_dir", "test_loopback", "fixture_loopback"} {
+		t.Run("reject removed or untrusted "+field, func(t *testing.T) {
+			input := boundInput(server)
+			output := filepath.Join(t.TempDir(), "note.txt")
+			input[field] = map[string]any{"path": output, "content": "must not exist"}
+			before := len(server.Requests())
+			env, stdout, stderr, err := runPackagedOp(t, input, nil)
+			require.Error(t, err)
+			require.Empty(t, stdout)
+			require.Nil(t, env.Output)
+			require.Equal(t, "pydantic: validation", filterIgnorablePythonOpStderr(stderr))
+			require.Len(t, server.Requests(), before)
+			require.NoFileExists(t, output)
 		})
-		defer server.Close()
-
-		workdir := t.TempDir()
-		env, stdout, stderr, err := runPackagedOp(t, map[string]any{
-			"default_provider":      "openai",
-			"default_model":         "gpt-4.1",
-			"prompt":                "create a note using the write_file tool",
-			"api_keys":              map[string]any{"openai": "dummy"},
-			"enable_tool_execution": true,
-			"execute_tools":         true,
-			"max_tool_rounds":       1,
-			"default_working_dir":   workdir,
-			"tool_working_dir":      workdir,
-			"tools": []map[string]any{
-				{
-					"name":        "write_file",
-					"description": "Write a file",
-					"parameters": map[string]any{
-						"type": "object",
-						"properties": map[string]any{
-							"path":    map[string]any{"type": "string"},
-							"content": map[string]any{"type": "string"},
-						},
-						"required": []string{"path", "content"},
-					},
-				},
-			},
-		}, localOpenAIEnv(server))
-		require.NoError(t, err, "stdout=%s stderr=%s", stdout, stderr)
-		require.Empty(t, filterIgnorablePythonOpStderr(stderr))
-
-		notePath := filepath.Join(workdir, "note.txt")
-		content, readErr := os.ReadFile(notePath)
-		require.NoError(t, readErr)
-		require.Equal(t, "hello from tool", string(content))
-
-		require.Equal(t, "completed after 1 tool results", env.Output["response"])
-		require.Len(t, env.Output["tool_calls"].([]any), 1)
-		require.Len(t, env.Output["tool_results"].([]any), 1)
-		require.Contains(t, stringifySlice(env.Output["files_written"].([]any)), "note.txt")
-
-		requests := server.Requests()
-		require.Len(t, requests, 2)
-		require.Equal(t, "write_file", firstToolName(requests[0].Body))
-		require.Contains(t, toolMessageContent(requests[1].Body), `"path":"note.txt"`)
-	})
+	}
+	for _, field := range []string{"api", "response_schema", "invocation_timeout"} {
+		t.Run("missing "+field, func(t *testing.T) {
+			input := boundInput(server)
+			delete(input, field)
+			before := len(server.Requests())
+			_, stdout, stderr, err := runPackagedOp(t, input, nil)
+			require.Error(t, err)
+			require.Empty(t, stdout)
+			require.Equal(t, "pydantic: validation", filterIgnorablePythonOpStderr(stderr))
+			require.Len(t, server.Requests(), before)
+		})
+	}
 }
 
 func newOpenAIServer(t *testing.T, handler func(openAIRequest, int) (int, any)) *openAIServer {
@@ -225,7 +173,7 @@ func runPackagedOp(t *testing.T, input any, extraEnv map[string]string) (opEnvel
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "python3", filepath.Join(opDir(t), "..", "scripts", "op_test.py"),
-		"run", "nix:github:colony-2/c2ops/published#pydantic")
+		"run", "nix:github:colony-2/c2ops/published#pydantic", "--fixture-loopback")
 	cmd.Stdin = bytes.NewReader(payload)
 	cmd.Env = testEnv(extraEnv)
 
@@ -270,41 +218,10 @@ func opDir(t *testing.T) string {
 	return filepath.Dir(file)
 }
 
-func localOpenAIEnv(server *openAIServer) map[string]string {
-	return map[string]string{
-		"OPENAI_BASE_URL": server.BaseURL(),
-		"OPENAI_API_BASE": server.BaseURL(),
-	}
-}
-
 func writeJSONResponse(w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(body)
-}
-
-func chatCompletionResponse(model string, content string) map[string]any {
-	return map[string]any{
-		"id":      "chatcmpl-1",
-		"object":  "chat.completion",
-		"created": 1,
-		"model":   model,
-		"choices": []map[string]any{
-			{
-				"index": 0,
-				"message": map[string]any{
-					"role":    "assistant",
-					"content": content,
-				},
-				"finish_reason": "stop",
-			},
-		},
-		"usage": map[string]any{
-			"prompt_tokens":     5,
-			"completion_tokens": 7,
-			"total_tokens":      12,
-		},
-	}
 }
 
 func toolCallCompletionResponse(model string, callID string, toolName string, arguments string) map[string]any {
@@ -374,19 +291,6 @@ func firstToolName(body map[string]any) string {
 	return name
 }
 
-func toolMessageContent(body map[string]any) string {
-	messages, _ := body["messages"].([]any)
-	for _, raw := range messages {
-		message, _ := raw.(map[string]any)
-		if message["role"] != "tool" {
-			continue
-		}
-		content, _ := message["content"].(string)
-		return content
-	}
-	return ""
-}
-
 func filterIgnorablePythonOpStderr(stderr string) string {
 	lines := strings.Split(stderr, "\n")
 	filtered := make([]string, 0, len(lines))
@@ -407,14 +311,4 @@ func filterIgnorablePythonOpStderr(stderr string) string {
 		filtered = append(filtered, trimmed)
 	}
 	return strings.Join(filtered, "\n")
-}
-
-func stringifySlice(items []any) []string {
-	out := make([]string, 0, len(items))
-	for _, item := range items {
-		if s, ok := item.(string); ok {
-			out = append(out, s)
-		}
-	}
-	return out
 }

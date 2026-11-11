@@ -69,3 +69,8 @@ its independently declared `jsonschema==4.26.0` dependency. It applies the
 Draft 2020-12 meta-schema assertion from `nix/checks.nix` to both input and
 output schemas of every `nix/ops.json` entry. This runs natively even while
 Nix derivation builds remain held.
+
+The Pydantic task invokes `make -C pydantic test`, the same entrypoint as CI.
+It runs mandatory Go packaged process tests and source Python binding tests;
+the installed-byte Python suite, launcher identity and closure checks remain separate.
+Both suites run even when one fails, and either failure fails task and aggregate evidence.

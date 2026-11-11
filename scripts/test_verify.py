@@ -100,6 +100,58 @@ class VerificationTests(unittest.TestCase):
             self.assertTrue(any(c.get('returncode') != 0 for c in data['commands']))
             self.assertIn('forced mandatory failure', (out / 'manifests.log').read_text())
 
+    def test_pydantic_shared_suites_and_aggregate(self):
+        # Execute the real Makefile and runner. Only package preparation and
+        # tool probes are stubbed; suite subprocess failures are real exits.
+        source = Path(verify.__file__).resolve().parents[1]
+        for failing in ('none', 'go', 'python'):
+            with self.subTest(failing=failing), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory) / 'candidate'
+                for name in ('pydantic', 'scripts', 'nix'):
+                    (root / name).mkdir(parents=True)
+                for name in ('pydantic/Makefile', 'scripts/pydantic_test.py', 'flake.lock', 'nix/pnpm-build-policy.json'):
+                    (root / name).write_bytes((source / name).read_bytes())
+                tools = Path(directory) / 'tools'; tools.mkdir()
+                for name in ('go', 'python'):
+                    path = tools / name
+                    path.write_text('#!/bin/sh\necho "injected suite '+name+'"\nexit '+('9' if name == failing else '0')+'\n')
+                    path.chmod(0o755)
+                (tools / 'bin').mkdir()
+                (tools / 'bin/python').symlink_to(tools / 'python')
+                out = Path(directory) / 'evidence'; out.mkdir()
+                self.fixtures(out)
+                original = verify.Checks.run
+                def run(checks, argv, directory='.', input_text=None):
+                    if argv[:3] == ['make', '-C', 'pydantic']:
+                        return original(checks, argv, directory, input_text)
+                    checks.commands.append({'argv': argv, 'returncode': 0})
+                    return True
+                def metadata(checks, selector, expression):
+                    if 'pyyaml' in selector:
+                        return {'path':str(tools), 'site':'.'}
+                    return {'path':str(tools), 'python':str(tools), 'drv':'fixture'}
+                with patch.object(verify, 'supported_platform', return_value=True), \
+                     patch.object(verify.Checks, 'run', run), \
+                     patch.object(verify.Checks, 'metadata', metadata), \
+                     patch.dict(os.environ, {'PATH':str(tools)+os.pathsep+os.environ['PATH']}), \
+                     contextlib.redirect_stdout(io.StringIO()) as stdout:
+                    verify.check('pydantic', root, out)
+                expected = 'passed' if failing == 'none' else 'failed'
+                self.assertEqual(stdout.getvalue(), expected)
+                report = json.loads((out / 'pydantic.json').read_text())
+                shared = [c for c in report['commands'] if c['argv'] == ['make', '-C', 'pydantic', 'test']]
+                self.assertEqual(len(shared), 1)
+                self.assertEqual(shared[0]['returncode'] == 0, failing == 'none')
+                log = (out / 'pydantic.log').read_text()
+                self.assertIn('injected suite go', log)
+                self.assertIn('injected suite python', log)
+                self.assertIn('"go", "test"', log)
+                self.assertIn('pydantic/test_binding.py', log)
+                statuses = {name:'passed' for name in verify.TASKS}; statuses['pydantic'] = expected
+                with contextlib.redirect_stdout(io.StringIO()) as aggregate_stdout:
+                    verify.aggregate(out, out / 'aggregate', statuses)
+                self.assertEqual(aggregate_stdout.getvalue(), expected)
+
     def test_cancellation_terminates_child_group(self):
         with tempfile.TemporaryDirectory() as directory:
             pidfile = Path(directory) / 'child.pid'

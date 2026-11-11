@@ -108,7 +108,8 @@ def execute(name, checks):
         if yaml is None:
             return
         checks.env['PYTHONPATH'] = yaml['path'] + '/' + yaml['site']
-        checks.run([data['python'] + '/bin/python', 'pydantic/test_binding.py'])
+        checks.env['PYDANTIC_TEST_PYTHON'] = data['python'] + '/bin/python'
+        checks.run(['make', '-C', 'pydantic', 'test'])
         checks.run([data['python'] + '/bin/python', 'pydantic/test_binding.py',
                     '--module', data['path'] + '/libexec/main.py',
                     '--launcher', data['path'] + '/bin/pydantic'])

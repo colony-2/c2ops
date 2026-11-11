@@ -11,4 +11,4 @@ install-test-deps:
 	uv sync --script ./main.py --python "$(PYTHON_FOR_UV)" --no-managed-python --no-progress
 
 test:
-	go test -count=1 ./...
+	python3 ../scripts/pydantic_test.py

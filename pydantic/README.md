@@ -76,7 +76,14 @@ records. Operation output scans establish no runtime retention or deletion
 policy. The owner must check those boundaries separately on c2j v0.0.122 and
 JobDB v0.0.74; this change does not modify those targets or Go 1.26.
 
-Run deterministic tests with the pinned interpreter:
+Run both the candidate-packaged Go process suite and deterministic source Python
+binding suite with `make -C pydantic test`. CI and native verification share this
+entrypoint. Build the candidate package first and set `C2OPS_TEST_FLAKE=path:/absolute/checkout`.
+The runner resolves Python and test-only PyYAML from the existing Nix pins.
+Verification supplies `PYDANTIC_TEST_PYTHON` and `PYTHONPATH` explicitly from those
+same packages. Loopback binding is required; no live credentials are needed.
+
+For individual Python checks with the pinned interpreter:
 
 ```sh
 python pydantic/test_binding.py

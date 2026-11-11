@@ -35,7 +35,9 @@ def nix(*args):
     return result.stdout
 
 
-def run(coordinate):
+def run(coordinate, fixture_loopback=False):
+    if fixture_loopback and coordinate != f"nix:{PUBLIC_FLAKE}#pydantic":
+        raise ValueError("fixture loopback is only supported for pydantic tests")
     selected = reference(coordinate)
     metadata = json.loads(nix(
         "eval", "--json", "--option", "allow-import-from-derivation", "false",
@@ -66,19 +68,20 @@ def run(coordinate):
         bindings = prepared.stdout.strip()
         env["PATH"] = bindings + os.pathsep + env.get("PATH", "")
     os.chdir(package)
-    os.execve(package / entry, [str(package / entry), *command[1:]], env)
+    os.execve(package / entry, [str(package / entry), *command[1:], *(["--fixture-loopback"] if fixture_loopback else [])], env)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=["reference", "run"])
     parser.add_argument("coordinate")
+    parser.add_argument("--fixture-loopback", action="store_true")
     args = parser.parse_args()
     try:
         if args.action == "reference":
             print(reference(args.coordinate))
         else:
-            run(args.coordinate)
+            run(args.coordinate, args.fixture_loopback)
     except (OSError, ValueError, RuntimeError) as error:
         parser.exit(1, f"{args.coordinate}: {error}\n")
 

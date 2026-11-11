@@ -2,10 +2,14 @@ import os
 import unittest
 from unittest.mock import patch
 
-from op_test import reference
+from op_test import reference, run
 
 
 class ReferenceTests(unittest.TestCase):
+    def test_fixture_flag_is_restricted_to_pydantic(self):
+        with self.assertRaisesRegex(ValueError, 'only supported for pydantic'):
+            run("nix:github:colony-2/c2ops/published#codex", fixture_loopback=True)
+
     def test_public_coordinate_is_default(self):
         with patch.dict(os.environ, {}, clear=True):
             self.assertEqual(reference("nix:github:colony-2/c2ops/published#codex"),
