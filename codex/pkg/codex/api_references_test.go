@@ -176,7 +176,8 @@ func TestExternalAPIDefaultOverrides(t *testing.T) {
 				{name: "explicit environment overrides default key", api: map[string]any{"api_key_env": "LEGACY_PROXY_KEY"}, configLookup: true, secretNames: []string{"codex_api_key"}, wantURL: "https://tenant.example/v1", wantEnv: "LEGACY_PROXY_KEY"},
 			} {
 				t.Run(tc.name, func(t *testing.T) {
-					submitted := map[string]any{"api": tc.api, "prompt": "test"}
+					// Isolate API lookups from independent model/effort defaults.
+					submitted := map[string]any{"api": tc.api, "prompt": "test", "model": nil, "reasoning_effort": nil}
 					if strings.Contains(manifest, "run_skill") {
 						submitted["skill"] = "test"
 					}

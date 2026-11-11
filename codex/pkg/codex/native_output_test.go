@@ -131,6 +131,8 @@ func TestOutputSchemaRepairsResumeAndRetainEveryAttempt(t *testing.T) {
 	opts := testExecuteOptions(t)
 	opts.StructuredSchema = []byte(answerSchema)
 	opts.Instructions = "initial instructions"
+	opts.Model = " selected-model "
+	opts.ReasoningEffort = " high "
 	r, out, errout, artifacts, err := Execute(context.Background(), opts)
 	defer cleanupArtifacts(out, errout, artifacts)
 	require.NoError(t, err)
@@ -153,6 +155,10 @@ func TestOutputSchemaRepairsResumeAndRetainEveryAttempt(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, string(initialArgs), `developer_instructions="initial instructions"`)
 	require.Contains(t, string(args), "Validation feedback:")
+	for _, launch := range []string{string(args), string(initialArgs)} {
+		require.Contains(t, launch, "--model\nselected-model\n")
+		require.Contains(t, launch, `model_reasoning_effort="high"`)
+	}
 }
 
 func TestOutputSchemaRepairLimitAndFailClosed(t *testing.T) {

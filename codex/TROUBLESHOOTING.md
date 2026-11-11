@@ -275,3 +275,20 @@ fixtures. They do not exercise a real Shai container or paid provider access.
 When reporting a remaining hang, include worker/c2ops/CLI versions, sandbox
 configuration, elapsed time, last progress records, sanitized capture excerpts,
 and whether it reproduces with a fresh session and without external skills.
+
+### Model and effort selection
+
+Check tenant settings `codex_model` and `codex_reasoning_effort`, then the
+invocation's independent `model` and `reasoning_effort` overrides.
+Explicit null, empty, or whitespace values suppress a tenant default. Absent
+settings preserve native Codex choices; direct callers must supply their own
+values. Configuration lookup errors and invalid input types are reported rather
+than treated as missing defaults.
+
+The `exec.config` diagnostic records `model_override` and
+`reasoning_effort_override`: these are requested launch settings, not proof
+of the provider's effective model or effort. Inspect provider responses when
+effective selection matters. Unsupported effort strings reach the CLI, which
+reports its validation error in stderr; no operation-local allowlist filters
+them. On continuation, the current invocation overrides apply again, including
+repairs. Session metadata does not freeze tenant defaults.

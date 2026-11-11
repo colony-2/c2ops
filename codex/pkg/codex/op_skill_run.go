@@ -35,6 +35,7 @@ type SkillRunInput struct {
 	Prompt             string                 `json:"prompt,omitempty"`
 	Session            *SessionInput          `json:"session,omitempty"`
 	Model              string                 `json:"model,omitempty"`
+	ReasoningEffort    string                 `json:"reasoning_effort,omitempty"`
 	API                *APIConfig             `json:"api,omitempty"`
 	Env                map[string]string      `json:"env,omitempty"`
 	ReturnOn           []string               `json:"return_on,omitempty"`
@@ -272,6 +273,7 @@ func execInputForSkillRun(input SkillRunInput) ExecOpInput {
 		Session:            input.Session,
 		Instructions:       input.Instructions,
 		Model:              input.Model,
+		ReasoningEffort:    input.ReasoningEffort,
 		API:                input.API,
 		Env:                input.Env,
 		Skills:             copyStrings(input.Skills),

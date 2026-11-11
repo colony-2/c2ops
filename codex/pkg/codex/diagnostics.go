@@ -12,13 +12,14 @@ import (
 // argv, environment values, auth.json, or config.toml into an artifact.
 func executionConfig(opts Options, requested *APIConfig) map[string]any {
 	fields := map[string]any{
-		"mode":                "default",
-		"provider":            "codex_config_or_default",
-		"credential_source":   "codex_authentication",
-		"model_override":      strings.TrimSpace(opts.Model),
-		"resuming":            strings.TrimSpace(opts.SessionID) != "",
-		"auth_json_present":   regularFilePresent(filepath.Join(opts.CodexHome, "auth.json")),
-		"config_toml_present": regularFilePresent(filepath.Join(opts.CodexHome, "config.toml")),
+		"mode":                      "default",
+		"provider":                  "codex_config_or_default",
+		"credential_source":         "codex_authentication",
+		"model_override":            strings.TrimSpace(opts.Model),
+		"reasoning_effort_override": strings.TrimSpace(opts.ReasoningEffort),
+		"resuming":                  strings.TrimSpace(opts.SessionID) != "",
+		"auth_json_present":         regularFilePresent(filepath.Join(opts.CodexHome, "auth.json")),
+		"config_toml_present":       regularFilePresent(filepath.Join(opts.CodexHome, "config.toml")),
 	}
 	hasURL, hasKey, hasEnv := false, false, false
 	if requested != nil {

@@ -19,6 +19,8 @@ const (
 )
 
 func (o *Options) validate() error {
+	o.Model = strings.TrimSpace(o.Model)
+	o.ReasoningEffort = strings.TrimSpace(o.ReasoningEffort)
 	api, err := normalizeAPI(o.API, o.ExtraEnv)
 	if err != nil {
 		return err

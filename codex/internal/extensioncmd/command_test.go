@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/colony-2/c2ops/codex/pkg/codex"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -159,4 +161,24 @@ func runWithCapturedStdio(t *testing.T, stdin []byte, fn func() int) ([]byte, st
 	require.NoError(t, err)
 
 	return stdout, string(stderr), code
+}
+
+func TestDecodeModelEffortInputs(t *testing.T) {
+	for _, field := range []string{"model", "reasoning_effort"} {
+		for _, value := range []string{`42`, `false`, `[]`, `{}`} {
+			payload := "{\"" + field + "\":" + value + "}"
+			_, err := decodeInput[codex.ExecOpInput](strings.NewReader(payload))
+			require.Error(t, err)
+			_, err = decodeInput[codex.SkillRunInput](strings.NewReader(payload))
+			require.Error(t, err)
+		}
+	}
+	for _, payload := range []string{`{}`, `{"model":null,"reasoning_effort":null}`, `{"model":"","reasoning_effort":""}`, `{"model":"selected","reasoning_effort":"high"}`} {
+		exec, err := decodeInput[codex.ExecOpInput](strings.NewReader(payload))
+		require.NoError(t, err)
+		skill, err := decodeInput[codex.SkillRunInput](strings.NewReader(payload))
+		require.NoError(t, err)
+		require.Equal(t, exec.Model, skill.Model)
+		require.Equal(t, exec.ReasoningEffort, skill.ReasoningEffort)
+	}
 }

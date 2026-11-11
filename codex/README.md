@@ -317,3 +317,37 @@ and the same response repair mechanism (configure `output.max_repair_attempts`).
 Final-answer schemas always fail the op on exhaustion; artifact validation retains
 its existing `output.validation.on_error` policy. Artifact output schemas constrain the
 artifact, not the model's final summary.
+
+### Tenant model and reasoning defaults
+
+Both `codex` and `skill.run` resolve omitted `model` and
+`reasoning_effort` inputs from tenant settings `codex_model` and
+`codex_reasoning_effort`. These settings work with native Codex authentication
+and with an external API. Neither setting requires an API URL or credential.
+
+Each field resolves independently: an explicit string overrides its tenant
+setting; explicit `null`, an empty string, or whitespace opts out for that
+field. Values are trimmed. Missing, null, empty, or whitespace-only settings
+leave the choice to native Codex configuration. Invalid types and configuration
+lookup failures are errors. No universal model or effort is built in.
+
+For example, with tenant settings `codex_model: gpt-5.3-codex` and
+`codex_reasoning_effort: high`, these invocation inputs keep the tenant model
+but request medium effort:
+
+```yaml
+prompt: Review this change.
+reasoning_effort: medium
+```
+
+Add `model: null` to leave model selection to native Codex instead.
+Direct stdin and Go callers supply these values themselves; the operation does
+not query tenant settings. Go callers use `Options.ReasoningEffort`,
+`ExecOpInput.ReasoningEffort`, or `SkillRunInput.ReasoningEffort`.
+
+Every launch, including a resumed session and response or artifact repairs,
+uses the current invocation's values. Tenant choices are not stored in session
+metadata; a later invocation can resolve changed defaults. Effort is sent as a
+quoted `model_reasoning_effort` CLI configuration override, and model as
+`--model`. The CLI/provider validates supported effort levels and model
+combinations.

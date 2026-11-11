@@ -84,7 +84,7 @@ func TestExternalAPIRunAndResumeSkillWithRepair(t *testing.T) {
 	defer firstAPI.Close()
 	first := testExecuteOptions(t)
 	output, err := Run(context.Background(), ExecOpInput{
-		Prompt: "Remember proxy-memory-42.", Model: "gpt-5.3-codex",
+		Prompt: "Remember proxy-memory-42.", Model: "gpt-5.3-codex", ReasoningEffort: "low",
 		Instructions: "initial-session-guidance",
 		API:          &APIConfig{BaseURL: firstAPI.URL() + "/v1/", APIKey: &firstKey},
 		WorkdirPath:  first.WorkDirRoot, WorktreePath: first.WorktreeRoot,
@@ -96,6 +96,7 @@ func TestExternalAPIRunAndResumeSkillWithRepair(t *testing.T) {
 	require.NotNil(t, output.Session)
 	require.NoDirExists(t, hostHome, "external mode needs no host auth or config")
 	assertProxyRequests(t, firstAPI, "first-proxy-key", 1)
+	assertRequestEffort(t, firstAPI, "low")
 	firstConfig := readConfigEvents(t, first.ArtifactOutbox)
 	require.Len(t, firstConfig, 1)
 	require.Equal(t, "external_api", firstConfig[0]["mode"])
@@ -124,7 +125,7 @@ func TestExternalAPIRunAndResumeSkillWithRepair(t *testing.T) {
 	createLocalSkill(t, second.WorktreeRoot, "proxy-smoke")
 	skillOutput, err := RunSkill(context.Background(), SkillRunInput{
 		Skill: "proxy-smoke", Session: hydrateSession(t, store, ref),
-		Prompt: "Recall the remembered fact and write proxy-result.json.", Model: "gpt-5.3-codex",
+		Prompt: "Recall the remembered fact and write proxy-result.json.", Model: "gpt-5.4", ReasoningEffort: "high",
 		Instructions: "ignored-continuation-guidance",
 		API:          &APIConfig{BaseURL: secondAPI.URL() + "/v1", APIKey: &secondKey},
 		WorkdirPath:  second.WorkDirRoot, WorktreePath: second.WorktreeRoot,
@@ -152,7 +153,8 @@ func TestExternalAPIRunAndResumeSkillWithRepair(t *testing.T) {
 	require.Contains(t, string(nativeEvents), "repaired proxy-memory-42")
 	requireArtifactOnlyTrace(t, second.ArtifactOutbox, skillOutput.NativeOutput, skillOutput)
 	assertFileContent(t, filepath.Join(second.ArtifactOutbox, "proxy-result.json"), `{"summary":"proxy-memory-42"}`)
-	assertProxyRequests(t, secondAPI, "second-proxy-key", 3)
+	assertProxyRequests(t, secondAPI, "second-proxy-key", 3, "gpt-5.4")
+	assertRequestEffort(t, secondAPI, "high")
 	secondConfigs := readConfigEvents(t, second.ArtifactOutbox)
 	require.Len(t, secondConfigs, 2, "resume and repair each retain launch settings")
 	for _, config := range secondConfigs {
@@ -171,13 +173,17 @@ func TestExternalAPIRunAndResumeSkillWithRepair(t *testing.T) {
 	assertFileContent(t, filepath.Join(hostHome, "auth.json"), "subscription-secret")
 }
 
-func assertProxyRequests(t *testing.T, api *mockCodexAPI, key string, count int) {
+func assertProxyRequests(t *testing.T, api *mockCodexAPI, key string, count int, models ...string) {
 	t.Helper()
 	api.mu.Lock()
 	defer api.mu.Unlock()
 	require.Len(t, api.requests, count)
 	for i, request := range api.requests {
-		require.Equal(t, "gpt-5.3-codex", request["model"])
+		model := "gpt-5.3-codex"
+		if len(models) > 0 {
+			model = models[0]
+		}
+		require.Equal(t, model, request["model"])
 		if key == "" {
 			require.NotContains(t, api.headers[i], "Authorization")
 		} else {
@@ -266,4 +272,39 @@ func TestExternalAPIUnauthorizedKeepsLaunchDiagnostic(t *testing.T) {
 			}))
 		})
 	}
+}
+
+func assertRequestEffort(t *testing.T, api *mockCodexAPI, effort string) {
+	t.Helper()
+	api.mu.Lock()
+	defer api.mu.Unlock()
+	require.NotEmpty(t, api.requests)
+	for _, request := range api.requests {
+		require.Equal(t, effort, request["reasoning"].(map[string]any)["effort"])
+	}
+}
+
+func TestUnsupportedEffortKeepsDiagnostics(t *testing.T) {
+	requireCodexCLI(t)
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request map[string]any
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&request))
+		require.Equal(t, "unsupported-effort", request["reasoning"].(map[string]any)["effort"])
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":{"message":"unsupported-effort is not supported by this model","type":"invalid_request_error","code":"unsupported_value"}}`))
+	}))
+	defer provider.Close()
+	opts := testExecuteOptions(t)
+	opts.Model = "gpt-5.3-codex"
+	opts.API = &APIConfig{BaseURL: provider.URL + "/v1", APIKey: apiTestKey("dummy")}
+	opts.ReasoningEffort = "unsupported-effort"
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	result, stdout, stderr, artifacts, err := Execute(ctx, opts)
+	defer cleanupArtifacts(stdout, stderr, artifacts)
+	require.True(t, err != nil || result.Status != StatusCompleted)
+	logs, e := os.ReadFile(stdout)
+	require.NoError(t, e)
+	require.Contains(t, string(logs), "unsupported-effort")
 }

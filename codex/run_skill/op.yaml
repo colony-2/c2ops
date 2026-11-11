@@ -25,7 +25,11 @@ input_schema:
       type: object
       x-c2j-object-type: c2ops.codex.session/v1
     model:
-      type: string
+      type: [string, "null"]
+      default: '${{ context.config.?codex_model.orValue(null) }}'
+    reasoning_effort:
+      type: [string, "null"]
+      default: '${{ context.config.?codex_reasoning_effort.orValue(null) }}'
     api:
       type: [object, "null"]
       description: External Responses API from tenant settings; used only when both URL and credentials are available. Set null to disable.

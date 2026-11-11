@@ -218,6 +218,9 @@ func TestRunSkillRepairsInvalidOutputWithSameSession(t *testing.T) {
 	executeLibrary = func(ctx context.Context, opts Options) (Result, string, string, string, error) {
 		seedTestSession(t, opts.CodexHome, "session-1")
 		calls++
+		if opts.Model != "selected-model" || opts.ReasoningEffort != "high" {
+			t.Fatalf("lost selection: %q %q", opts.Model, opts.ReasoningEffort)
+		}
 		switch calls {
 		case 1:
 			executionHome = opts.CodexHome
@@ -256,7 +259,7 @@ func TestRunSkillRepairsInvalidOutputWithSameSession(t *testing.T) {
 	}
 
 	output, err := RunSkill(context.Background(), SkillRunInput{
-		Skill: "ticket-intake",
+		Skill: "ticket-intake", Model: "selected-model", ReasoningEffort: "high",
 		Output: SkillRunOutputSpec{
 			Path:   "ticket/result.json",
 			Schema: json.RawMessage(`{"type":"object","required":["summary"]}`),

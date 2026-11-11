@@ -23,7 +23,18 @@
         "x-c2j-object-type": "c2ops.codex.session/v1"
       },
       "model": {
-        "type": "string"
+        "type": [
+          "string",
+          "null"
+        ],
+        "default": "${{ context.config.?codex_model.orValue(null) }}"
+      },
+      "reasoning_effort": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "default": "${{ context.config.?codex_reasoning_effort.orValue(null) }}"
       },
       "api": {
         "type": [

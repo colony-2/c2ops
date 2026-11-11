@@ -43,7 +43,11 @@ func buildCommand(opts Options, schemaContainerPath string) []string {
 		cmd = append(cmd, opts.API.commandArgs()...)
 	}
 	if strings.TrimSpace(opts.Model) != "" {
-		cmd = append(cmd, "--model", opts.Model)
+		cmd = append(cmd, "--model", strings.TrimSpace(opts.Model))
+	}
+	if effort := strings.TrimSpace(opts.ReasoningEffort); effort != "" {
+		encoded, _ := json.Marshal(effort)
+		cmd = append(cmd, "-c", "model_reasoning_effort="+string(encoded))
 	}
 	if strings.TrimSpace(opts.SessionID) != "" {
 		cmd = append(cmd, "resume", opts.SessionID)
