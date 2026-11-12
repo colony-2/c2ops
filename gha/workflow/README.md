@@ -72,6 +72,38 @@ logical job waits only for its dependencies; an unrelated slow job does not bloc
 or infrastructure task becomes a dependency failure, allowing `always()` jobs
 to report. Matrix output collisions fail explicitly.
 
+Awaited `jobs[logical_id].instances` retains one record per planned assignment,
+in the same canonical order as the existing `diagnostics` and `artifacts`
+arrays. Equal matrix coordinates remain separate records with distinct child
+IDs. Singleton jobs use `matrix: {}`.
+
+| Field | Meaning |
+| --- | --- |
+| `matrix` | Complete evaluated coordinates, preserving JSON types and expression-like strings. |
+| `labels` | Evaluated requested `runs-on` labels. |
+| `execution_needs` | Selected public profile requirements, including `base` or legacy image/platform requirements. These request placement; they do not prove observed worker placement. |
+| `execution_job_id` | Actual deterministic execution child ID, independent of executor output and distinct from logical `job_id`. |
+| `status` | Terminal child status observed by the soft wait, such as `completed`, `failed`, or `cancelled`. |
+| `conclusion` | Authored executor conclusion (`success`, `failure`, `cancelled`, `skipped`), or null when none is available. |
+| `diagnostics` | Complete existing typed `c2ops.gha.diagnostics/v1` reference, identical to the legacy array entry at this index, or explicit null. |
+| `diagnostics_unavailable` | Null with a reference; otherwise `executor_not_completed` for a non-completed child, or `not_returned` for a completed child without a reference. |
+
+Identity survives executor failure or pre-invocation cancellation when the
+logical collector runs. The child status is separate from authored conclusion;
+missing conclusions never inherit aggregate success. Readable invalid executor
+conclusions remain invalid; malformed evidence may fail collection. Aggregate
+success with success/skipped/success instances remains compatible with Actions
+dependency semantics. Consumers requiring complete success must inspect every
+instance and reject missing or invalid evidence.
+
+A completed collector with zero assignments, including a condition-disabled
+job, returns `instances: []`. Expansion, coordinator, or collector failure may
+leave `instances` absent in the failure/cancellation fallback. Absence is
+unavailable proof, not a completed empty plan. An unmatched trigger still yields
+workflow `status: skipped` with an empty jobs map. The immediate submission
+envelope, aggregate conclusions, string outputs, revision, workflow digest, and
+ordered legacy reference arrays retain their contracts.
+
 The executor supports trusted shell and local or SHA-pinned remote
 JavaScript/composite steps. Its [compatibility limitations](../job/README.md) apply. VM provisioner
 contracts and GitHub OIDC remain outside this implementation.
@@ -86,6 +118,10 @@ Helper actions `expand`, `collect`, and `source` are internal recipe operations.
 The `source` action seeds native snapshot forwarding before dependency waits;
 `payload` holds opaque public GHA data so c2j does not interpret GHA templates.
 Secrets are separate secret-marked executor inputs, never part of the payload.
+For `collect`, the payload carries assignment identities; its internal
+`assignments` output restores typed public data for native instance assembly.
+Diagnostic references stay in native recipe outputs rather than passing through
+the helper process.
 
 
 A runner profile can use `execution_needs: {base: ubuntu-26.04-amd64}` (also

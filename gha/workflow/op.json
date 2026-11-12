@@ -134,6 +134,13 @@
       },
       "outputs": {
         "type": "object"
+      },
+      "assignments": {
+        "description": "Internal collect output; decoded public assignment identities, not the awaited workflow result",
+        "type": "array",
+        "items": {
+          "type": "object"
+        }
       }
     }
   }

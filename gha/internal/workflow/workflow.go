@@ -82,7 +82,7 @@ func Run(ctx context.Context, in Input) (any, error) {
 	case "source":
 		return map[string]any{}, nil // c2j restored the submitted snapshot before invocation.
 	case "collect":
-		return collect(in.Observations)
+		return collectWithIdentity(in)
 	default:
 		return nil, fmt.Errorf("unknown workflow action %q", in.Action)
 	}

@@ -82,3 +82,20 @@ before invocation. `qualification_test.go` preserves the supplied workflow bytes
 and checks all three native base demands at admission; it does not run native
 workers, setup actions or the complete c2j candidate. `C2OPS_GHA_EVIDENCE_DIR` can
 select an absolute scratch directory for actual result/object JSON and logs.
+
+`instances_test.go` checks ordered planned identity against actual submitted child
+IDs, duplicate typed matrices, selected requirements, completion order and replay.
+Its mixed-conclusion fixture invokes the real compiled executor through a small
+wrapper that sets a fixture variable from the assigned shard before execution;
+the authored job condition skips the middle instance. It never replaces executor
+results. Both forward and reverse completion orders retain the same canonical
+matrix-to-child-to-reference association within each run.
+
+The opaque-string fixture transports matrix/label strings through real generated
+recipes and verifies a literal expression-like base at admission, then cancels
+before invocation because that fixture base has no worker. Three normal base
+fixtures likewise test admission and collected identity, not native execution.
+Condition-disabled singleton and matrix jobs exercise completed empty collection.
+Separately labelled fault fixtures replace helper processes or relax only a test
+executor's output schema to reach missing, unknown, malformed and absent-diagnostic
+collection paths. Those fixtures are not positive execution evidence.

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/colony-2/c2j/pkg/worker/compiler"
+	"github.com/colony-2/jobdb/pkg/jobdb"
 	"github.com/stretchr/testify/require"
 )
 
@@ -48,6 +49,16 @@ func TestGeneratedBaseRequirementsReachAdmission(t *testing.T) {
 						require.NoError(t, err)
 						require.NotNil(t, handoff)
 						require.Equal(t, base, *handoff.Demand.Effective.Base)
+						require.NoError(t, h.db.CancelJob(h.ctx, jobdb.CancelJobRequest{JobKey: job.JobKey, Reason: "admission-only base fixture"}))
+						run := h.drain(root)["run"].(map[string]any)
+						logical := run["jobs"].(map[string]any)["native"].(map[string]any)
+						instances := assertInstances(t, h, "native", logical, nil)
+						instance := instances[0].(map[string]any)
+						require.Equal(t, map[string]any{"base": base}, instance["execution_needs"])
+						require.Equal(t, []any{"local"}, instance["labels"])
+						require.Equal(t, job.JobKey.JobId, instance["execution_job_id"])
+						require.Equal(t, "cancelled", instance["status"])
+						saveEvidence(t, "base-"+base+"-result.json", map[string]any{"result": run, "admitted_base": *handoff.Demand.Effective.Base, "fixture": "base admission only; cancelled before invocation"})
 						found = true
 						break
 					}

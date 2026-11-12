@@ -50,8 +50,25 @@ necessary `jobdb.secrets.resolve` names. No GitHub token is created automaticall
 The submitted output contains `status: submitted`, `job_id`, `goal_id`,
 `tenant_id`, and `submitted_jobs`. The awaited output contains `status`
 (`success`, `failure`, or `skipped`), `revision`, `workflow_sha256`, and `jobs`.
-Each job has its conclusion, string outputs, and durable diagnostics/artifact
-references. A failed workflow is collected as data: check `status` before
+Each job has its conclusion, string outputs, durable diagnostics/artifact
+references, and an ordered `instances` array with one record per planned
+assignment, including singleton jobs (`matrix: {}`). Each record contains the
+complete typed `matrix`, evaluated `labels`, selected `execution_needs`, actual
+`execution_job_id`, terminal child `status`, nullable executor `conclusion`,
+typed `diagnostics` reference or null, and `diagnostics_unavailable`.
+Execution needs describe placement requests, not observed worker placement.
+
+The diagnostic reason is null with a reference, `executor_not_completed` for a
+non-completed child, or `not_returned` for a completed child without a reference.
+Missing executor conclusions remain null; they never inherit aggregate success.
+An aggregate can still succeed with skipped instances. Verification requiring
+complete success must check individual membership and outcomes.
+
+A completed zero-assignment collector returns `instances: []`. Failed expansion
+or collection may leave `instances` absent, meaning unavailable proof. An
+unmatched trigger returns workflow `status: skipped` and an empty jobs map.
+These fields extend the awaited result; the immediate submission is unchanged.
+A failed workflow is collected as data: check `status` before
 performing a release or another dependent operation.
 
 See [workflow semantics](workflow/README.md), the

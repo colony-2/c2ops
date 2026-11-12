@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -110,8 +111,25 @@ jobs:
 			require.Len(t, h.calls, calls)
 			require.Equal(t, reads, h.secretReads)
 			require.Len(t, h.jobs(), count)
+			require.Equal(t, run, h.result(root)["run"])
 			for name, job := range jobs {
 				refs := job.(map[string]any)["diagnostics"].([]any)
+				conclusions := []any{"success"}
+				if name == "build" {
+					conclusions = []any{want, "success"}
+				}
+				instances := assertInstances(t, h, name, job.(map[string]any), conclusions...)
+				for i, value := range instances {
+					instance := value.(map[string]any)
+					require.Equal(t, "completed", instance["status"])
+					require.Equal(t, []any{"local"}, instance["labels"])
+					require.Equal(t, map[string]any{"platform": runtime.GOOS + "/" + runtime.GOARCH}, instance["execution_needs"])
+					matrix := map[string]any{}
+					if name == "build" {
+						matrix["shard"] = []string{"bad", "good"}[i]
+					}
+					require.Equal(t, matrix, instance["matrix"])
+				}
 				if name == "build" {
 					require.Len(t, refs, 2)
 				}
@@ -160,6 +178,13 @@ func TestWorkflowInfrastructureFailureHasNullDiagnostics(t *testing.T) {
 	require.Equal(t, "failure", run["status"])
 	job := run["jobs"].(map[string]any)["broken"].(map[string]any)
 	require.Equal(t, []any{nil}, job["diagnostics"])
+	instances := assertInstances(t, h, "broken", job, nil)
+	instance := instances[0].(map[string]any)
+	require.Equal(t, "failed", instance["status"])
+	require.Equal(t, "executor_not_completed", instance["diagnostics_unavailable"])
+	require.Equal(t, map[string]any{}, instance["matrix"])
+	require.Equal(t, []any{"local"}, instance["labels"])
+	require.Equal(t, map[string]any{"platform": runtime.GOOS + "/" + runtime.GOARCH}, instance["execution_needs"])
 	ids := []string{}
 	for _, job := range h.jobs() {
 		ids = append(ids, job.JobKey.JobId)
@@ -197,6 +222,14 @@ func TestCancelledShardHasNullDiagnostics(t *testing.T) {
 	job := run["jobs"].(map[string]any)["pending"].(map[string]any)
 	require.Equal(t, "failure", job["conclusion"])
 	require.Equal(t, []any{nil}, job["diagnostics"])
+	instances := assertInstances(t, h, "pending", job, nil)
+	instance := instances[0].(map[string]any)
+	require.Equal(t, shard.JobId, instance["execution_job_id"])
+	require.Equal(t, "cancelled", instance["status"])
+	require.Equal(t, "executor_not_completed", instance["diagnostics_unavailable"])
+	require.Equal(t, map[string]any{}, instance["matrix"])
+	require.Equal(t, []any{"local"}, instance["labels"])
+	require.Equal(t, map[string]any{"platform": runtime.GOOS + "/" + runtime.GOARCH}, instance["execution_needs"])
 	saveEvidence(t, "cancellation-result.json", map[string]any{"caller_job_id": root.JobId, "submission": completed["submission"], "cancelled_shard_job_id": shard.JobId, "result": run, "unavailable_diagnostic": "shard cancelled in JobDB before executor invocation; no log object was created"})
 }
 
