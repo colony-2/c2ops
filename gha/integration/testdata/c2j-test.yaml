@@ -1,0 +1,74 @@
+name: Test
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_call:
+  workflow_dispatch:
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        include:
+          # Linux AMD64
+          - os: ubuntu-latest
+          # Linux ARM64
+          - os: ubuntu-22.04-arm
+          # macOS Arm
+          - os: macos-latest
+      fail-fast: false
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Retain historical source for upgrade fixtures and local verification.
+          fetch-depth: 0
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.26.1'
+          cache: false
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - name: Configure Git and Go for Private Modules
+        run: |
+          # 1. Tell Go not to use the public proxy/checksum DB for your org
+          go env -w GOPRIVATE=github.com/colony-2/*
+          
+          # 2. Force Git to use your PAT for HTTPS requests to GitHub
+          git config --global url."https://x-access-token:${{ secrets.READ_ALL_C2_REPOS }}@github.com/".insteadOf "https://github.com/"
+
+      - name: Check module tidiness
+        run: make check-mod
+
+      - name: Run tests (Unix)
+        shell: bash
+        run: |
+          # Embedded tests must create their own jobs, not inherit the runner's.
+          # Keep explicitly bound private-module credentials available.
+          for variable in ${!C2J_CURRENT_@} ${!C2J_CHILD_JOB_@} ${!C2J_WORKSPACE_@}; do
+            unset "$variable"
+          done
+          unset C2J_TENANT_ID C2J_OBJECT_OUTBOX
+          go test -v -count=1 -tags=integration ./...
+      - name: Check bundled skill discovery
+        run: npx -y skills add . --list --full-depth
+
+  # Summary job that depends on all matrix jobs.
+  test-summary:
+    needs: [test]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check test matrix result
+        run: |
+          if [ "${{ needs.test.result }}" != "success" ]; then
+            echo "Test matrix: ${{ needs.test.result }}"
+            exit 1
+          fi
+          echo "All test matrix jobs completed successfully"

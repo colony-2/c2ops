@@ -57,7 +57,7 @@ performing a release or another dependent operation.
 See [workflow semantics](workflow/README.md), the
 [executor compatibility contract](job/README.md), and the
 [container-free test harness](integration/README.md). This backend remains
-experimental while the upstream act host-runner race is unresolved.
+experimental pending native worker qualification; the host-executor correction is consumed from the immutable private fork recorded in [the source pin](../nix/act-source.json). Source builders must follow the [private-prefetch instructions](../NIX_PACKAGES.md#private-gha-build-input).
 
 ## Selector
 
@@ -86,7 +86,7 @@ op: nix:github:colony-2/c2ops/published#gha
 - `env`
 - `secrets`
 - `backend` (`local`, `github`, or `c2j`)
-- For `c2j`: `runner_profiles`, `secret_bindings`, `event_name`, `event`,
+- For `c2j`: `runner_profiles`, `secret_bindings`, optional `source_credential`, `event_name`, `event`,
   `changed_paths`, `vars`; optional `helper_op` and `executor_op` development overrides
 - `runner_image`
 - `container_architecture`

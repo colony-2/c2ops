@@ -1,10 +1,13 @@
 package integration
 
 import (
+	"crypto/sha256"
+	"debug/buildinfo"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/cgi"
 	"net/http/httptest"
 	"os"
 	"os/exec"
@@ -30,13 +33,20 @@ var ghaBinary string
 // Compile once, before the worker loop. Every invocation executes this binary;
 // neither the fixture manifest nor a live job invokes the Go toolchain.
 func TestMain(m *testing.M) {
+	if os.Getenv("GHA_IDENTITY_CHILD") == "1" {
+		os.Exit(m.Run())
+	}
 	dir, err := os.MkdirTemp("", "c2ops-gha-integration-bin-*")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 	helperBinary = filepath.Join(dir, "gha-job")
-	build := exec.Command("go", "build", "-o", helperBinary, "./job")
+	buildArgs := []string{"build"}
+	if os.Getenv("C2OPS_TEST_GHA_RACE") == "1" {
+		buildArgs = append(buildArgs, "-race")
+	}
+	build := exec.Command("go", append(buildArgs, "-o", helperBinary, "./job")...)
 	build.Dir = ".."
 	build.Stdout, build.Stderr = os.Stderr, os.Stderr
 	if err := build.Run(); err != nil {
@@ -45,7 +55,7 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 	workflowBinary = filepath.Join(dir, "gha-workflow")
-	build = exec.Command("go", "build", "-o", workflowBinary, "./workflow")
+	build = exec.Command("go", append(buildArgs, "-o", workflowBinary, "./workflow")...)
 	build.Dir = ".."
 	build.Stdout, build.Stderr = os.Stderr, os.Stderr
 	if err := build.Run(); err != nil {
@@ -54,7 +64,7 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 	ghaBinary = filepath.Join(dir, "gha")
-	build = exec.Command("go", "build", "-o", ghaBinary, ".")
+	build = exec.Command("go", append(buildArgs, "-o", ghaBinary, ".")...)
 	build.Dir = ".."
 	build.Stdout, build.Stderr = os.Stderr, os.Stderr
 	if err := build.Run(); err != nil {
@@ -62,9 +72,46 @@ func TestMain(m *testing.M) {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+	if err := recordHelperBuilds(); err != nil {
+		os.RemoveAll(dir)
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 	code := m.Run()
 	os.RemoveAll(dir)
 	os.Exit(code)
+}
+
+// Record the actual executables used by this run, including whether separately
+// compiled helpers were instrumented. The binaries themselves remain temporary.
+func recordHelperBuilds() error {
+	dir := os.Getenv("C2OPS_GHA_EVIDENCE_DIR")
+	if dir == "" {
+		return nil
+	}
+	if !filepath.IsAbs(dir) {
+		return fmt.Errorf("C2OPS_GHA_EVIDENCE_DIR must be absolute")
+	}
+	records := map[string]any{}
+	for name, path := range map[string]string{"gha": ghaBinary, "gha-job": helperBinary, "gha-workflow": workflowBinary} {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		info, err := buildinfo.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		records[name] = map[string]any{"sha256": fmt.Sprintf("%x", sha256.Sum256(raw)), "build_info": info}
+	}
+	raw, err := json.MarshalIndent(records, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, "helper-builds.json"), append(raw, '\n'), 0600)
 }
 
 // Only op selectors are overridden. Workflow bytes and expressions are never
@@ -117,7 +164,14 @@ sequence:
 outputs:
   result: '${{ sequence.execute.outputs }}'
 `)
-	h := newHarness(t, map[string]string{"act-job": child})
+	recipes := map[string]string{"act-job": child}
+	for _, id := range []string{"a", "b", "combine"} {
+		renamed := strings.Replace(child, "id: act-job\n", "id: act-"+id+"\n", 1)
+		renamed = strings.ReplaceAll(renamed, "id: execute\n", "id: execute_"+id+"\n")
+		renamed = strings.ReplaceAll(renamed, "sequence.execute.outputs", "sequence.execute_"+id+".outputs")
+		recipes["act-"+id] = renamed
+	}
+	h := newHarness(t, recipes)
 	installJobFixture(t, h, ghaWorkflow)
 	return h
 }
@@ -191,15 +245,15 @@ sequence:
     child_group:
       children:
         - key: a
-          recipe: act-job
+          recipe: act-a
           inputs: {job_id: a}
         - key: b
-          recipe: act-job
+          recipe: act-b
           inputs: {job_id: b}
   - id: combine
     op: recipe.run_and_get_result
     inputs:
-      name: act-job
+      name: act-combine
       inputs:
         job_id: combine
         needs_json: '${{ json_stringify({"a": {"conclusion": sequence.builds.outputs.children[0].outputs.result.conclusion, "outputs": sequence.builds.outputs.children[0].outputs.result.outputs}, "b": {"conclusion": sequence.builds.outputs.children[1].outputs.result.conclusion, "outputs": sequence.builds.outputs.children[1].outputs.result.outputs} }) }}'
@@ -392,4 +446,63 @@ func TestActFailedChildrenRemainCollectableForReporting(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestActHistoryUsesExplicitPreparationBinding(t *testing.T) {
+	const credential = "synthetic-preparation-private-token"
+	h := newHarness(t, nil)
+	h.secrets["source_token"] = credential
+	installJobFixture(t, h, `on: workflow_dispatch
+jobs:
+  history:
+    runs-on: local
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - env:
+          TOKEN: ${{ secrets.SOURCE }}
+        run: |
+          test "$(git rev-parse --is-shallow-repository)" = false
+          test -z "$(git config --local --get-regexp credential || true)"
+          echo "$TOKEN"
+          echo AUTHORIZED-HISTORY-COMPLETE
+`)
+	h.git("update-server-info")
+	gitExec, err := exec.LookPath("git")
+	require.NoError(t, err)
+	backend := &cgi.Handler{Path: gitExec, Args: []string{"http-backend"}, Env: []string{"GIT_PROJECT_ROOT=" + filepath.Dir(h.repo), "GIT_HTTP_EXPORT_ALL=1"}}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user, pass, ok := r.BasicAuth()
+		if !ok || user != "x-access-token" || pass != credential {
+			w.Header().Set("WWW-Authenticate", `Basic realm="fixture"`)
+			w.WriteHeader(401)
+			fmt.Fprint(w, credential)
+			return
+		}
+		backend.ServeHTTP(w, r)
+	}))
+	defer server.Close()
+	root := h.submit(localRecipe(t, `id: preparation-secret
+perms: {jobdb: {secrets: {resolve: [source_token]}}}
+sequence:
+  - id: execute
+    op: nix:github:colony-2/c2ops/published#gha-job
+    inputs:
+      workflow: .github/workflows/fixture.yml
+      job_id: history
+      repository: `+server.URL+`/source/.git
+      source_credential: SOURCE
+      secrets: {SOURCE: '${{ context.secrets.source_token }}'}
+outputs:
+  result: '${{ sequence.execute.outputs }}'
+`), nil)
+	result := h.drain(root)["result"].(map[string]any)
+	require.Equal(t, "success", result["conclusion"])
+	require.NoError(t, os.RemoveAll(filepath.Join(h.root, "workers")))
+	require.NoError(t, os.Mkdir(filepath.Join(h.root, "workers"), 0700))
+	h.reopen()
+	data := readDiagnostic(t, h, result["diagnostics"])
+	require.NotContains(t, string(data), credential)
+	require.Contains(t, string(data), "AUTHORIZED-HISTORY-COMPLETE")
+	saveEvidence(t, "preparation-secret-result.json", map[string]any{"caller_job_id": root.JobId, "result": result, "log": string(data)})
 }

@@ -13,6 +13,17 @@ configuration is changed. Private-module access uses the worker's supplied Git
 credentials. Nix process tests select the scratch candidate through
 `C2OPS_TEST_FLAKE`, rather than testing the published branch.
 
+GHA source and embedded runtime tests belong here in c2ops. Consumers use the
+delivered operations; they do not duplicate these suites. The candidate hook
+checks this branch before merge and reports failure to the build caller.
+The `gha` and `gha_runtime` commands in `verify.yaml` explicitly pass `--race`.
+Both GHA suites then run with `-race` using the candidate's pinned GHA compiler.
+Omitting `--race` produces a failed task receipt and failed aggregate before
+any compiler or suite runs, so the pre-merge hook cannot silently lose races.
+The runtime task also sets `C2OPS_TEST_GHA_RACE=1` so all three separately
+compiled helpers are instrumented, and includes their build identities in its
+JSON receipt. A missing compiler blocks the tests instead of using worker Go.
+
 Each operation exports a log and structured result. Ordinary check failures
 produce `failed` evidence and allow subsequent independent operations to run.
 The final report validates every result and its log digest before returning
@@ -63,6 +74,14 @@ c2j's real local runtime. `--case native` additionally runs the actual manifest
 check with operation-declared tools. These harness cases do not replace the
 full check baseline. Infrastructure and evidence failures are covered by
 `scripts/test_verify.py`, included in `tooling`.
+
+For the actual GHA checks through this branch's hook, run
+`python3 scripts/verify_hook_harness.py --case gha --out /tmp/c2ops-gha-hook-tests`.
+It passes through tooling, GHA source and embedded runtime tasks, including
+their declared tools and the real final report. Other tasks use explicit
+fixtures, so this bounded run proves the affected tasks and hook wiring, not
+a new full-cell baseline. It snapshots current working files, including
+uncommitted changes; the candidate metadata records their parent HEAD.
 
 The manifests task also runs `uv run scripts/check-manifest-schemas.py`, with
 its independently declared `jsonschema==4.26.0` dependency. It applies the

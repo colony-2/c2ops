@@ -86,3 +86,30 @@ Helper actions `expand`, `collect`, and `source` are internal recipe operations.
 The `source` action seeds native snapshot forwarding before dependency waits;
 `payload` holds opaque public GHA data so c2j does not interpret GHA templates.
 Secrets are separate secret-marked executor inputs, never part of the payload.
+
+
+A runner profile can use `execution_needs: {base: ubuntu-26.04-amd64}` (also
+`ubuntu-26.04-arm64` and `macos-26-arm64` for the approved labels). A base must be
+nonempty and cannot coexist with legacy `image` or `platform`. Legacy profiles
+remain supported. Profiles select requirements, not workers. Runtime c2j must
+support base admission; the embedded tests use c2j v0.0.118.
+
+For private full-history preparation, select an existing binding alias:
+
+```yaml
+secret_bindings: {SOURCE: authorized_source_name}
+source_credential: SOURCE
+```
+
+The alias is public; only the executor resolves its value, separately from the
+encoded payload. Preparation runs before workflow steps. A later private-module
+Git configuration cannot authorize it. Named HTTP(S) credentials use an ephemeral
+host/path-scoped helper outside the repository; redirects and other helpers are
+disabled for that fetch, and errors exclude transport stderr. No token URL/config
+is persisted. Without a selector, an existing authorized scoped Git route may
+serve the original repository. Token-bearing repository URLs are rejected.
+
+The original registered cell is forwarded to newer brokers. Source repository
+identity remains independent of event metadata. Full published history is fetched
+on the worker, preserving the 64 MiB unpublished snapshot limit. This is bounded
+frozen-source support, not general actions/checkout compatibility.

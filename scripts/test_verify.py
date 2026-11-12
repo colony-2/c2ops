@@ -19,6 +19,76 @@ spec.loader.exec_module(verify)
 
 
 class VerificationTests(unittest.TestCase):
+    def test_gha_cli_without_explicit_race_fails_task_and_aggregate(self):
+        for task in ('gha', 'gha-runtime'):
+            with self.subTest(task=task), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self.fixtures(root)
+                result = subprocess.run([sys.executable, verify.__file__, 'check', task],
+                    env={**os.environ, 'VERIFY_ROOT': str(root), 'VERIFY_OUTBOX': str(root)},
+                    capture_output=True, text=True, timeout=5)
+                self.assertEqual(result.returncode, 0, 'ordinary failure is exported as hook evidence')
+                self.assertEqual(result.stdout, 'failed')
+                receipt = json.loads((root / (task + '.json')).read_text())
+                self.assertIn('requires --race', receipt['error'])
+                self.assertFalse(receipt['race'])
+                self.assertEqual(receipt['commands'], [], 'omitted race mode must fail before running tools')
+                statuses = {name: 'passed' for name in verify.TASKS}
+                statuses[task] = result.stdout
+                with contextlib.redirect_stdout(io.StringIO()) as stdout:
+                    verify.aggregate(root, root / 'aggregate', statuses)
+                self.assertEqual(stdout.getvalue(), 'failed')
+
+    def test_gha_tasks_select_pinned_compiler_and_fail_closed(self):
+        for task in ('gha', 'gha-runtime'):
+            for available in (True, False):
+                with self.subTest(task=task, available=available), tempfile.TemporaryDirectory() as directory:
+                    root = Path(directory) / 'candidate'
+                    (root / 'nix').mkdir(parents=True)
+                    (root / 'gha/integration').mkdir(parents=True)
+                    (root / 'nix/pnpm-build-policy.json').write_text('{}')
+                    tools = Path(directory) / 'tools'; tools.mkdir()
+                    compiler = Path(directory) / 'compiler'
+                    (compiler / 'bin').mkdir(parents=True)
+                    old_marker = Path(directory) / 'old-go-ran'
+                    old_go = tools / 'go'
+                    old_go.write_text('#!' + sys.executable + '\nfrom pathlib import Path\nPath(' + repr(str(old_marker)) + ').touch()\n')
+                    old_go.chmod(0o755)
+                    pinned_go = compiler / 'bin/go'
+                    pinned_go.write_text('#!' + sys.executable + '\nimport os,sys\nprint("pinned GHA compiler")\n'
+                        + 'if "test" in sys.argv:\n'
+                        + ' assert "-race" in sys.argv\n'
+                        + (' assert os.environ.get("C2OPS_TEST_GHA_RACE") == "1"\n' if task == 'gha-runtime' else '')
+                        + 'raise SystemExit(9 if "test" in sys.argv else 0)\n')
+                    pinned_go.chmod(0o755)
+                    nix = tools / 'nix'
+                    nix.write_text('#!' + sys.executable + '\nimport json,sys\n'
+                        + 'if "eval" in sys.argv: print(json.dumps(' + repr(str(compiler)) + '))\n'
+                        + 'raise SystemExit(' + ('0' if available else '1') + ' if "build" in sys.argv else 0)\n')
+                    nix.chmod(0o755)
+                    out = Path(directory) / 'out'
+                    with patch.dict(os.environ, {'PATH':str(tools)+os.pathsep+os.environ['PATH']}), \
+                         patch.object(verify, 'supported_platform', return_value=True), \
+                         contextlib.redirect_stdout(io.StringIO()) as stdout:
+                        verify.check(task, root, out, race=True)
+                    self.assertEqual(stdout.getvalue(), 'failed')
+                    self.assertFalse(old_marker.exists(), 'old worker Go must never run for GHA')
+                    report = json.loads((out / (task + '.json')).read_text())
+                    self.assertTrue(report['race'])
+                    builds = [c for c in report['commands'] if 'build' in c['argv']]
+                    self.assertEqual(len(builds), 1)
+                    self.assertIn('--max-jobs', builds[0]['argv'])
+                    self.assertIn('0', builds[0]['argv'])
+                    suites = [c for c in report['commands'] if c['argv'][:2] == ['go', 'test']]
+                    if available:
+                        self.assertEqual(report['tools']['go'], str(pinned_go))
+                        self.assertEqual(len(suites), 1)
+                        self.assertIn('-race', suites[0]['argv'])
+                        self.assertEqual(suites[0]['returncode'], 9, 'suite failure must remain a failure')
+                    else:
+                        self.assertEqual(suites, [], 'missing pinned compiler must block the suite')
+                        self.assertIn('pinned GHA compiler', report['error'])
+
     def test_command_failures_timeout_and_independent_continuation(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

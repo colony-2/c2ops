@@ -44,23 +44,29 @@ var registerOnce sync.Once
 // c2j runs recipes and child waits, and all task results live in SQLite/blobfs.
 // No background engine loop runs, so tests can stop at any durable boundary.
 type harness struct {
-	t           *testing.T
-	ctx         context.Context
-	root        string
-	repo        string
-	commit      string
-	recipes     map[string]string
-	db          *sqlite.Runtime
-	runtime     *executionruntime.Runtime
-	engine      jobworkflow.Engine
-	workers     *jobworkflow.WorkSet
-	mu          sync.Mutex
-	calls       []string
-	secrets     map[string]string
-	secretReads int
+	t             *testing.T
+	ctx           context.Context
+	root          string
+	repo          string
+	repoID        string
+	commit        string
+	recipes       map[string]string
+	db            *sqlite.Runtime
+	runtime       *executionruntime.Runtime
+	engine        jobworkflow.Engine
+	workers       *jobworkflow.WorkSet
+	mu            sync.Mutex
+	calls         []string
+	secrets       map[string]string
+	deniedSecrets map[string]bool
+	secretReads   int
 }
 
 func newHarness(t *testing.T, recipes map[string]string) *harness {
+	return newHarnessForRepository(t, recipes, "")
+}
+
+func newHarnessForRepository(t *testing.T, recipes map[string]string, repository string) *harness {
 	t.Helper()
 	registerOnce.Do(func() {
 		coreops.Register(commandop.GetOp())
@@ -68,9 +74,12 @@ func newHarness(t *testing.T, recipes map[string]string) *harness {
 		coreops.Register(recipeops.GetOps()...)
 	})
 	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
+	ctx = jobdb.WithCellAuthority(ctx, jobdb.CellAuthority{Principal: "fixture-owner", TenantID: tenant, Permissions: map[string]bool{"cells.create": true, "cells.get": true, "cells.list": true, "jobs.submit": true, "jobs.list": true, "jobs.acquire": true}})
 	t.Cleanup(cancel)
 	// Use /tmp explicitly: macOS's inherited TMPDIR is too long once workers
 	// append c2j-git-<random>/resolver.sock (sun_path allows only 103 bytes).
+	realGit, err := exec.LookPath("git")
+	require.NoError(t, err)
 	root, err := os.MkdirTemp("/tmp", "gha-it-")
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, os.RemoveAll(root)) })
@@ -88,6 +97,10 @@ func newHarness(t *testing.T, recipes map[string]string) *harness {
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("DOCKER_HOST", "unix://"+filepath.Join(h.root, "no-docker.sock"))
 	t.Cleanup(func() { require.NoFileExists(t, dockerMarker, "fast suite must never invoke Docker") })
+	h.repoID = "example.test/" + filepath.Base(h.root)
+	if repository != "" {
+		h.repoID = repository
+	}
 	h.repo = filepath.Join(h.root, "source")
 	require.NoError(t, os.Mkdir(h.repo, 0o700))
 	for _, args := range [][]string{
@@ -106,6 +119,10 @@ func newHarness(t *testing.T, recipes map[string]string) *harness {
 	h.git("add", ".")
 	h.git("-c", "commit.gpgsign=false", "commit", "-m", "fixture")
 	h.commit = h.git("rev-parse", "HEAD")
+	// Explicit fixture transport. c2j sanitizes ambient Git configuration;
+	// the executable wrapper maps only this registered repository identity.
+	script := fmt.Sprintf("#!/bin/sh\nexec %q -c %q \"$@\"\n", realGit, "url.file://"+h.repo+".insteadOf=https://"+h.repoID+".git")
+	require.NoError(t, os.WriteFile(filepath.Join(bin, "git"), []byte(script), 0700))
 	h.open()
 	t.Cleanup(func() {
 		if h.db != nil {
@@ -144,6 +161,8 @@ func (h *harness) open() {
 	db, err := sqlite.NewFromConfig(h.ctx, sqlite.Config{DBPath: filepath.Join(h.root, "jobs.db"), Logger: logger, SecretProvider: h})
 	require.NoError(h.t, err)
 	h.db = db
+	_, err = db.CreateCell(h.ctx, jobdb.CreateCellRequest{TenantID: tenant, Name: "fixture", Repo: h.repoID, RequestID: "fixture-cell"})
+	require.NoError(h.t, err)
 	platform := runtime.GOOS + "/" + runtime.GOARCH
 	h.runtime = executionruntime.New(db, execution.Allocation{SchemaVersion: 1, Platform: &platform})
 	engine, err := jobworkflow.NewEngineBuilder().WithRuntime(h.runtime).WithWorkerTenantId(tenant).BuildEngine()
@@ -184,7 +203,7 @@ func (h *harness) submit(text string, inputs map[string]any) jobdb.JobKey {
 	def, err := recipe.LoadRecipeFromString([]byte(text))
 	require.NoError(h.t, err)
 	ref, err := starter.StartRecipeJob(h.ctx, workflowctl.StartJob{
-		TenantId: tenant, RecipeName: def.GetMetadata().ID, Inputs: inputs, GitRef: h.commit,
+		TenantId: tenant, Cell: "fixture", CellRepo: h.repoID, RecipeName: def.GetMetadata().ID, Inputs: inputs, GitRef: h.commit,
 		JobContext: contextual.JobContext{
 			Workflow: contextual.WorkflowContext{CellName: "fixture"},
 			GitBase:  contextual.GitBaseContext{BaseRepo: h.repo, BaseRef: h.commit, ResolvedBaseHash: h.commit, GitAuthor: "GHA fixture <fixture@example.test>"},
@@ -306,6 +325,9 @@ func (h *harness) ResolveSecrets(ctx context.Context, req jobdb.SecretResolveReq
 	h.secretReads++
 	out := jobdb.SecretResolveResult{Secrets: map[string]jobdb.SecretValue{}}
 	for _, name := range req.Names {
+		if h.deniedSecrets[name] {
+			return jobdb.SecretResolveResult{}, jobdb.ErrSecretResolutionFailed
+		}
 		if value, ok := h.secrets[name]; ok {
 			out.Secrets[name] = jobdb.SecretValue{Value: value}
 		}

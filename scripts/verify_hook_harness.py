@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Exercise candidate hook loading and native artifacts through c2j's local runtime.
 
-Check operations use deterministic evidence fixtures; the final aggregation
-command runs for real. Run scripts/verify.py check TASK separately for actual
-repository checks. No child build, merge, publication, or live service is used.
+By default check operations use deterministic evidence fixtures and the final
+aggregation command runs for real. The gha case runs the actual tooling, GHA
+source and embedded runtime tasks; other tasks remain explicit fixtures. No
+child build, merge, publication, or live service is used.
 """
 import argparse
 import hashlib
@@ -18,7 +19,8 @@ import sys
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--out', type=Path, required=True, help='Scratch directory outside the repository')
-    parser.add_argument('--case', choices=('absent', 'null', 'value', 'failed', 'native'), help='native also runs the real manifest check using declared operation tools')
+    parser.add_argument('--case', choices=('absent', 'null', 'value', 'failed', 'native', 'gha'),
+                        help='native runs manifests; gha runs tooling and both GHA suites using declared operation tools')
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     out = args.out.resolve()
@@ -40,12 +42,15 @@ def main():
                         'log_sha256': hashlib.sha256(log.encode()).hexdigest()}
             behavior = {'mode': 'return', 'outputs': {'stdout': status},
                         'artifacts': {name + '.log': log, name + '.json': json.dumps(evidence)}}
-            if case == 'native' and name == 'manifests':
+            if (case == 'native' and name == 'manifests') or (case == 'gha' and name in ('tooling', 'gha', 'gha-runtime')):
                 behavior = {'mode': 'passthrough'}
             mocks.append({'match': {'op': 'command_execution'}, 'behavior': behavior})
         mocks.append({'match': {'op': 'command_execution'}, 'behavior': {'mode': 'passthrough'}})
         inputs = {'api_version': 'c2.build-hook/v1', 'request': 'literal $(false); `false`',
                   'target_directory': '$(false); `false`', 'candidate': 'candidate', 'base': 'base', 'documents': {}}
+        if case == 'gha':
+            inputs.update(target_directory='.', candidate=subprocess.check_output(
+                ['git', 'rev-parse', 'HEAD'], cwd=root, text=True).strip())
         if case == 'null':
             inputs['settings'] = None
         if case == 'value':
@@ -62,7 +67,7 @@ def main():
         (out / (case + '-caller.yaml')).write_text(json.dumps(wrapper, indent=2))
         files = {name: os.path.relpath(root / name, out)
                  for name in ('.c2/recipes/hooks/build/verify.yaml', 'scripts/verify.py')}
-        if case == 'native':
+        if case in ('native', 'gha'):
             files = {str(path.relative_to(root)): os.path.relpath(path, out)
                      for path in root.rglob('*') if path.is_file()
                      and '.git' not in path.relative_to(root).parts
@@ -80,7 +85,8 @@ def main():
         suite_path = out / (case + '.test.json')
         suite_path.write_text(json.dumps(suite, indent=2))
         command = ['c2j', 'test', 'run', '--file', str(suite_path), '--out-dir', str(out / case),
-                   '--case-timeout', '2m', '--artifact-mode', 'inline']
+                   '--case-timeout', '35m' if case == 'gha' else '2m', '--artifact-mode', 'inline',
+                   '--artifact-max-bytes', '4194304']
         with (out / (case + '.log')).open('wb') as log:
             result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT)
         results.append({'case': case, 'command': command, 'returncode': result.returncode})

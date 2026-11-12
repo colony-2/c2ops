@@ -34,6 +34,9 @@ input_schema:
       type: object
       description: For backend c2j, map GHA secret names to c2j secret names (never resolved values)
       additionalProperties: {type: string}
+    source_credential:
+      type: string
+      description: Explicit secret_bindings alias used only for authorized source history preparation
     event_name: {type: string}
     event: {type: object}
     changed_paths: {type: array, items: {type: string}}

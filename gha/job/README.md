@@ -53,8 +53,22 @@ Supported execution is trusted shell steps and local or full-SHA-pinned remote
 JavaScript/composite actions in act host mode. Nested remote action references
 must also use full commit SHAs. Docker and symlinked remote action manifests fail. A built-in local checkout preparation step copies the
 prepared source into act's disposable workspace without downloading checkout.
-Authored checkout steps with `with` options are rejected; the source snapshot
-is already selected by c2j.
+Authored checkout steps accept no options or exactly literal `fetch-depth: 0`.
+All other options/depths/expressions fail before commands run. Full history
+requires `repository` (the authorized source identity/transport) and optionally
+`source_credential`, a resolved secret alias from explicit bindings. The workflow
+helper forwards these fields and the expected `revision` automatically. Preparation
+copies candidate objects and local refs into owned storage, fetches advertised
+published branches/tags, verifies completeness and preserves HEAD/tree. It never
+asks the original remote to supply the unpublished candidate. Tag conflicts,
+unavailable history and shallow/incomplete objects fail before authored steps.
+The input checkout is unchanged. No-option checkout adds no fetch prerequisite.
+Planning and execution preserve the input checkout's repository context before
+history preparation removes its remote. This keeps `github.repository`, its
+owner and the corresponding environment variables consistent for PR conditions;
+an explicit `env.GITHUB_REPOSITORY` retains precedence. Only repository metadata
+is forwarded, with URL credentials, queries and fragments removed. The prepared
+history repository retains no origin or preparation credential configuration.
 Every invocation gets a separate workspace, HOME and temporary/cache directory.
 Ambient credential environment variables are blanked; bind secrets explicitly.
 
@@ -91,7 +105,8 @@ uploads after cleanup. Artifact download URLs returned by the Actions protocol
 are local and temporary; use the durable object references in the op result.
 
 Run `make -C gha test-fast` for the container-free tests. See the
-[harness README](../integration/README.md) for coverage. The extra direct act
-race check currently exposes an [upstream PTY race](../../BUG_REPORT_ACT_HOST_EXECUTOR_RACE.md);
-production qualification and cancellation/process-tree cleanup remain gated on
-resolving upstream host-executor issues.
+[harness README](../integration/README.md) for coverage. The [immutable private act dependency](../../nix/act-source.json) fixes the demonstrated
+PTY race, drains failure/cancellation output, and cleans the command process group
+on Linux/macOS. Run `go test -race -count=1 ./internal/jobexec` from gha. Descendants
+that escape that group still need the provisioner's boundary; native placement
+and outer isolation qualification remain pending.

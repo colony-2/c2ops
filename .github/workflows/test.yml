@@ -94,23 +94,38 @@ jobs:
       - name: Check metadata without building
         run: nix flake check --no-build --all-systems
 
+      - name: Configure authorized private source access
+        run: |
+          go env -w GOPRIVATE=github.com/colony-2/*
+          # Store only a helper program, never the token or a token-bearing URL.
+          # Each authorized step supplies the token through its environment.
+          git config --global credential.https://github.com.helper \
+            '!f() { if test "$1" = get && test -n "$C2OPS_GIT_TOKEN"; then printf "username=x-access-token\npassword=%s\n" "$C2OPS_GIT_TOKEN"; fi; }; f'
+
+      - name: Prefetch content-pinned private act source
+        env:
+          C2OPS_GIT_TOKEN: ${{ secrets.READ_ALL_C2_REPOS }}
+        run: python3 scripts/prefetch-act.py
+
       - name: Build packages and check installed process contracts
         run: nix flake check -L
 
-      - name: Configure Git and Go for Private Modules
-        run: |
-          # 1. Tell Go not to use the public proxy/checksum DB for your org
-          go env -w GOPRIVATE=github.com/colony-2/*
-
-          # 2. Force Git to use your PAT for HTTPS requests to GitHub
-          git config --global url."https://x-access-token:${{ secrets.READ_ALL_C2_REPOS }}@github.com/".insteadOf "https://github.com/"
       - name: Run tests
         env:
+          C2OPS_GIT_TOKEN: ${{ secrets.READ_ALL_C2_REPOS }}
           UV_NO_MANAGED_PYTHON: "1"
           C2OPS_TEST_FLAKE: path:${{ github.workspace }}
           C2OPS_TEST_NIX_PUBLICATION: "1"
           C2OPS_TEST_GHA_ACTIONS: "1"
-        run: make test
+        run: make test OP_DIRS="$(make ops | sed '/^gha$/d')"
+
+      - name: Run GHA tests with its compiler minimum
+        env:
+          C2OPS_GIT_TOKEN: ${{ secrets.READ_ALL_C2_REPOS }}
+          GOTOOLCHAIN: go1.26.10
+          C2OPS_TEST_FLAKE: path:${{ github.workspace }}
+          C2OPS_TEST_GHA_ACTIONS: "1"
+        run: make -C gha test
 
       - name: Check native Codex in the minimal worker image
         if: runner.os == 'Linux'

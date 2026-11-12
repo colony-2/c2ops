@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -50,6 +51,7 @@ sequence:
       target: {job: '${{ sequence.launch.outputs.job_id }}'}
       wait: {on: job}
 outputs:
+  submission: '${{ sequence.launch.outputs }}'
   run: '${{ sequence.done.outputs.outputs }}'
 `, runtime.GOOS, runtime.GOARCH, extra))
 }
@@ -156,6 +158,7 @@ jobs:
 	root := h.submit(workflowRecipe(t, "      event_name: push\n      event: {ref: refs/heads/feature}"), nil)
 	run := h.drain(root)["run"].(map[string]any)
 	require.Equal(t, "skipped", run["status"])
+	saveEvidence(t, "skipped-result.json", map[string]any{"caller_job_id": root.JobId, "result": run})
 	require.Empty(t, run["jobs"])
 	require.Len(t, h.jobs(), 2)
 }
@@ -234,8 +237,10 @@ func TestGHABackendC2J(t *testing.T) {
 	installGHAFixture(t, h)
 	recipe := strings.Replace(workflowRecipe(t, "      backend: c2j"), "op: ./.c2/test-ops/gha-workflow", "op: ./.c2/test-ops/gha", 1)
 	root := h.submit(recipe, nil)
-	result := h.drain(root)["run"].(map[string]any)
+	completed := h.drain(root)
+	result := completed["run"].(map[string]any)
 	require.Equal(t, "success", result["status"])
+	saveEvidence(t, "facade-submission-result.json", map[string]any{"caller_job_id": root.JobId, "completed": completed})
 }
 
 // CI enables this on both native architectures. Ordinary test-fast runs retain
@@ -378,6 +383,7 @@ jobs:
 			root := h.submit(workflowRecipe(t, metadata), nil)
 			result := h.drain(root)["run"].(map[string]any)
 			require.Equal(t, "success", result["status"])
+			require.Equal(t, h.commit, result["revision"])
 			jobs := result["jobs"].(map[string]any)
 			selected, skipped := "push", "pr"
 			if event == "pull_request" {
@@ -385,6 +391,113 @@ jobs:
 			}
 			require.Equal(t, "success", jobs[selected].(map[string]any)["conclusion"])
 			require.Equal(t, "skipped", jobs[skipped].(map[string]any)["conclusion"])
+		})
+	}
+}
+
+func TestSubmittedFullHistoryUnpublishedCandidate(t *testing.T) {
+	h := newHarness(t, nil)
+	old := h.commit
+	h.git("tag", "historical-source", old)
+	h.git("branch", "historical-source", old)
+	installJobFixture(t, h, `on: workflow_dispatch
+jobs:
+  history:
+    runs-on: local
+    outputs:
+      head: ${{ steps.check.outputs.head }}
+      tree: ${{ steps.check.outputs.tree }}
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - id: check
+        run: |
+          test "$(cat candidate.txt)" = unpublished
+          git archive `+old+` README.md | tar -xO | grep fixture
+          git cat-file -e refs/tags/historical-source
+          git cat-file -e refs/remotes/c2j-source/historical-source
+          test "$(git rev-parse --is-shallow-repository)" = false
+          test ! -e .git/objects/info/alternates
+          echo "head=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "tree=$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
+`)
+	installWorkflowFixture(t, h)
+	recipe := strings.Replace(workflowRecipe(t, ""), "sequence:\n", `sequence:
+    - id: change
+      op: command_execution
+      inputs:
+        run: echo unpublished > candidate.txt
+`, 1)
+	root := h.submit(recipe, nil)
+	run := h.drain(root)["run"].(map[string]any)
+	require.Equal(t, "success", run["status"])
+	outputs := run["jobs"].(map[string]any)["history"].(map[string]any)["outputs"].(map[string]any)
+	require.Equal(t, run["revision"], outputs["head"])
+	require.NotEqual(t, h.commit, outputs["head"])
+	require.Len(t, outputs["tree"], 40)
+	// No publication to the original repository occurred.
+	cmd := exec.Command("git", "-C", h.repo, "cat-file", "-e", outputs["head"].(string))
+	require.Error(t, cmd.Run())
+	saveEvidence(t, "history-result.json", map[string]any{"caller_job_id": root.JobId, "result": run, "candidate_tree": outputs["tree"], "historical_revision": old})
+}
+
+func TestSubmittedFullHistoryPRRepositoryContext(t *testing.T) {
+	for _, full := range []bool{false, true} {
+		t.Run(fmt.Sprintf("history=%t", full), func(t *testing.T) {
+			h := newHarnessForRepository(t, nil, "github.com/colony-2/c2j")
+			checkout := ""
+			if full {
+				checkout = "        with: {fetch-depth: 0}\n"
+			}
+			installJobFixture(t, h, `on: pull_request
+jobs:
+  probe:
+    if: github.event_name == 'pull_request' && github.base_ref == 'main' && github.repository == 'colony-2/c2j' && github.repository_owner == 'colony-2'
+    runs-on: local
+    outputs:
+      repository: ${{ steps.check.outputs.repository }}
+      owner: ${{ steps.check.outputs.owner }}
+      head: ${{ steps.check.outputs.head }}
+      tree: ${{ steps.check.outputs.tree }}
+    steps:
+      - uses: actions/checkout@v4
+`+checkout+`      - id: check
+        if: github.repository == 'colony-2/c2j' && github.repository_owner == 'colony-2'
+        env:
+          REPOSITORY: ${{ github.repository }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          test "$REPOSITORY:$GITHUB_REPOSITORY" = colony-2/c2j:colony-2/c2j
+          test "$OWNER:$GITHUB_REPOSITORY_OWNER" = colony-2:colony-2
+          test "$GITHUB_EVENT_NAME:$GITHUB_BASE_REF:$GITHUB_HEAD_REF" = pull_request:main:topic
+          test "$(cat candidate.txt)" = unpublished
+          echo "repository=$GITHUB_REPOSITORY" >> "$GITHUB_OUTPUT"
+          echo "owner=$GITHUB_REPOSITORY_OWNER" >> "$GITHUB_OUTPUT"
+          echo "head=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "tree=$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
+`)
+			installWorkflowFixture(t, h)
+			metadata := "      event_name: pull_request\n      event: {number: 42, action: synchronize, pull_request: {base: {ref: main}, head: {ref: topic}}}"
+			recipe := strings.Replace(workflowRecipe(t, metadata), "sequence:\n", `sequence:
+    - id: change
+      op: command_execution
+      inputs:
+        run: echo unpublished > candidate.txt
+`, 1)
+			root := h.submit(recipe, nil)
+			result := h.drain(root)["run"].(map[string]any)
+			require.Equal(t, "success", result["status"])
+			job := result["jobs"].(map[string]any)["probe"].(map[string]any)
+			require.Equal(t, "success", job["conclusion"], "a repository-conditioned PR job must execute in both checkout modes")
+			outputs := job["outputs"].(map[string]any)
+			require.Equal(t, "colony-2/c2j", outputs["repository"])
+			require.Equal(t, "colony-2", outputs["owner"])
+			require.Equal(t, result["revision"], outputs["head"])
+			require.NotEqual(t, h.commit, outputs["head"])
+			require.Len(t, outputs["tree"], 40)
+			cmd := exec.Command("git", "-C", h.repo, "cat-file", "-e", outputs["head"].(string))
+			require.Error(t, cmd.Run(), "candidate remains unpublished")
+			saveEvidence(t, fmt.Sprintf("pr-repository-history-%t.json", full), map[string]any{"caller_job_id": root.JobId, "result": result, "candidate_tree": outputs["tree"]})
 		})
 	}
 }

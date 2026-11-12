@@ -71,6 +71,19 @@ class Checks:
     def go(self, directory, args=None):
         return self.run(['go', 'test', '-mod=readonly', '-count=1', '-timeout=8m', *(args or ['./...'])], directory)
 
+    def gha_compiler(self):
+        compiler = self.metadata('.#gha', 'p: p.buildCompiler.outPath')
+        if compiler is None:
+            return False
+        # Verification workers consume prepared tools; never compile a missing
+        # compiler or fall back to the older general-purpose worker Go.
+        if not self.run([*NIX, 'build', '--no-link', '--no-write-lock-file',
+                         '--max-jobs', '0', '--builders', '', compiler]):
+            self.log.write(b'GHA compiler unavailable; source builders must prepare nix build .#gha.buildCompiler before verification.\n')
+            return False
+        self.env['PATH'] = compiler + '/bin' + os.pathsep + self.env.get('PATH', '')
+        return True
+
     def metadata(self, selector, expression):
         # Structured metadata is captured in scratch, never into candidate content.
         dest = self.root.parent / 'metadata.json'
@@ -81,13 +94,15 @@ class Checks:
         return json.loads(dest.read_text())
 
 
-def execute(name, checks):
+def execute(name, checks, race):
     if name == 'manifests':
         checks.run(['make', 'check-manifests'])
         checks.run(['uv', 'run', 'scripts/check-manifest-schemas.py'])
     elif name == 'tooling':
         checks.run(['make', 'test-tools'])
-    elif name in ('llm', 'llm2', 'gha', 'gha-many', 'rule-gate', 'aider', 'litellm'):
+    elif name == 'gha':
+        checks.go('gha', ['-race', './...'] if race else None)
+    elif name in ('llm', 'llm2', 'gha-many', 'rule-gate', 'aider', 'litellm'):
         checks.go('rule_gate' if name == 'rule-gate' else name)
     elif name == 'pydantic':
         # Build and consume in this task: local paths are evidence, not distribution.
@@ -115,7 +130,11 @@ def execute(name, checks):
                     '--launcher', data['path'] + '/bin/pydantic'])
         checks.run([*NIX, 'path-info', '--json', '--recursive', data['path']])
     elif name == 'gha-runtime':
-        checks.go('gha/integration')
+        # TestMain builds separate operation executables. Instrument those too,
+        # rather than only the test driver that submits their jobs.
+        if race:
+            checks.env['C2OPS_TEST_GHA_RACE'] = '1'
+        checks.go('gha/integration', ['-race', './...'] if race else None)
     elif name == 'codex':
         checks.run(['python3', '../scripts/with-codex.py', '--', 'go', 'test', '-mod=readonly',
                     '-count=1', '-timeout=8m', './...'], 'codex')
@@ -165,15 +184,17 @@ def supported_platform():
     return sys.platform == 'linux' and platform.machine() in ('aarch64', 'arm64')
 
 
-def check(name, root, outbox):
+def check(name, root, outbox, *, race=False):
     outbox.mkdir(parents=True, exist_ok=True)
     report = {'task': name, 'status': 'failed', 'commands': [], 'platform': platform.platform(),
               'machine': platform.machine(), 'candidate': os.environ.get('VERIFY_CANDIDATE'),
               'base': os.environ.get('VERIFY_BASE'), 'target_directory': os.environ.get('VERIFY_TARGET'),
-              'held': HELD, 'tools': {}}
+              'held': HELD, 'tools': {}, 'race': race}
     log_path = outbox / (name + '.log')
     with log_path.open('wb') as log:
         try:
+            if name in ('gha', 'gha-runtime') and not race:
+                raise RuntimeError('GHA verification requires --race in the hook command')
             if not supported_platform():
                 raise RuntimeError('verification requires native Linux arm64')
             with tempfile.TemporaryDirectory(prefix='c2ops-verify-') as tmp:
@@ -193,13 +214,19 @@ def check(name, root, outbox):
                            C2OPS_TEST_FLAKE='path:' + str(copy),
                            PNPM_CONFIG_ALLOW_BUILDS=(copy / 'nix/pnpm-build-policy.json').read_text())
                 checks = Checks(copy, env, log)
+                if name == 'gha-runtime':
+                    env['C2OPS_GHA_EVIDENCE_DIR'] = str(temp / 'gha-evidence')
                 report['commands'] = checks.commands
+                if name in ('gha', 'gha-runtime') and not checks.gha_compiler():
+                    raise RuntimeError('the pinned GHA compiler could not be prepared; GHA tests did not run')
                 for tool, args in {'go':['version'], 'python3':['--version'], 'nix':['--version'],
                                    'uv':['--version'], 'node':['--version'], 'pnpm':['--version'],
                                    'gcc':['-dumpfullversion'], 'git':['--version'], 'make':['--version']}.items():
-                    report['tools'][tool] = shutil.which(tool)
+                    report['tools'][tool] = shutil.which(tool, path=checks.env.get('PATH'))
                     checks.run([tool, *args])
-                execute(name, checks)
+                execute(name, checks, race)
+                if name == 'gha-runtime' and (temp / 'gha-evidence/helper-builds.json').exists():
+                    report['gha_helper_builds'] = json.loads((temp / 'gha-evidence/helper-builds.json').read_text())
                 if checks.commands and all(c.get('returncode') == 0 for c in checks.commands):
                     report['status'] = 'passed'
         except Exception as error:
@@ -247,11 +274,14 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('mode', choices=('check', 'aggregate'))
     parser.add_argument('name', nargs='?', choices=TASKS)
+    parser.add_argument('--race', action='store_true', help='Required for GHA source and embedded helper race checks')
     args = parser.parse_args()
+    if args.race and (args.mode != 'check' or args.name not in ('gha', 'gha-runtime')):
+        parser.error('--race applies only to check gha or check gha-runtime')
     if args.mode == 'check':
         if args.name is None:
             parser.error('check requires a task')
-        check(args.name, Path(os.environ['VERIFY_ROOT']).resolve(), Path(os.environ['VERIFY_OUTBOX']))
+        check(args.name, Path(os.environ['VERIFY_ROOT']).resolve(), Path(os.environ['VERIFY_OUTBOX']), race=args.race)
     else:
         aggregate(Path(os.environ['VERIFY_INBOX']), Path(os.environ['VERIFY_OUTBOX']))
 

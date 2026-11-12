@@ -132,5 +132,7 @@ sequence:
 	require.Equal(t, other, *handoff.Demand.Effective.Platform)
 	_, err = os.Stat(marker)
 	require.True(t, os.IsNotExist(err))
-	require.Empty(t, h.calls)
+	for _, call := range h.calls {
+		require.True(t, strings.HasSuffix(call, ":recipe_cell_context"), "only registered-cell preparation may precede allocation admission: %s", call)
+	}
 }

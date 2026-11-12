@@ -1,0 +1,10 @@
+{
+  "url": "https://github.com/colony-2/act.git",
+  "rev": "250741efce52df0dd892f6351c5fdf9b8a4e807a",
+  "hash": "sha256-Rr9SsOGwWwZ8Sd1GIsIqFLGbV38/DVT9peZwKLt2Rls=",
+  "version": "v0.0.0-20261112151448-250741efce52",
+  "module": "github.com/nektos/act",
+  "replacement": "github.com/colony-2/act",
+  "sum": "h1:Fz3dBITxGIAjLNvJOKMofl5I1IjfyjJH1oLX+gfi5ks=",
+  "goModSum": "h1:v6tOBYyu+9nA7Mwka3jeSF9KgDfPrZ08dNSZWM5dBOg="
+}

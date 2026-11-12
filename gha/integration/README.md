@@ -2,8 +2,8 @@
 
 Run `make -C gha test-fast` from the repository root. The existing `make test`
 target also runs this suite in both native Linux CI jobs (ARM64 and AMD64).
-Dependencies are Go, Git, Bash, coreutils and Node; Go may need the repository's
-existing private-module credentials on the first download. No Docker daemon,
+Dependencies are Go 1.26.10 or newer, Git, Bash, coreutils and Node; Go may need
+the repository's existing private-module credentials on the first download. No Docker daemon,
 Nix build, GitHub API or model credentials are needed.
 
 `harness_test.go` supplies a temporary Git repository, SQLite JobDB with blob
@@ -38,8 +38,11 @@ without deleting the database or source repository. Secret resolutions are
 counted outside SQLite to prove completed replay makes no further reads.
 
 `go test -race ./...` in this module checks the harness/worker processes. It does
-not instrument the normally compiled helper. The separate direct executor
-`-race` test currently exposes an [upstream act race](../../BUG_REPORT_ACT_HOST_EXECUTOR_RACE.md).
+not instrument the normally compiled helper. Use `C2OPS_TEST_GHA_RACE=1 go test -race -count=1 ./...` to instrument all three
+compiled helpers too. The [immutable private act dependency](../../nix/act-source.json)
+is shared by direct and embedded probes. Building these helpers requires Go
+1.26.10 or newer and an authorized private Git route; Nix source builds also
+require the [prefetch step](../../NIX_PACKAGES.md#private-gha-build-input).
 
 The separate module keeps c2j/JobDB test dependencies out of the GHA executable's
 Nix closure. Tests added here should use public op coordinates and replace only
@@ -64,3 +67,18 @@ bundles through the same distributed path. Run it locally with
 `C2OPS_TEST_GHA_ACTIONS=1 make -C gha test-fast`. The default fast suite retains
 its no-external-actions contract. All fixture op references are authored using
 published coordinates and overridden explicitly to the compiled local binaries.
+
+
+The harness uses c2j v0.0.118, registers a fixture cell with trusted local
+embedding authority, and maps that identity to its disposable Git repository
+through an explicit Git executable fixture. This accommodates c2j's current
+registered-cell contract without a public/private network dependency.
+
+`identity_test.go` executes this test binary inside gha, creates independent
+embedded jobs and checks replay, both with ambient isolation and the supplied
+Bash unsets. `diagnostics_test.go` covers matrix failure/summary, masked persisted
+logs, service-denied/missing named bindings, infrastructure nulls and cancellation
+before invocation. `qualification_test.go` preserves the supplied workflow bytes
+and checks all three native base demands at admission; it does not run native
+workers, setup actions or the complete c2j candidate. `C2OPS_GHA_EVIDENCE_DIR` can
+select an absolute scratch directory for actual result/object JSON and logs.

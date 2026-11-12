@@ -81,7 +81,7 @@ sequence:
       VERIFY_TARGET: ${{ inputs.target_directory }}
       VERIFY_CANDIDATE: ${{ inputs.candidate }}
       VERIFY_BASE: ${{ inputs.base }}
-    run: python3 "$VERIFY_ROOT/scripts/verify.py" check gha
+    run: python3 "$VERIFY_ROOT/scripts/verify.py" check gha --race
 - id: gha_many
   op: command_execution
   const: true
@@ -107,7 +107,7 @@ sequence:
       VERIFY_TARGET: ${{ inputs.target_directory }}
       VERIFY_CANDIDATE: ${{ inputs.candidate }}
       VERIFY_BASE: ${{ inputs.base }}
-    run: python3 "$VERIFY_ROOT/scripts/verify.py" check gha-runtime
+    run: python3 "$VERIFY_ROOT/scripts/verify.py" check gha-runtime --race
 - id: codex
   op: command_execution
   const: true

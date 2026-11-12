@@ -97,6 +97,68 @@ the Nix store. Seeing a shell launcher does not mean the op compiles on startup.
 The package build rejects a runtime dependency on Go, and package checks verify
 the compiled payload and its architecture for every Go op.
 
+GHA source builds and its integration harness require Go 1.26.10 or newer.
+`nix/gha-go.nix` pins Go 1.26.10's source archive and checksum for `gha`,
+`gha-job` and `gha-workflow`; other operations retain the compiler from the
+unchanged nixpkgs pin. Both compilers are excluded from GHA runtime closures.
+The Go version selected by a workflow's setup action remains independent of
+the compiler used to build these helpers.
+
+Source builders can prepare that exact compiler with
+`nix build .#gha.buildCompiler`. The native verification hook selects this
+compiler for `gha` and `gha-runtime`, including their compiled integration
+helpers, while other tasks retain the worker's general Go. Verification workers
+realize the prepared compiler with builds disabled and fail actionably if it is
+unavailable; they never fall back to an older compiler. This evaluation-only
+package attribute does not add the compiler to any operation's runtime closure.
+
+### Private GHA build input
+
+GHA imports remain under `github.com/nektos/act`; `gha/go.mod` replaces that module
+with the immutable `github.com/colony-2/act` version recorded in
+`nix/act-source.json`. There is no retained act runtime source in this checkout.
+Ordinary Go builders need Go 1.26.10 or newer, private-module policy covering
+`github.com/colony-2/act` (`GOPRIVATE`, and any overridden `GONOPROXY` /
+`GONOSUMDB`), and an authorized Git route. Policy alone supplies no credentials.
+The fork requires necessary transitive module upgrades; use the committed sums.
+
+Before any sandboxed GHA dependency/package build, run:
+
+```sh
+python3 scripts/prefetch-act.py
+nix build .#gha .#gha-job .#gha-workflow
+```
+
+Run prefetch in the source builder's client environment with its authorized Git
+credential helper. It fetches the pinned commit outside the sandbox, verifies the
+NAR hash and imports it under the exact fixed-output name `act-source`. An already
+acquired tree can be supplied with `--source PATH`; it receives the same hash
+verification. A mismatch or unavailable route/revision fails without a retained
+source fallback. On failure, check private Git authorization and store access;
+the tool suppresses fetcher diagnostics because ambient helpers can print secrets.
+Never put a token in a URL, Nix configuration, derivation or source pin. CI performs
+this prefetch before `nix flake check`, passing its existing authorized secret only
+in that step's environment.
+
+Only the checked vendor derivation uses a temporary relative replacement pointing
+to the verified source. It restores the immutable remote identity in vendor
+metadata before hashing. Binary builds use the remote Go metadata and that vendor
+output. Embedded JavaScript/schema JSON are checked, and act/Docker licenses are
+installed with each compiled helper. Neither act source nor either Go compiler is
+allowed in the GHA runtime closure.
+
+Download-only consumers evaluate package definitions and substitute the final
+closure without private fork access or running this prefetch. An absent closure
+with builds disabled fails instead of silently building. Cache publication is a
+separate CI responsibility; prefetch is required only for source builders. Prior
+published closures remain usable. The Go minimum applies to helper compilation,
+not the Go version requested by authored workflow actions.
+
+Host command completion cleans up descendants remaining in its command group;
+callers cannot rely on such background processes surviving a completed command.
+Writers must return from writes. Escaped process groups and worker destruction
+remain the provisioner's responsibility.
+
 Nix still fetches the flake repository and its inputs to evaluate package
 definitions. This metadata/source download is separate from the executable
 output downloaded from Cachix. Go ops' `op.yaml` manifests declare the corresponding

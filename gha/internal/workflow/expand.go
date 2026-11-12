@@ -35,7 +35,7 @@ func expand(ctx context.Context, in Input) (Submission, error) {
 		p.Input.Event = map[string]any{}
 	}
 	event, _ := json.Marshal(p.Input.Event)
-	request := jobexec.Request{Workflow: string(source), JobID: p.Job, Needs: in.Needs, EventName: p.Input.EventName, Event: event, Env: p.Input.Env, Vars: p.Input.Vars}
+	request := jobexec.Request{Repository: p.Input.Repository, Revision: p.Input.Revision, SourceCredential: p.Input.SourceCredential, Workflow: string(source), JobID: p.Job, Needs: in.Needs, EventName: p.Input.EventName, Event: event, Env: p.Input.Env, Vars: p.Input.Vars}
 	assignments, err := jobexec.Prepare(ctx, request, in.WorktreePath)
 	if err != nil {
 		return zero, err

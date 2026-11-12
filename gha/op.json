@@ -60,6 +60,10 @@
           "type": "string"
         }
       },
+      "source_credential": {
+        "type": "string",
+        "description": "Explicit secret_bindings alias used only for authorized source history preparation"
+      },
       "event_name": {
         "type": "string"
       },

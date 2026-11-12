@@ -3,6 +3,9 @@ let
   inherit (pkgs) lib;
   catalog = builtins.fromJSON (builtins.readFile ./ops.json);
   vendorHashes = builtins.fromJSON (builtins.readFile ./go-vendor-hashes.json);
+  ghaGo = pkgs.callPackage ./gha-go.nix { };
+  actPin = builtins.fromJSON (builtins.readFile ./act-source.json);
+  actSource = pkgs.callPackage ./act-source.nix { };
 
   pythonRuntime = pkgs.python3.override {
     packageOverrides = final: prev: {
@@ -40,11 +43,13 @@ let
       module = op.module or op.path;
       subPackage = op.subPackage or ".";
       binaryName = if subPackage == "." then builtins.baseNameOf module else subPackage;
-      goBinary = pkgs.buildGoModule {
+      buildGoModule = if module == "gha" then pkgs.buildGoModule.override { go = ghaGo; }
+        else pkgs.buildGoModule;
+      goBinary = buildGoModule ({
         pname = "c2ops-${name}-binary";
         version = "0.1.0";
-        # Test-only c2j/JobDB imports are private and are not runtime inputs.
-        # The normal Go suites run separately in CI, with repository credentials.
+        # The act fork is prefetched outside the sandbox; test-only c2j/JobDB
+        # imports are excluded. No private credentials enter either derivation.
         src = lib.fileset.toSource {
           root = ../. + "/${module}";
           # Exclude empty test/cache directories as well as their files, so a
@@ -59,7 +64,40 @@ let
         env.CGO_ENABLED = "0";
         ldflags = [ "-s" "-w" ];
         doCheck = false;
-      };
+      } // lib.optionalAttrs (module == "gha") {
+        # Keep even empty GHA-specific hooks out of unrelated derivations.
+        postPatch = ''
+          grep -Fqx 'replace github.com/nektos/act => github.com/colony-2/act ${actPin.version}' go.mod
+        '';
+        # Only the dependency derivation acquires source. Its checked vendor
+        # output feeds the binary build; both retain the immutable remote module
+        # identity. A build-local path must not become a runtime store reference.
+        overrideModAttrs = final: previous: {
+          postPatch = (previous.postPatch or "") + ''
+            export HOME="$TMPDIR/c2ops-build-home"
+            mkdir -p "$HOME"
+            cp -R ${actSource} .c2ops-act-source
+            go mod edit -replace=github.com/nektos/act=./.c2ops-act-source
+          '';
+        };
+        modPostBuild = ''
+          for resource in pkg/runner/hashfiles/index.js pkg/runner/res/trampoline.js pkg/schema/workflow_schema.json pkg/schema/action_schema.json LICENSE pkg/container/DOCKER_LICENSE; do
+            test -s "vendor/github.com/nektos/act/$resource"
+          done
+          substituteInPlace vendor/modules.txt --replace-fail \
+            '=> ./.c2ops-act-source' '=> github.com/colony-2/act ${actPin.version}'
+        '';
+        postInstall = ''
+          install -Dm644 ${actSource}/LICENSE "$out/share/licenses/act/LICENSE"
+          install -Dm644 ${actSource}/pkg/container/DOCKER_LICENSE "$out/share/licenses/act/DOCKER_LICENSE"
+        '';
+        # Go telemetry must not create /homeless-shelter on unsandboxed builders.
+        # A separate temporary HOME also keeps module/build configuration private.
+        preBuild = ''
+          export HOME="$TMPDIR/c2ops-build-home"
+          mkdir -p "$HOME"
+        '';
+      });
       python = pythonEnvs.${name};
     in pkgs.stdenvNoCC.mkDerivation {
       pname = "c2ops-${name}";
@@ -68,7 +106,8 @@ let
       nativeBuildInputs = [ pkgs.makeWrapper ];
       # Compilation belongs to the builder. Fail the build if a Go op retains
       # its compiler anywhere in its runtime closure.
-      disallowedRequisites = lib.optionals (op.kind == "go") [ pkgs.go ];
+      disallowedRequisites = lib.optionals (op.kind == "go")
+        ([ pkgs.go ] ++ lib.optionals (module == "gha") [ ghaGo actSource ]);
       installPhase = ''
         runHook preInstall
         install -Dm644 ${manifestPath} "$out/share/c2j/op.json"
@@ -91,6 +130,9 @@ let
       passthru.compiledExecutable =
         if op.kind == "go" then "${goBinary}/bin/${binaryName}" else null;
       passthru.pythonEnv = if op.kind == "python" then python else null;
+      # Source-test tooling can select the verified compiler without adding it
+      # to an operation's runtime closure or changing unrelated Go operations.
+      passthru.buildCompiler = if module == "gha" then ghaGo else null;
       meta = {
         description = manifest.description;
         mainProgram = name;

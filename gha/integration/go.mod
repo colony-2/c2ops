@@ -1,10 +1,10 @@
 module github.com/colony-2/c2ops/gha/integration
 
-go 1.26.0
+go 1.26.10
 
 require (
-	github.com/colony-2/c2j v0.0.110
-	github.com/colony-2/jobdb v0.0.65
+	github.com/colony-2/c2j v0.0.118
+	github.com/colony-2/jobdb v0.0.70-0.20261104212407-e199a54304e7
 	github.com/stretchr/testify v1.12.1
 	gopkg.in/yaml.v3 v3.0.1
 )

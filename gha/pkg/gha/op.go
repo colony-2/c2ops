@@ -37,7 +37,7 @@ func Run(ctx context.Context, input RunInput) (RunResult, error) {
 		if input.With != nil {
 			event["inputs"] = input.With
 		}
-		submitted, err := workflow.Submit(ctx, workflow.Input{BaseRevision: input.GitContext.ResolvedBaseHash, Workflow: input.Workflow, WorktreePath: input.GitContext.WorktreePath, Repository: input.GitContext.BaseRepo, Profiles: input.RunnerProfiles, SecretBindings: input.SecretBindings, EventName: input.EventName, Event: event, ChangedPaths: input.ChangedPaths, Env: input.Env, Vars: input.Vars, HelperOp: input.HelperOp, ExecutorOp: input.ExecutorOp})
+		submitted, err := workflow.Submit(ctx, workflow.Input{BaseRevision: input.GitContext.ResolvedBaseHash, Workflow: input.Workflow, WorktreePath: input.GitContext.WorktreePath, Repository: input.GitContext.BaseRepo, Profiles: input.RunnerProfiles, SecretBindings: input.SecretBindings, SourceCredential: input.SourceCredential, EventName: input.EventName, Event: event, ChangedPaths: input.ChangedPaths, Env: input.Env, Vars: input.Vars, HelperOp: input.HelperOp, ExecutorOp: input.ExecutorOp})
 		return RunResult{Output: RunOutput{Status: submitted.Status, JobID: submitted.JobID, GoalID: submitted.GoalID, TenantID: submitted.TenantID, SubmittedJobs: submitted.Jobs}}, err
 	}
 	result, err := executeRun(ctx, input, input.GitContext)

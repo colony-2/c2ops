@@ -54,8 +54,8 @@ func Validate(source, id, workdir string) error {
 		if step == nil {
 			return fmt.Errorf("empty step")
 		}
-		if strings.HasPrefix(step.Uses, "actions/checkout@") && len(step.With) > 0 {
-			return fmt.Errorf("checkout options are unsupported with a frozen source snapshot")
+		if _, err := checkoutHistory(step); err != nil {
+			return err
 		}
 		if err := validateAction(workdir, step.Uses, map[string]bool{}); err != nil {
 			return err
@@ -69,6 +69,7 @@ func Validate(source, id, workdir string) error {
 // value is present in this context; secrets cannot select runners or matrices.
 func Prepare(ctx context.Context, in Request, workdir string) ([]Assignment, error) {
 	ctx = common.WithLogger(ctx, logFactory{writer: io.Discard}.WithJobLogger())
+	in.Env = repositoryEnvironment(ctx, workdir, in.Env)
 	newContext := func(matrix map[string]any) (*runner.RunContext, error) {
 		wf, err := model.ReadWorkflow(strings.NewReader(in.Workflow), false)
 		if err != nil {

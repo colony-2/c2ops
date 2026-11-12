@@ -32,21 +32,22 @@ type Profile struct {
 	ExecutionNeeds map[string]any `json:"execution_needs"`
 }
 type Input struct {
-	BaseRevision   string            `json:"base_revision,omitempty"`
-	HelperOp       string            `json:"helper_op,omitempty"`
-	ExecutorOp     string            `json:"executor_op,omitempty"`
-	Action         string            `json:"action,omitempty"`
-	Workflow       string            `json:"workflow,omitempty"`
-	WorktreePath   string            `json:"worktree_path,omitempty"`
-	Repository     string            `json:"repository,omitempty"`
-	Revision       string            `json:"revision,omitempty"`
-	Profiles       []Profile         `json:"runner_profiles,omitempty"`
-	ChangedPaths   []string          `json:"changed_paths,omitempty"`
-	EventName      string            `json:"event_name,omitempty"`
-	Event          map[string]any    `json:"event,omitempty"`
-	Env            map[string]string `json:"env,omitempty"`
-	Vars           map[string]string `json:"vars,omitempty"`
-	SecretBindings map[string]string `json:"secret_bindings,omitempty"`
+	BaseRevision     string            `json:"base_revision,omitempty"`
+	HelperOp         string            `json:"helper_op,omitempty"`
+	ExecutorOp       string            `json:"executor_op,omitempty"`
+	Action           string            `json:"action,omitempty"`
+	Workflow         string            `json:"workflow,omitempty"`
+	WorktreePath     string            `json:"worktree_path,omitempty"`
+	Repository       string            `json:"repository,omitempty"`
+	Revision         string            `json:"revision,omitempty"`
+	Profiles         []Profile         `json:"runner_profiles,omitempty"`
+	ChangedPaths     []string          `json:"changed_paths,omitempty"`
+	EventName        string            `json:"event_name,omitempty"`
+	Event            map[string]any    `json:"event,omitempty"`
+	Env              map[string]string `json:"env,omitempty"`
+	Vars             map[string]string `json:"vars,omitempty"`
+	SourceCredential string            `json:"source_credential,omitempty"`
+	SecretBindings   map[string]string `json:"secret_bindings,omitempty"`
 	// Payload is opaque public metadata. Encoding prevents c2j from interpreting
 	// Actions expressions in strings transported through generated recipe inputs.
 	Payload      string                    `json:"payload,omitempty"`
@@ -116,6 +117,9 @@ func Submit(ctx context.Context, in Input) (Submission, error) {
 	}
 	if in.Repository == "" {
 		return zero, fmt.Errorf("repository is required")
+	}
+	if err := jobexec.ValidateSourceRepository(in.Repository); err != nil {
+		return zero, err
 	}
 	// Freeze the actual worker checkout rather than resolving a moving branch on
 	// each child. Local commits are carried by the native snapshot bundle.
@@ -269,6 +273,9 @@ func validateBindings(in Input) error {
 		}
 		seen[key] = true
 	}
+	if in.SourceCredential != "" && !seen[strings.ToUpper(in.SourceCredential)] {
+		return fmt.Errorf("source_credential must name an explicit secret_bindings alias")
+	}
 	if len(in.Profiles) == 0 {
 		return fmt.Errorf("runner_profiles is required; runs-on labels must have explicit execution needs")
 	}
@@ -276,9 +283,21 @@ func validateBindings(in Input) error {
 		if len(p.Labels) == 0 || len(p.ExecutionNeeds) == 0 {
 			return fmt.Errorf("each runner profile needs labels and execution_needs")
 		}
+		if value, ok := p.ExecutionNeeds["base"]; ok {
+			base, valid := value.(string)
+			if !valid || strings.TrimSpace(base) == "" {
+				return fmt.Errorf("execution base must be a nonempty string")
+			}
+			if _, ok := p.ExecutionNeeds["image"]; ok {
+				return fmt.Errorf("execution base conflicts with image")
+			}
+			if _, ok := p.ExecutionNeeds["platform"]; ok {
+				return fmt.Errorf("execution base conflicts with platform")
+			}
+		}
 		for key := range p.ExecutionNeeds {
 			switch key {
-			case "platform", "image", "packages", "resources":
+			case "base", "platform", "image", "packages", "resources":
 			default:
 				return fmt.Errorf("unsupported execution requirement %q", key)
 			}
@@ -320,6 +339,13 @@ func (b broker) submit(ctx context.Context, in Input, p plannedRecipe) (Submissi
 		return out, err
 	}
 	request := map[string]any{"start": map[string]any{"tenantId": b.tenant, "job_id": p.ID, "recipe": p.Recipe["id"], "git": in.BaseRevision, "context": map[string]any{"git": map[string]any{"repo": in.Repository, "ref": in.BaseRevision, "resolved_hash": in.BaseRevision}, "initial_commit": map[string]any{"hash": in.Revision, "parent_hash": in.BaseRevision}}}, "embedded_recipes": []any{map[string]any{"name": p.Recipe["id"], "yaml": recipe}}}
+	// Newer c2j requires a registered cell. Keep the current owner rather
+	// than deriving a cell from a Git URL; older brokers ignore these keys.
+	if cell := os.Getenv("C2J_CURRENT_CELL_NAME"); cell != "" {
+		start := request["start"].(map[string]any)
+		start["cell"] = cell
+		start["cell_repo"] = os.Getenv("C2J_CURRENT_CELL_REPO")
+	}
 	if len(b.sourcePack) > 0 {
 		request["artifacts"] = []any{map[string]any{"name": "__git_state_thin_pack__", "data": b.sourcePack}}
 	}

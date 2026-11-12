@@ -32,15 +32,18 @@ type Result struct {
 }
 
 type Request struct {
-	Workflow  string                 `json:"workflow"`
-	JobID     string                 `json:"job_id"`
-	Needs     map[string]Result      `json:"needs,omitempty"`
-	Matrix    map[string]interface{} `json:"matrix,omitempty"`
-	EventName string                 `json:"event_name,omitempty"`
-	Event     json.RawMessage        `json:"event,omitempty"`
-	Env       map[string]string      `json:"env,omitempty"`
-	Vars      map[string]string      `json:"vars,omitempty"`
-	Secrets   map[string]string      `json:"secrets,omitempty"`
+	Repository       string                 `json:"repository,omitempty"`
+	Revision         string                 `json:"revision,omitempty"`
+	SourceCredential string                 `json:"source_credential,omitempty"`
+	Workflow         string                 `json:"workflow"`
+	JobID            string                 `json:"job_id"`
+	Needs            map[string]Result      `json:"needs,omitempty"`
+	Matrix           map[string]interface{} `json:"matrix,omitempty"`
+	EventName        string                 `json:"event_name,omitempty"`
+	Event            json.RawMessage        `json:"event,omitempty"`
+	Env              map[string]string      `json:"env,omitempty"`
+	Vars             map[string]string      `json:"vars,omitempty"`
+	Secrets          map[string]string      `json:"secrets,omitempty"`
 }
 
 type Options struct {
@@ -114,8 +117,8 @@ func Execute(ctx context.Context, in Request, opts Options) (Result, error) {
 		if step == nil {
 			return Result{}, fmt.Errorf("empty step")
 		}
-		if strings.HasPrefix(step.Uses, "actions/checkout@") && len(step.With) > 0 {
-			return Result{}, fmt.Errorf("checkout options are unsupported with a frozen source snapshot")
+		if _, err := checkoutHistory(step); err != nil {
+			return Result{}, err
 		}
 		if err := validateAction(opts.Workdir, step.Uses, map[string]bool{}); err != nil {
 			return Result{}, err
@@ -166,6 +169,28 @@ func Execute(ctx context.Context, in Request, opts Options) (Result, error) {
 		if err := os.Mkdir(filepath.Join(state, dir), 0o700); err != nil {
 			return Result{}, err
 		}
+	}
+	if in.Revision != "" {
+		if _, err := gitOutput(ctx, opts.Workdir, nil, "rev-parse", "--verify", "HEAD"); err != nil {
+			return Result{}, err
+		}
+		head, _ := gitOutput(ctx, opts.Workdir, nil, "rev-parse", "HEAD")
+		if head != in.Revision {
+			return Result{}, fmt.Errorf("source revision changed from the planned snapshot")
+		}
+	}
+	fullHistory := false
+	for _, step := range job.Steps {
+		history, _ := checkoutHistory(step)
+		fullHistory = fullHistory || history
+	}
+	in.Env = repositoryEnvironment(ctx, opts.Workdir, in.Env)
+	if fullHistory {
+		prepared, err := prepareHistory(ctx, opts.Workdir, state, in)
+		if err != nil {
+			return Result{}, err
+		}
+		opts.Workdir = prepared
 	}
 	var bridge *artifactsBridge
 	if opts.ArtifactDir != "" {
