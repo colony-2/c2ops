@@ -104,13 +104,27 @@ op: nix:github:colony-2/c2ops/published#gha
 - `secrets`
 - `backend` (`local`, `github`, or `c2j`)
 - For `c2j`: `runner_profiles`, `secret_bindings`, optional `source_credential`, `event_name`, `event`,
-  `changed_paths`, `vars`; optional `helper_op` and `executor_op` development overrides
+  `changed_paths`, `vars`; optional `helper_op` and `executor_op` overrides
 - `runner_image`
 - `container_architecture`
 - `timeout` (optional Go duration; omitted or zero means no op-imposed limit)
 - `continue_on_error`
 - `remote`
 - `git_context`
+
+For `backend: c2j`, omitted or exactly empty worker selectors use the submitting
+package's clean release revision. Selecting `nix:github:colony-2/c2ops/<revision>#gha`
+automatically selects `gha-workflow` and `gha-job` at that revision, independently
+of the workflow checkout. Each nonempty explicit override is preserved verbatim;
+mutable and mixed-release overrides remain supported. The resolved pair is stored
+in submitted children and reused by expansion and collection.
+
+Raw Go, dirty Git and `path:` builds lack release metadata and require both worker
+selectors explicitly. A partial override still requires metadata for the other
+worker; missing metadata fails before any child submission. Local/Git manifests
+invoke a packaged binary, whose release determines the defaults. A clean local
+Git build names the canonical repository; a fork-only revision must be available
+there or ordinary package preparation fails without fallback.
 
 ## Recipe
 

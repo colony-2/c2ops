@@ -90,12 +90,10 @@
         }
       },
       "helper_op": {
-        "type": "string",
-        "default": "nix:github:colony-2/c2ops/published#gha-workflow"
+        "type": "string"
       },
       "executor_op": {
-        "type": "string",
-        "default": "nix:github:colony-2/c2ops/published#gha-job"
+        "type": "string"
       },
       "payload": {
         "type": "string"

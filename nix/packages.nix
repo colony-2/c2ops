@@ -1,4 +1,4 @@
-{ pkgs }:
+{ pkgs, releaseRevision ? "" }:
 let
   inherit (pkgs) lib;
   catalog = builtins.fromJSON (builtins.readFile ./ops.json);
@@ -62,7 +62,10 @@ let
         vendorHash = vendorHashes.${module};
         subPackages = [ subPackage ];
         env.CGO_ENABLED = "0";
-        ldflags = [ "-s" "-w" ];
+        ldflags = [ "-s" "-w" ] ++ lib.optionals (builtins.elem name [ "gha" "gha-workflow" ]) [
+          "-X ${lib.escapeShellArg "github.com/colony-2/c2ops/gha/internal/workflow.releaseRepository=github:colony-2/c2ops"}"
+          "-X ${lib.escapeShellArg "github.com/colony-2/c2ops/gha/internal/workflow.releaseRevision=${releaseRevision}"}"
+        ];
         doCheck = false;
       } // lib.optionalAttrs (module == "gha") {
         # Keep even empty GHA-specific hooks out of unrelated derivations.

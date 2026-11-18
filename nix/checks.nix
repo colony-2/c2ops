@@ -1,4 +1,4 @@
-{ pkgs, packages }:
+{ pkgs, packages, releaseRevision ? "" }:
 let
   inherit (pkgs) lib;
 in {
@@ -39,11 +39,16 @@ in {
   '';
 } // lib.mapAttrs (name: package:
   pkgs.runCommand "c2ops-${name}-contract" {
-    nativeBuildInputs = [ pkgs.python3 ];
+    nativeBuildInputs = if builtins.elem name [ "gha" "gha-workflow" ]
+      then [ (pkgs.python3.withPackages (p: [ p.pyyaml ])) pkgs.gitMinimal ]
+      else [ pkgs.python3 ];
     SSL_CERT_FILE = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
   } ''
     python ${../scripts/check-package.py} ${package} ${pkgs.writeText "${name}-manifest.json" (builtins.toJSON package.c2j)} nix:github:colony-2/c2ops/published#${name} \
       ${lib.optionalString (package.compiledExecutable != null) "--compiled-executable ${package.compiledExecutable} --system ${pkgs.stdenv.hostPlatform.system}"}
+    ${lib.optionalString (builtins.elem name [ "gha" "gha-workflow" ]) ''
+      python ${../scripts/check-gha-release.py} ${package}/bin/${name} --revision ${lib.escapeShellArg releaseRevision}
+    ''}
     ${lib.optionalString (builtins.elem name [ "gha" "gha-job" "gha-workflow" ]) ''
       test -s "$(dirname ${package.compiledExecutable})/../share/licenses/act/LICENSE"
       test -s "$(dirname ${package.compiledExecutable})/../share/licenses/act/DOCKER_LICENSE"

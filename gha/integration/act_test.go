@@ -29,10 +29,15 @@ const publicJobOp = "nix:github:colony-2/c2ops/published#gha-job"
 var helperBinary string
 var workflowBinary string
 var ghaBinary string
+var matchingWorkflowBinary string
+var matchingGHABinary string
 
 // Compile once, before the worker loop. Every invocation executes this binary;
 // neither the fixture manifest nor a live job invokes the Go toolchain.
 func TestMain(m *testing.M) {
+	if len(os.Args) > 1 && os.Args[1] == "gha-selection-proxy" {
+		os.Exit(selectionProxy())
+	}
 	if os.Getenv("GHA_IDENTITY_CHILD") == "1" {
 		os.Exit(m.Run())
 	}
@@ -72,6 +77,18 @@ func TestMain(m *testing.M) {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+	for target, output := range map[string]*string{"./workflow": &matchingWorkflowBinary, ".": &matchingGHABinary} {
+		*output = filepath.Join(dir, "matching-"+filepath.Base(target))
+		flags := "-X github.com/colony-2/c2ops/gha/internal/workflow.releaseRepository=github:colony-2/c2ops -X github.com/colony-2/c2ops/gha/internal/workflow.releaseRevision=" + matchingRevision
+		build = exec.Command("go", append(buildArgs, "-ldflags", flags, "-o", *output, target)...)
+		build.Dir = ".."
+		build.Stdout, build.Stderr = os.Stderr, os.Stderr
+		if err := build.Run(); err != nil {
+			os.RemoveAll(dir)
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+	}
 	if err := recordHelperBuilds(); err != nil {
 		os.RemoveAll(dir)
 		fmt.Fprintln(os.Stderr, err)
@@ -93,7 +110,7 @@ func recordHelperBuilds() error {
 		return fmt.Errorf("C2OPS_GHA_EVIDENCE_DIR must be absolute")
 	}
 	records := map[string]any{}
-	for name, path := range map[string]string{"gha": ghaBinary, "gha-job": helperBinary, "gha-workflow": workflowBinary} {
+	for name, path := range map[string]string{"gha": ghaBinary, "gha-job": helperBinary, "gha-workflow": workflowBinary, "matching-gha": matchingGHABinary, "matching-gha-workflow": matchingWorkflowBinary} {
 		raw, err := os.ReadFile(path)
 		if err != nil {
 			return err

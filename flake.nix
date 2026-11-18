@@ -13,11 +13,13 @@
       packages = forAllSystems (system:
         import ./nix/packages.nix {
           pkgs = nixpkgs.legacyPackages.${system};
+          releaseRevision = inputs.self.rev or "";
         });
       checks = forAllSystems (system:
         import ./nix/checks.nix {
           pkgs = nixpkgs.legacyPackages.${system};
           packages = inputs.self.packages.${system};
+          releaseRevision = inputs.self.rev or "";
         });
       devShells = forAllSystems (system:
         let pkgs = nixpkgs.legacyPackages.${system};

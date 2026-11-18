@@ -52,10 +52,8 @@ input_schema:
       additionalProperties: {type: string}
     helper_op:
       type: string
-      default: nix:github:colony-2/c2ops/published#gha-workflow
     executor_op:
       type: string
-      default: nix:github:colony-2/c2ops/published#gha-job
     payload: {type: string}
     needs: {type: object}
     observations:

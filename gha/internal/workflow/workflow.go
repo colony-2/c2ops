@@ -24,9 +24,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const Helper = "nix:github:colony-2/c2ops/published#gha-workflow"
-const Executor = "nix:github:colony-2/c2ops/published#gha-job"
-
 type Profile struct {
 	Labels         []string       `json:"labels"`
 	ExecutionNeeds map[string]any `json:"execution_needs"`
@@ -90,11 +87,9 @@ func Run(ctx context.Context, in Input) (any, error) {
 
 func Submit(ctx context.Context, in Input) (Submission, error) {
 	var zero Submission
-	if in.HelperOp == "" {
-		in.HelperOp = Helper
-	}
-	if in.ExecutorOp == "" {
-		in.ExecutorOp = Executor
+	in, err := resolveWorkers(in, releaseRepository, releaseRevision)
+	if err != nil {
+		return zero, err
 	}
 	source, err := readWorkflow(in.WorktreePath, in.Workflow)
 	if err != nil {

@@ -134,7 +134,13 @@ def execute(name, checks, race):
         # rather than only the test driver that submits their jobs.
         if race:
             checks.env['C2OPS_TEST_GHA_RACE'] = '1'
-        checks.go('gha/integration', ['-race', './...'] if race else None)
+        # Keep the existing runtime suite and the matching/replay matrix in
+        # separate test processes. Both retain the same timeout and race mode;
+        # together they cover every test without making one process time out.
+        selection = '^TestMatchingWorkersPersistAcrossNativeRuntimeRestart$'
+        flags = ['-race'] if race else []
+        checks.go('gha/integration', [*flags, '-skip', selection, './...'])
+        checks.go('gha/integration', [*flags, '-run', selection, './...'])
     elif name == 'codex':
         checks.run(['python3', '../scripts/with-codex.py', '--', 'go', 'test', '-mod=readonly',
                     '-count=1', '-timeout=8m', './...'], 'codex')

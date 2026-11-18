@@ -25,6 +25,17 @@ loopback HTTP barrier, failed/skipped jobs and `always()` reporting, named
 secrets/config, and diagnostics hydrated from JobDB after worker deletion.
 Each fixture has a Docker CLI sentinel and an unusable Docker socket.
 
+`selection_test.go` uses two additional submitting binaries with controlled release
+metadata. A recording broker transport captures original recipes before mapping
+only operation nodes to local manifests. Encoded payloads retain the original
+selectors, and expansion uses an unversioned helper. Cases cover automatic and
+explicit selectors through both entrypoints, source-manifest binding fixtures,
+dynamic matrices, source bootstrap, repeated submission, worker deletion and
+reopen. Automatic pending work survives movement of mutable fixture package
+aliases; completed replay adds no tasks, children, broker submissions or secret
+reads. These fixtures establish selection and persistence, without claiming
+ordinary published-package preparation or cross-platform availability.
+
 `dependencies_test.go` starts A, B, and a wrapper for C. C waits only for A,
 survives a SQLite reopen, and finishes before B has executed. This demonstrates
 incremental dependency scheduling with existing native child starts/waits;
@@ -38,11 +49,17 @@ without deleting the database or source repository. Secret resolutions are
 counted outside SQLite to prove completed replay makes no further reads.
 
 `go test -race ./...` in this module checks the harness/worker processes. It does
-not instrument the normally compiled helper. Use `C2OPS_TEST_GHA_RACE=1 go test -race -count=1 ./...` to instrument all three
-compiled helpers too. The [immutable private act dependency](../../nix/act-source.json)
+not instrument the normally compiled helper. Use `C2OPS_TEST_GHA_RACE=1 go test -race -count=1 ./...` to instrument all five
+compiled executables too, including the versioned submitting variants. The [immutable private act dependency](../../nix/act-source.json)
 is shared by direct and embedded probes. Building these helpers requires Go
 1.26.10 or newer and an authorized private Git route; Nix source builds also
 require the [prefetch step](../../NIX_PACKAGES.md#private-gha-build-input).
+
+The native verification hook partitions the existing runtime tests and the
+matching-worker matrix into complementary `-skip` and `-run` processes. Both use
+`-race` and the existing eight-minute process timeout. Either failure fails the
+runtime receipt; no test is omitted. This keeps the expanded suite within its
+process budget without weakening instrumentation.
 
 The separate module keeps c2j/JobDB test dependencies out of the GHA executable's
 Nix closure. Tests added here should use public op coordinates and replace only

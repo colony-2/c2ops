@@ -18,6 +18,9 @@ delivered operations; they do not duplicate these suites. The candidate hook
 checks this branch before merge and reports failure to the build caller.
 The `gha` and `gha_runtime` commands in `verify.yaml` explicitly pass `--race`.
 Both GHA suites then run with `-race` using the candidate's pinned GHA compiler.
+The runtime task runs the existing tests and the matching-worker matrix in two
+processes with complementary `-skip` and `-run` filters. Every test still runs;
+each process retains the eight-minute limit, and either failure fails the task.
 Omitting `--race` produces a failed task receipt and failed aggregate before
 any compiler or suite runs, so the pre-merge hook cannot silently lose races.
 The runtime task also sets `C2OPS_TEST_GHA_RACE=1` so all three separately

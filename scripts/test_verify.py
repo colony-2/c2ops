@@ -82,12 +82,36 @@ class VerificationTests(unittest.TestCase):
                     suites = [c for c in report['commands'] if c['argv'][:2] == ['go', 'test']]
                     if available:
                         self.assertEqual(report['tools']['go'], str(pinned_go))
-                        self.assertEqual(len(suites), 1)
-                        self.assertIn('-race', suites[0]['argv'])
-                        self.assertEqual(suites[0]['returncode'], 9, 'suite failure must remain a failure')
+                        self.assertEqual(len(suites), 2 if task == 'gha-runtime' else 1)
+                        for suite in suites:
+                            self.assertIn('-race', suite['argv'])
+                            self.assertEqual(suite['returncode'], 9, 'suite failure must remain a failure')
+                        if task == 'gha-runtime':
+                            self.assertIn('-skip', suites[0]['argv'])
+                            self.assertIn('-run', suites[1]['argv'])
+                            self.assertEqual(suites[0]['argv'][suites[0]['argv'].index('-skip') + 1],
+                                             suites[1]['argv'][suites[1]['argv'].index('-run') + 1])
                     else:
                         self.assertEqual(suites, [], 'missing pinned compiler must block the suite')
                         self.assertIn('pinned GHA compiler', report['error'])
+
+    def test_each_gha_runtime_partition_failure_remains_visible(self):
+        for failed_flag in ('-skip', '-run'):
+            with self.subTest(failed_flag=failed_flag), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                (root / 'gha/integration').mkdir(parents=True)
+                go = root / 'go'
+                go.write_text('#!' + sys.executable + '\nimport sys\n'
+                              + 'raise SystemExit(9 if ' + repr(failed_flag) + ' in sys.argv else 0)\n')
+                go.chmod(0o755)
+                with (root / 'runtime.log').open('wb') as log, patch.dict(os.environ, {'PATH':str(root)+os.pathsep+os.environ['PATH']}):
+                    checks = verify.Checks(root, dict(os.environ), log)
+                    verify.execute('gha-runtime', checks, race=True)
+                self.assertEqual(len(checks.commands), 2)
+                self.assertEqual(sorted(c['returncode'] for c in checks.commands), [0, 9])
+                self.assertFalse(all(c['returncode'] == 0 for c in checks.commands))
+                self.assertEqual(checks.env['C2OPS_TEST_GHA_RACE'], '1')
+                self.assertTrue(all('-race' in c['argv'] and '-timeout=8m' in c['argv'] for c in checks.commands))
 
     def test_command_failures_timeout_and_independent_continuation(self):
         with tempfile.TemporaryDirectory() as directory:

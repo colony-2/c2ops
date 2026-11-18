@@ -97,6 +97,16 @@ the Nix store. Seeing a shell launcher does not mean the op compiles on startup.
 The package build rejects a runtime dependency on Go, and package checks verify
 the compiled payload and its architecture for every Go op.
 
+Clean flake Git evaluations embed the full `self.rev` and canonical repository
+`github:colony-2/c2ops` in the `gha` and `gha-workflow` submitting executables.
+Their omitted worker selectors then name `gha-workflow` and `gha-job` at that
+revision. Dirty Git, `path:` evaluations and direct package imports without a
+revision omit this identity and require explicit workers. Only these two
+submitting binary derivations receive release linker metadata; `gha-job` and
+unrelated operations retain their existing build flags. Metadata declares the
+canonical resolution target, without checking whether a fork commit exists there.
+Native package contract checks execute both wrappers against a recording broker.
+
 GHA source builds and its integration harness require Go 1.26.10 or newer.
 `nix/gha-go.nix` pins Go 1.26.10's source archive and checksum for `gha`,
 `gha-job` and `gha-workflow`; other operations retain the compiler from the
@@ -326,6 +336,9 @@ Manage the retention horizon in the Cachix dashboard: keep the current
 `published` revision, any commit-pinned recipes still in use, and previous
 revisions needed by queued or already-resolved jobs. Removing their pins makes
 those outputs eligible for cache garbage collection and may break later installs.
+Retain all three matching `gha`, `gha-workflow` and `gha-job` outputs for every
+supported native platform while an immutable GHA release remains in use. Keeping
+only the top-level package cannot supply workers prepared later by pending jobs.
 Monitor cache capacity and retire unused release pins explicitly.
 
 ### Manual publication

@@ -52,8 +52,25 @@ unpublished commits are transferred using c2j's native Git bundle artifacts.
 modify the source and let c2j persist it before submission. Uncommitted changes
 inside the invoking worktree are rejected. Snapshot bundles larger than 64 MiB
 must be published first, to fit the invocation broker's request limit.
-Helper/executor selectors default to the published packages. `helper_op` and
-`executor_op` support explicit development overrides.
+Omitted or exactly empty `helper_op` and `executor_op` select `gha-workflow` and
+`gha-job` at the submitting package's clean release revision. Each nonempty
+explicit override wins independently and is preserved verbatim, including
+mutable or mixed-release choices. Source bootstrap, expansion, shard execution
+and collection use the pair recorded at submission; an explicit helper from
+another compatible release consumes that pair without recomputing it.
+
+Raw Go, dirty Git and `path:` builds require both selectors explicitly. When
+release metadata is unavailable, a missing selector fails before any child is
+submitted. Local/Git manifests invoke a packaged binary, whose identity supplies
+the defaults independently of the workflow checkout. A clean local Git build
+names the canonical repository; fork-only revisions must exist there for normal
+package preparation to succeed. There is no mutable fallback.
+
+Child submission is the persistence boundary. Pending work retains its recorded
+selectors; completed c2j replay does not resubmit children or execute workers.
+Parent completion and child submission remain non-atomic, with deterministic
+child IDs retaining existing duplicate-submission behavior. An unfinished parent
+selected through a mutable ref can still resolve anew.
 
 Standard upload/download v4 actions use a private per-job artifact endpoint.
 Completed uploads become `c2ops.gha.artifacts/v1` objects in JobDB. Downstream jobs
