@@ -16,6 +16,7 @@ import tempfile
 import threading
 import time
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 spec = importlib.util.spec_from_file_location('operation', Path(__file__).with_name('main.py'))
@@ -25,6 +26,10 @@ SCHEMA = {'type':'object','additionalProperties':False,'properties':{'answer':{'
 KEYS = ['synthetic-private-alpha-34891','synthetic-private-beta-92713']
 LAUNCHER = None
 MODULE = Path(__file__).with_name('main.py')
+# Process isolation checks allow for slower CI clients. The dedicated deadline
+# tests below retain their short invocation budgets and timing assertions.
+SUBPROCESS_INVOCATION_TIMEOUT = 10
+SUBPROCESS_TIMEOUT = 30
 
 class Fixture(BaseHTTPRequestHandler):
     records = []
@@ -214,24 +219,36 @@ class Tests(unittest.TestCase):
         environment=dict(os.environ,PATH='',OPENAI_API_KEY='hostile-ambient',OPENAI_BASE_URL='http://127.0.0.1:1',OPENAI_ORG_ID='hostile-org',OPENAI_PROJECT_ID='hostile-project',OPENAI_CUSTOM_HEADERS='Host: hostile.invalid\nX-Ambient: inherited\nAuthorization: Bearer hostile',HTTPS_PROXY='http://127.0.0.1:1',HTTP_PROXY='http://127.0.0.1:1',OPENAI_LOG='debug',OTEL_EXPORTER_OTLP_ENDPOINT=f'http://127.0.0.1:{self.server.server_port}/telemetry',PYTHONDONTWRITEBYTECODE='1')
         for mode in ('success','auth','provider','malformed','echo','delay','retry'):
             Fixture.mode=mode;Fixture.records=[]
-            p=self.payload();p['invocation_timeout']=.15 if mode in ('delay','retry') else 3
+            p=self.payload();p['invocation_timeout']=.15 if mode in ('delay','retry') else SUBPROCESS_INVOCATION_TIMEOUT
             with tempfile.TemporaryDirectory() as directory:
-                result=subprocess.run(command,input=json.dumps(p),text=True,capture_output=True,timeout=12,cwd=directory,env=environment)
+                result=subprocess.run(command,input=json.dumps(p),text=True,capture_output=True,timeout=SUBPROCESS_TIMEOUT,cwd=directory,env=environment)
                 self.assert_safe(result.stdout+result.stderr)
                 files=list(Path(directory).rglob('*'))
                 self.assertEqual(files,[])
                 if mode=='success':
-                    self.assertEqual(result.returncode,0);self.assertEqual(json.loads(json.loads(result.stdout)['output']['response']),{'answer':{'text':'ok'}})
-                else:self.assertEqual(result.returncode,1)
+                    self.assertEqual(result.returncode,0,f'{mode}: stderr={result.stderr!r}');self.assertEqual(json.loads(json.loads(result.stdout)['output']['response']),{'answer':{'text':'ok'}})
+                else:self.assertEqual(result.returncode,1,f'{mode}: stderr={result.stderr!r}')
                 self.assertTrue(all(r[0]=='/one/chat/completions' and r[3]['Host']==f'127.0.0.1:{self.server.server_port}' and r[3]['X-Ambient'] is None for r in Fixture.records))
                 print(f'scan case={mode} stdout/stderr=clean created_files={len(files)} telemetry_requests=0',file=sys.stderr)
         Fixture.mode='success';Fixture.records=[]
         with tempfile.TemporaryDirectory() as directory:
-            processes=[subprocess.Popen(command,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,env=environment,cwd=directory) for _ in range(2)]
-            for index,process in enumerate(processes):
-                process.stdin.write(json.dumps(self.payload(str(index),KEYS[index])));process.stdin.close();process.stdin=None
-            for process in processes:
-                stdout,stderr=process.communicate(timeout=12);self.assertEqual(process.returncode,0);self.assert_safe(stdout+stderr)
+            def invoke(index):
+                payload = self.payload(str(index), KEYS[index])
+                payload['invocation_timeout'] = SUBPROCESS_INVOCATION_TIMEOUT
+                return subprocess.run(command, input=json.dumps(payload), text=True,
+                                      capture_output=True, timeout=SUBPROCESS_TIMEOUT,
+                                      env=environment, cwd=directory)
+            # run() drains and closes each child's pipes, including on timeout.
+            # Collect both results before assertions so a failed child cannot
+            # leave its sibling running or its captured streams unclosed.
+            with ThreadPoolExecutor(max_workers=2) as workers:
+                results = list(workers.map(invoke, range(2)))
+            for index, result in enumerate(results):
+                self.assert_safe(result.stdout + result.stderr)
+                self.assertEqual(result.returncode, 0,
+                                 f'concurrent child {index}: stderr={result.stderr!r}')
+                self.assertEqual(json.loads(json.loads(result.stdout)['output']['response']),
+                                 {'answer': {'text': 'ok'}})
             self.assertEqual(list(Path(directory).rglob('*')),[])
         self.assertTrue({(r[0],r[1]) for r in Fixture.records}=={('/0/chat/completions','Bearer '+KEYS[0]),('/1/chat/completions','Bearer '+KEYS[1])})
     def test_M01(self):
