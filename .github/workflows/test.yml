@@ -114,7 +114,7 @@ jobs:
         env:
           C2OPS_GIT_TOKEN: ${{ secrets.READ_ALL_C2_REPOS }}
           UV_NO_MANAGED_PYTHON: "1"
-          C2OPS_TEST_FLAKE: path:${{ github.workspace }}
+          C2OPS_TEST_FLAKE: git+file://${{ github.workspace }}?rev=${{ github.sha }}
           C2OPS_TEST_NIX_PUBLICATION: "1"
           C2OPS_TEST_GHA_ACTIONS: "1"
         run: make test OP_DIRS="$(make ops | sed '/^gha$/d')"
@@ -123,14 +123,14 @@ jobs:
         env:
           C2OPS_GIT_TOKEN: ${{ secrets.READ_ALL_C2_REPOS }}
           GOTOOLCHAIN: go1.26.10
-          C2OPS_TEST_FLAKE: path:${{ github.workspace }}
+          C2OPS_TEST_FLAKE: git+file://${{ github.workspace }}?rev=${{ github.sha }}
           C2OPS_TEST_GHA_ACTIONS: "1"
         run: make -C gha test
 
       - name: Check native Codex in the minimal worker image
         if: runner.os == 'Linux'
         env:
-          C2OPS_TEST_FLAKE: path:${{ github.workspace }}
+          C2OPS_TEST_FLAKE: git+file://${{ github.workspace }}?rev=${{ github.sha }}
         run: python3 scripts/check-codex-worker.py
 
       - uses: actions/upload-artifact@v4

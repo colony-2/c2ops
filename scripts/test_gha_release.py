@@ -60,10 +60,16 @@ for name in ('gha', 'gha/workflow'):
             first_rev = commit()
             system = run(*NIX, 'eval', '--impure', '--raw', '--expr', 'builtins.currentSystem')
             def packages(url, direct=False):
-                expr = f'''let f = builtins.getFlake {json.dumps(url)};
-                  p = {'import (f.outPath + "/nix/packages.nix") { pkgs = f.inputs.nixpkgs.legacyPackages.' + system + '; }' if direct else 'f.packages.' + system};
-                  in builtins.mapAttrs (_: v: v.drvPath) {{ inherit (p) gha gha-workflow gha-job rule_gate; }}'''
-                paths = json.loads(run(*NIX, 'eval', '--impure', '--json', '--expr', expr))
+                if direct:
+                    expr = f'''let f = builtins.getFlake {json.dumps(url)};
+                      p = import (f.outPath + "/nix/packages.nix") {{ pkgs = f.inputs.nixpkgs.legacyPackages.{system}; }};
+                      in builtins.mapAttrs (_: v: v.drvPath) {{ inherit (p) gha gha-workflow gha-job rule_gate; }}'''
+                    paths = json.loads(run(*NIX, 'eval', '--impure', '--json', '--expr', expr))
+                else:
+                    paths = json.loads(run(*NIX, 'eval', '--json',
+                                           url + '#packages.' + system, '--apply',
+                                           'ps: builtins.mapAttrs (_: v: v.drvPath) '
+                                           '{ inherit (ps) gha gha-workflow gha-job rule_gate; }'))
                 result = {}
                 for name, path in paths.items():
                     top = derivation(path)
@@ -75,7 +81,23 @@ for name in ('gha', 'gha/workflow'):
             url = 'git+file://' + str(root)
             first = packages(url)
             second_rev = commit()
-            second = packages(url)
+            # The build/check steps resolve an ordinary checkout path as Git.
+            second = packages(str(root))
+            selectors = json.loads(run('uv', 'run', '--with', 'pyyaml==6.0.3',
+                                       'python', '-c', '''
+import json, sys, yaml
+workflow = yaml.safe_load(open(sys.argv[1]))
+print(json.dumps({step['name']: step['env']['C2OPS_TEST_FLAKE']
+                  for step in workflow['jobs']['test']['steps']
+                  if 'C2OPS_TEST_FLAKE' in step.get('env', {})}))
+''', str(ROOT / '.github/workflows/test.yml')))
+            self.assertTrue(selectors, 'CI must test the checkout packages')
+            for step, selector in selectors.items():
+                selected = selector.replace('${{ github.workspace }}', str(root))
+                selected = selected.replace('${{ github.sha }}', second_rev)
+                with self.subTest(step=step):
+                    self.assertEqual(second, packages(selected),
+                                     'CI tests must reuse the exact prebuilt derivations')
             for name in ('gha', 'gha-workflow'):
                 self.assertIn('releaseRepository=github:colony-2/c2ops', first[name][2])
                 self.assertIn('releaseRevision=' + first_rev, first[name][2])

@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -57,3 +58,18 @@ class MakefileTests(unittest.TestCase):
     def test_empty_selection(self):
         self.run_command('make', '-o', 'test-tools', 'test', 'OP_DIRS=')
         self.assertFalse((self.root / 'calls').exists())
+
+    def test_local_build_and_tests_select_same_flake(self):
+        bin_dir = self.root / 'bin'
+        bin_dir.mkdir()
+        nix = bin_dir / 'nix'
+        nix.write_text('#!/bin/sh\nprintf "%s\\n" "${4:-.}" >> references\n')
+        nix.chmod(0o755)
+        with (self.root / 'Makefile').open('a') as makefile:
+            makefile.write('\ntest-tools:\n\t@true\n'
+                           '\ntest:\n\t@echo "$$C2OPS_TEST_FLAKE" >> references\n')
+        with patch.dict(os.environ, {'PATH': str(bin_dir) + os.pathsep + os.environ['PATH']}):
+            self.run_command('make', '-o', 'test-tools', 'test-local')
+        references = (self.root / 'references').read_text().splitlines()
+        self.assertEqual(len(references), 2)
+        self.assertEqual(references[0], references[1])

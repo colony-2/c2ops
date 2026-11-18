@@ -24,7 +24,7 @@ check-manifests:
 	uv run scripts/manifests.py --check
 
 nix-check:
-	nix flake check -L
+	nix flake check -L "git+file://$(CURDIR)"
 
 test-tools:
 	python3 -m unittest discover -s scripts -p 'test_*.py'
@@ -32,4 +32,4 @@ test-tools:
 test: test-tools
 
 test-local: nix-check
-	C2OPS_TEST_FLAKE="path:$(CURDIR)" $(MAKE) test
+	C2OPS_TEST_FLAKE="git+file://$(CURDIR)" $(MAKE) test

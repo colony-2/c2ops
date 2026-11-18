@@ -399,7 +399,7 @@ skill-run packages in the minimal worker container, using the native CLI in thei
 with first and repeated invocations and compiler and package-manager commands disabled. It checks `version.ready`, then
 deliberately rejects an invalid checkpoint before any provider request. CI runs
 this regression on both architectures. It requires Docker, Nix, and prebuilt
-packages; set `C2OPS_TEST_FLAKE=path:$PWD` to test a local checkout.
+packages; set `C2OPS_TEST_FLAKE=git+file://$PWD` to test a local checkout.
 
 `make test-tools` includes promotion tests against disposable Git repositories.
 CI also sets `C2OPS_TEST_NIX_PUBLICATION=1` to exercise real signed cache imports,
@@ -433,7 +433,7 @@ regenerate the manifests. Check that
 the source manifests' Python attributes still match `pkgs.python3`. Local/Git
 Go manifests run published prebuilt packages, not the checked-out Go files. To
 test local Go edits, build the local flake and select
-`nix:path:/absolute/path/to/c2ops#<op>`. Python source manifests can still perform
+`nix:git+file:///absolute/path/to/c2ops#<op>`. Python source manifests can still perform
 uv script library setup at invocation time. Aider's source wrapper uses its declared Nix CLI through
 `nix run <reference> -- ...`; packaged execution binds that CLI directly.
 
@@ -451,12 +451,19 @@ To build and test the checkout:
 nix develop -c make test-local
 ```
 
-This runs `nix flake check`, then sets `C2OPS_TEST_FLAKE=path:<checkout>` for
+This runs `nix flake check` on `git+file://<checkout>`, then uses the same reference for
 `make test`. To select an already built checkout explicitly:
 
 ```sh
-C2OPS_TEST_FLAKE=path:/absolute/path/to/c2ops make test
+C2OPS_TEST_FLAKE=git+file:///absolute/path/to/c2ops make test
 ```
+
+Builds and tests must use the same flake reference. Clean Git evaluations embed
+the release revision in `gha` and `gha-workflow`; `path:` evaluations omit it and
+produce different packages. CI pins its test reference to the checked-out commit
+with `git+file://<checkout>?rev=<commit>`. Tests prepare prebuilt outputs with
+builds disabled, so switching to `path:` after a Git build cannot reuse those
+two packages.
 
 With the override unset, `make test` resolves public `published` packages and requires
 the configured Cachix cache. There is no fallback to `go run`, source manifests,
