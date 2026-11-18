@@ -1,8 +1,11 @@
 """Check clean/dirty/path release metadata by evaluating actual derivations."""
+import contextlib
+import io
 import json
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -11,7 +14,12 @@ NIX = ['nix', '--extra-experimental-features', 'nix-command flakes']
 
 
 def run(*args, cwd=None):
-    return subprocess.check_output(args, cwd=cwd, text=True, stderr=subprocess.PIPE).strip()
+    try:
+        return subprocess.check_output(args, cwd=cwd, text=True, stderr=subprocess.PIPE).strip()
+    except subprocess.CalledProcessError as error:
+        if error.stderr:
+            print(error.stderr, file=sys.stderr, end="")
+        raise
 
 
 def derivation(path):
@@ -20,6 +28,13 @@ def derivation(path):
 
 
 class GHAReleaseTests(unittest.TestCase):
+    def test_command_failure_reports_stderr(self):
+        with contextlib.redirect_stderr(io.StringIO()) as stderr:
+            with self.assertRaises(subprocess.CalledProcessError) as failure:
+                run(sys.executable, '-c', 'import sys; sys.stderr.write("fixture error\\n"); sys.exit(7)')
+        self.assertEqual(failure.exception.returncode, 7)
+        self.assertEqual(stderr.getvalue(), 'fixture error\n')
+
     def test_optional_string_schemas_have_no_mutable_defaults(self):
         # Regeneration compares source schemas with the generated schemas whose
         # exact string types reject JSON null; no presence distinction is added.
@@ -47,7 +62,14 @@ for name in ('gha', 'gha/workflow'):
 
     def test_release_metadata_in_real_nix_derivations(self):
         with tempfile.TemporaryDirectory(prefix='gha-release-eval-') as directory:
-            root = Path(directory) / 'source'
+            # Exercise the symlinked temporary-directory layout used on macOS
+            # (/var -> /private/var) on every platform. Git flake references must
+            # use the physical checkout path, including for dirty evaluations.
+            physical = Path(directory) / 'physical'
+            physical.mkdir()
+            linked = Path(directory) / 'linked'
+            linked.symlink_to(physical.resolve(), target_is_directory=True)
+            root = (linked / 'source').resolve()
             # Dependency caches can contain dangling links into the original
             # .git directory and are not inputs to the release derivations.
             shutil.copytree(ROOT, root, ignore=shutil.ignore_patterns(
@@ -81,7 +103,7 @@ for name in ('gha', 'gha/workflow'):
                     binary_path = binary if binary.startswith('/') else '/nix/store/' + binary
                     result[name] = (path, binary_path, derivation(binary_path)['env']['ldflags'])
                 return result
-            url = 'git+file://' + str(root)
+            url = 'git+' + root.as_uri()
             first = packages(url)
             second_rev = commit()
             # The build/check steps resolve an ordinary checkout path as Git.
