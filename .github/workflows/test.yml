@@ -29,6 +29,9 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
+        with:
+          # Revision-pinned local Nix flakes require a non-shallow repository.
+          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v6

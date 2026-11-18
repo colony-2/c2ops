@@ -182,6 +182,11 @@ class VerificationTests(unittest.TestCase):
             external = Path(directory) / 'external.txt'
             external.write_text('external candidate input')
             (root / 'linked-input').symlink_to(external)
+            # Generated caches may retain links into a removed Git checkout.
+            # They must not prevent verification from reaching the source tests.
+            for cache in ('.pnpm-store', 'node_modules'):
+                (root / cache).mkdir()
+                (root / cache / 'stale').symlink_to(root / '.git/missing')
             out = Path(directory) / 'out; false'
             before = {str(p): p.read_bytes() for p in root.rglob('*') if p.is_file()}
             with contextlib.redirect_stdout(io.StringIO()) as stdout, patch.object(verify, 'supported_platform', return_value=True):

@@ -48,7 +48,10 @@ for name in ('gha', 'gha/workflow'):
     def test_release_metadata_in_real_nix_derivations(self):
         with tempfile.TemporaryDirectory(prefix='gha-release-eval-') as directory:
             root = Path(directory) / 'source'
-            shutil.copytree(ROOT, root, ignore=shutil.ignore_patterns('.git', '__pycache__', '.pytest_cache'))
+            # Dependency caches can contain dangling links into the original
+            # .git directory and are not inputs to the release derivations.
+            shutil.copytree(ROOT, root, ignore=shutil.ignore_patterns(
+                '.git', '__pycache__', '.pytest_cache', '.pnpm-store', 'node_modules'))
             def git(*args):
                 return run('git', '-C', str(root), *args)
             git('init', '-b', 'main')

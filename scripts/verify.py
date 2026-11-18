@@ -206,7 +206,10 @@ def check(name, root, outbox, *, race=False):
             with tempfile.TemporaryDirectory(prefix='c2ops-verify-') as tmp:
                 temp = Path(tmp)
                 copy = temp / 'candidate'
-                shutil.copytree(root, copy, symlinks=False, ignore=shutil.ignore_patterns('.git'))
+                # Copy source symlink contents to isolate the candidate, but do
+                # not traverse generated dependency caches or their stale links.
+                shutil.copytree(root, copy, symlinks=False, ignore=shutil.ignore_patterns(
+                    '.git', '__pycache__', '.pytest_cache', '.pnpm-store', 'node_modules'))
                 env = dict(os.environ)
                 # Preserve supplied credential configuration; never edit global Git or go env.
                 for key in ('C2OPS_TEST_GHA_ACTIONS', 'C2OPS_TEST_NIX_PUBLICATION', 'C2OPS_CODEX_COMPAT_RESUME_BIN'):
