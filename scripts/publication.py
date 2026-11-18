@@ -80,8 +80,14 @@ def verify(data, store, cache):
 
 
 def pin(data, store, cache):
-    # Cachix opens this already verified local store through libnix.
-    env = {**os.environ, "NIX_REMOTE": str(Path(store).resolve())}
+    # Cachix pin submits a store path to its API without validating the local
+    # store. Check every closure in the selected store before sending any pins.
+    store = str(Path(store).resolve())
+    env = {**os.environ, "NIX_REMOTE": store}
+    paths = [p["store_path"] for p in data["packages"].values()]
+    run("nix", "--extra-experimental-features", "nix-command flakes", "--store", store,
+        "store", "verify", "--recursive", "--option", "substitute", "false",
+        "--max-jobs", "0", "--builders", "", "--", *paths, env=env)
     for name in sorted(json.loads((ROOT / "nix/ops.json").read_text())):
         # Immutable release pins preserve earlier published revisions too.
         # CLI helpers are already dependencies of these op closures.

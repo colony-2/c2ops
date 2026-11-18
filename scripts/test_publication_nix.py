@@ -110,6 +110,11 @@ class NixPublicationTests(unittest.TestCase):
         self.addCleanup(server.shutdown)
         store = self.directory / "pin-store"
         self.verify_from(self.cache, store)
+        # Valid store metadata is insufficient if a dependency's contents
+        # disappeared after download verification.
+        missing = self.directory / "missing-pin-dependency"
+        self.verify_from(self.cache, missing)
+        (missing / self.dependency.lstrip("/")).unlink()
         catalog = self.directory / "catalog"
         (catalog / "nix").mkdir(parents=True)
         (catalog / "nix/ops.json").write_text('{"fixture": {}}')
@@ -118,15 +123,25 @@ class NixPublicationTests(unittest.TestCase):
         original = publication.run
 
         def local_api(*args, **kwargs):
+            if args[0] == "nix":
+                return original(args[0], "--option", "trusted-public-keys", self.public_key,
+                                "--option", "extra-trusted-public-keys", "",
+                                "--option", "substituters", self.cache.as_uri(),
+                                *args[1:], capture_output=True, **kwargs)
             kwargs["env"]["CACHIX_AUTH_TOKEN"] = "local-test-token"
             return original(args[0], "--host", f"http://127.0.0.1:{server.server_port}",
                             *args[1:], capture_output=True, **kwargs)
 
         with patch("publication.ROOT", catalog), patch("publication.run", side_effect=local_api):
             # The root exists in the builder's store; an empty selected store
-            # must still fail, proving Cachix actually honors NIX_REMOTE.
+            # must still fail before any pin request reaches Cachix's API,
+            # even with the complete signed cache available for substitution.
             with self.assertRaises(subprocess.CalledProcessError):
                 publication.pin(data, self.directory / "wrong-pin-store", "colony2")
+            self.assertEqual(requests, [])
+            with self.assertRaises(subprocess.CalledProcessError):
+                publication.pin(data, missing, "colony2")
+            self.assertEqual(requests, [])
             publication.pin(data, store, "colony2")
         self.assertEqual(len(requests), 1)
         self.assertEqual(requests[0]["storePath"], self.root)

@@ -58,8 +58,16 @@ class PublicationTests(unittest.TestCase):
                 verify(self.data, Path(directory) / "store", "colony2")
             self.assertEqual(run.call_count, 1)
 
-    def test_failed_pin_stops_the_job(self):
-        with patch("publication.run", side_effect=RuntimeError("pin denied")) as run:
-            with self.assertRaisesRegex(RuntimeError, "pin denied"):
+    def test_failed_store_check_stops_before_pinning(self):
+        with patch("publication.run", side_effect=RuntimeError("invalid store")) as run:
+            with self.assertRaisesRegex(RuntimeError, "invalid store"):
                 pin(self.data, "/tmp/verified-store", "colony2")
             self.assertEqual(run.call_count, 1)
+            self.assertEqual(run.call_args.args[0], "nix")
+
+    def test_failed_pin_stops_the_job(self):
+        with patch("publication.run", side_effect=[None, RuntimeError("pin denied")]) as run:
+            with self.assertRaisesRegex(RuntimeError, "pin denied"):
+                pin(self.data, "/tmp/verified-store", "colony2")
+            self.assertEqual(run.call_count, 2)
+            self.assertEqual(run.call_args.args[0], "cachix")
