@@ -105,6 +105,13 @@ let
           export HOME="$TMPDIR/c2ops-build-home"
           mkdir -p "$HOME"
         '';
+      } // lib.optionalAttrs (module == "go_build") {
+        # Keep telemetry/config writes inside this build, including goModules.
+        # Never create /homeless-shelter on an unsandboxed local builder.
+        preBuild = ''
+          export XDG_CONFIG_HOME="$TMPDIR/c2ops-go-config"
+          mkdir -p "$XDG_CONFIG_HOME"
+        '';
       });
       python = pythonEnvs.${name};
     in pkgs.stdenvNoCC.mkDerivation {

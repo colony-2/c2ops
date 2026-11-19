@@ -45,6 +45,7 @@ in {
         for key in ("input_schema", "output_schema"):
             jsonschema.Draft202012Validator.check_schema(manifest[key])
     PY
+    python go_build/check_examples.py
     touch "$out"
   '';
 } // lib.mapAttrs (name: package:

@@ -18,12 +18,14 @@ delivered operations; they do not duplicate these suites. The candidate hook
 checks this branch before merge and reports failure to the build caller.
 The `gha` and `gha_runtime` commands in `verify.yaml` explicitly pass `--race`.
 Both GHA suites then run with `-race` using the candidate's pinned GHA compiler.
-The runtime task runs general/admission contracts, child execution,
-diagnostics/instances, submitted workflows and the matching-worker matrix in
-five processes with complementary `-skip` and `-run` filters. The former general
-group completed 427.55 seconds of tests before reaching profile admission and
-then exceeded its shared budget. Every test still runs exactly once;
-each process retains the eight-minute limit, and any failure fails the task.
+The runtime task separates artifact/history workflows, other submitted workflows,
+the matching-worker matrix, Act, instances, and diagnostic/identity fixtures into
+selected processes, with a complementary process covering all remaining and new
+tests. Seven complementary `-skip` and `-run` processes cover every test exactly
+once. Each retains the eight-minute limit; any failure fails the task. This avoids
+exhausting the cumulative deadline, which also includes TestMain helper builds.
+Verbose output retains per-test timings. Regression checks inject a failure into
+every partition and verify dispatch coverage and failure reporting.
 Omitting `--race` produces a failed task receipt and failed aggregate before
 any compiler or suite runs, so the pre-merge hook cannot silently lose races.
 The runtime task also sets `C2OPS_TEST_GHA_RACE=1` so all separately
@@ -50,6 +52,8 @@ Makefiles:
 | Nested gha/integration SQLite/runtime/host-process fixtures | `gha_runtime` |
 | Codex, skill.run, CLI compatibility, test-fixtures and manifest contracts | `codex` (with-codex wrapper, entire module) |
 | rule_gate Go unit/process contracts | `rule_gate` |
+| GitHub release Go unit/process contracts | `github_release` |
+| Go release unit, package and real SDK/source contracts | `go_build` |
 | aider / litellm / pydantic packaged process suites | `aider`, `litellm`, `pydantic` |
 | jev / kimi Python unit/process contracts | `jev`, `kimi` |
 | Native flake metadata without building | `nix_metadata` |
@@ -99,3 +103,12 @@ The Pydantic task invokes `make -C pydantic test`, the same entrypoint as CI.
 It runs mandatory Go packaged process tests and source Python binding tests;
 the installed-byte Python suite, launcher identity and closure checks remain separate.
 Both suites run even when one fails, and either failure fails task and aggregate evidence.
+
+The `go_build` task runs the [Go release builder checks](../../../../go_build/TESTING.md):
+unit tests, candidate Nix package/manifest validation and the real SDK/executable
+suite through that package. This task builds its own op locally; the op itself
+can only acquire prebuilt mapped SDK closures. Both Go 1.26.1 and 1.26.8 must be
+available through prepared paths or the worker caches. Private Git/proxy and
+other native hosts remain explicitly unverified when their fixtures are absent.
+The real suite runs verbosely so the exported log retains the assembly escape
+controls, their executable results and explicit skips for missing prerequisites.

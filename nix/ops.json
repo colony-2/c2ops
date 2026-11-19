@@ -104,5 +104,13 @@
     "path": "github_release",
     "kind": "go",
     "runtime": []
+  },
+  "go-build": {
+    "path": "go_build",
+    "kind": "go",
+    "runtime": [
+      "gitMinimal",
+      "nix"
+    ]
   }
 }

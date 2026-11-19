@@ -15,28 +15,29 @@ import time
 
 TASKS = ('manifests', 'tooling', 'llm', 'llm2', 'gha', 'gha-many',
          'gha-runtime', 'codex', 'rule-gate', 'github-release', 'aider', 'litellm', 'pydantic',
-         'jev', 'kimi', 'nix-metadata', 'nix-process')
+         'jev', 'kimi', 'go-build', 'nix-metadata', 'nix-process')
 NIX = ['nix', '--extra-experimental-features', 'nix-command flakes']
 HELD = {
     'platforms': 'Only native Linux arm64; x86_64-linux and aarch64-darwin matrix held.',
     'worker-image': 'scripts/check-codex-worker.py requires Docker daemon/image execution.',
     'public-actions': 'C2OPS_TEST_GHA_ACTIONS remains unset; real public Actions/service actions and remote CI held.',
     'publication': 'C2OPS_TEST_NIX_PUBLICATION remains unset; four real cache tests, Cachix record/verify/push/pin and promote-published held.',
-    'nix-build-checks': 'Pydantic package and native check build locally with one job/core. Other operation checks retain cached realization.',
+    'nix-build-checks': 'Pydantic and go-build packages build locally; other operation checks retain cached realization.',
     'release': 'Signing, publication and deployment require external infrastructure/credentials and are held even if available.',
 }
 _ACTIVE = None
-GHA_MATCHING = '^TestMatchingWorkersPersistAcrossNativeRuntimeRestart$'
-GHA_WORKFLOWS = '^Test(Submitted|GHABackend)'
-GHA_CHILDREN = '^TestAct'
-GHA_DIAGNOSTICS = '^Test(Instances|MatrixFailure|WorkflowInfrastructure|CancelledShard|SecretBindings|IdentityEmbeddedChild|EmbeddedIdentityThroughHostExecutor)'
+GHA_RUNTIME_GROUPS = (
+    '^Test(SubmittedWorkflow(Transfers.*|StandardArtifactActions)|SubmittedFullHistory.*)$',
+    '^Test(SubmittedWorkflow(Runs.*|Dynamic.*|Failure.*|Filters.*|Duplicate.*|PR.*)|GHABackendC2J)$',
+    '^TestMatchingWorkersPersistAcrossNativeRuntimeRestart$',
+    '^TestAct.*$',
+    '^TestInstances.*$',
+    '^Test(MatrixFailure.*|WorkflowInfrastructure.*|CancelledShard.*|SecretBindings.*|IdentityEmbeddedChild|EmbeddedIdentityThroughHostExecutor)$',
+)
 # The complement includes future tests; no test disappears between partitions.
 GHA_RUNTIME_PARTITIONS = (
-    ('-skip', '|'.join((GHA_MATCHING, GHA_WORKFLOWS, GHA_CHILDREN, GHA_DIAGNOSTICS))),
-    ('-run', GHA_CHILDREN),
-    ('-run', GHA_DIAGNOSTICS),
-    ('-run', GHA_WORKFLOWS),
-    ('-run', GHA_MATCHING),
+    ('-skip', '|'.join(GHA_RUNTIME_GROUPS)),
+    *(('-run', pattern) for pattern in GHA_RUNTIME_GROUPS),
 )
 
 
@@ -110,6 +111,7 @@ def execute(name, checks, race):
     if name == 'manifests':
         checks.run(['make', 'check-manifests'])
         checks.run(['uv', 'run', 'scripts/check-manifest-schemas.py'])
+        checks.run(['uv', 'run', 'go_build/check_examples.py'])
     elif name == 'tooling':
         checks.run(['make', 'test-tools'])
     elif name == 'gha':
@@ -143,6 +145,28 @@ def execute(name, checks, race):
                     '--module', data['path'] + '/libexec/main.py',
                     '--launcher', data['path'] + '/bin/pydantic'])
         checks.run([*NIX, 'path-info', '--json', '--recursive', data['path']])
+    elif name == 'go-build':
+        checks.go('go_build')
+        # Only this operation is built here. Release SDK acquisition inside the
+        # executable remains cache-only, with a rejecting pre-build hook.
+        selector = '.#go-build'
+        if not checks.run([*NIX, 'build', '--no-link', '--no-write-lock-file',
+                           '--max-jobs', '1', '--cores', '2', selector]):
+            return
+        data = checks.metadata(selector, 'p: { path = p.outPath; manifest = p.c2j; compiled = p.compiledExecutable; }')
+        if data is None:
+            return
+        manifest = checks.root.parent / 'go-build-manifest.json'
+        manifest.write_text(json.dumps(data['manifest']))
+        system = {'arm64': 'aarch64', 'aarch64': 'aarch64', 'x86_64': 'x86_64'}[platform.machine()] + '-linux'
+        checks.run(['python3', 'scripts/check-package.py', data['path'], str(manifest),
+                    'nix:github:colony-2/c2ops/published#go-build',
+                    '--compiled-executable', data['compiled'], '--system', system])
+        checks.env['C2OPS_TEST_GO_BUILD_REAL'] = '1'
+        checks.env['C2OPS_GO_BUILD_LAUNCHER'] = data['path'] + '/bin/go-build'
+        # Retain executable source-boundary controls and explicit skipped live
+        # prerequisites in the exported log, rather than only a suite summary.
+        checks.go('go_build', ['-v', '-run', '^TestReal', './...'])
     elif name == 'gha-runtime':
         # TestMain builds separate operation executables. Instrument those too,
         # rather than only the test driver that submits their jobs.

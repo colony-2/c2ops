@@ -1,0 +1,39 @@
+{
+  "intent": {
+    "schema_version": 1,
+    "release_id": "fixture-1",
+    "repository": "github.com/example/cli",
+    "source_commit": "a0cdb9f65b9769eef4631cb9b375de7d8320cb94",
+    "target_branch": "main",
+    "version": "1.2.3",
+    "tag": "v1.2.3",
+    "build_date": "2026-11-18T12:00:00Z",
+    "binary_name": "cli"
+  },
+  "worktree_path": "/workspace/cli",
+  "artifact_inbox_path": "/inbox",
+  "artifact_outbox_path": "/outbox",
+  "module_dir": ".",
+  "entrypoint": ".",
+  "targets": [
+    {
+      "goos": "darwin",
+      "goarch": "amd64"
+    },
+    {
+      "goos": "darwin",
+      "goarch": "arm64"
+    },
+    {
+      "goos": "linux",
+      "goarch": "amd64"
+    },
+    {
+      "goos": "linux",
+      "goarch": "arm64"
+    }
+  ],
+  "linker_values": {
+    "main.version": "release value; $(touch SHOULD_NOT_EXIST) \u0026 quote'"
+  }
+}

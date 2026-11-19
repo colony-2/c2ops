@@ -111,7 +111,7 @@ class VerificationTests(unittest.TestCase):
                                  [0] * (len(verify.GHA_RUNTIME_PARTITIONS) - 1) + [9])
                 self.assertFalse(all(c['returncode'] == 0 for c in checks.commands))
                 self.assertEqual(checks.env['C2OPS_TEST_GHA_RACE'], '1')
-                self.assertTrue(all('-race' in c['argv'] and '-timeout=8m' in c['argv'] for c in checks.commands))
+                self.assertTrue(all('-race' in c['argv'] and '-v' in c['argv'] and '-timeout=8m' in c['argv'] for c in checks.commands))
 
     def test_runtime_partitions_include_every_test_once(self):
         source = Path(verify.__file__).resolve().parents[1] / 'gha/integration'
@@ -123,6 +123,28 @@ class VerificationTests(unittest.TestCase):
             matches = [bool(re.search(pattern, name)) == (flag == '-run')
                        for flag, pattern in verify.GHA_RUNTIME_PARTITIONS]
             self.assertEqual(sum(matches), 1, (name, matches))
+
+    def test_gha_runtime_partitions_cover_every_test_once(self):
+        integration = Path(__file__).resolve().parent.parent / 'gha/integration'
+        names = [name for source in integration.glob('*_test.go')
+                 for name in re.findall(r'^func (Test\w+)\(t \*testing.T\)', source.read_text(), re.M)]
+        self.assertTrue(names)
+        checks = verify.Checks(integration, {}, io.BytesIO())
+        with patch.object(checks, 'go') as run:
+            verify.execute('gha-runtime', checks, race=True)
+        filters = []
+        for call in run.call_args_list:
+            directory, argv = call.args
+            self.assertEqual(directory, 'gha/integration')
+            flag = '-skip' if '-skip' in argv else '-run'
+            filters.append((flag, re.compile(argv[argv.index(flag) + 1])))
+        for name in [*names, 'TestFutureRuntimeFixture', 'TestSubmittedWorkflowFutureFixture']:
+            matches = sum((pattern.search(name) is not None) == (flag == '-run')
+                          for flag, pattern in filters)
+            self.assertEqual(matches, 1, name + ' must run exactly once')
+        for flag, pattern in filters:
+            self.assertTrue(any((pattern.search(name) is not None) == (flag == '-run')
+                                for name in names), 'partition must select real tests')
 
     def test_command_failures_timeout_and_independent_continuation(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -319,6 +341,45 @@ class VerificationTests(unittest.TestCase):
                 with contextlib.redirect_stdout(io.StringIO()) as aggregate_stdout:
                     verify.aggregate(out, out / 'aggregate', statuses)
                 self.assertEqual(aggregate_stdout.getvalue(), expected)
+
+    def test_go_build_suites_are_mandatory_and_aggregated(self):
+        source = Path(verify.__file__).resolve().parents[1]
+        hook = (source / '.c2/recipes/hooks/build/verify.yaml').read_text()
+        for binding in ('check go-build', 'VERIFY_STATUS_GO_BUILD', "sequence.go_build.artifacts['go-build.log']", "sequence.go_build.artifacts['go-build.json']"):
+            self.assertIn(binding, hook)
+        for failing in ('none', 'unit', 'real'):
+            with self.subTest(failing=failing), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory) / 'candidate'
+                (root / 'nix').mkdir(parents=True)
+                (root / 'go_build').mkdir()
+                (root / 'nix/pnpm-build-policy.json').write_text('{}')
+                out = Path(directory) / 'evidence'
+                out.mkdir()
+                self.fixtures(out)
+                original = verify.Checks.run
+                def run(checks, argv, directory='.', input_text=None):
+                    if argv[:2] == ['go', 'test']:
+                        suite = 'real' if '^TestReal' in argv else 'unit'
+                        self.assertEqual(directory, 'go_build')
+                        if suite == 'real':
+                            self.assertIn('-v', argv)
+                            self.assertEqual(checks.env['C2OPS_TEST_GO_BUILD_REAL'], '1')
+                            self.assertEqual(checks.env['C2OPS_GO_BUILD_LAUNCHER'], '/fixture/bin/go-build')
+                        return original(checks, [sys.executable, '-c', 'raise SystemExit(' + ('9' if failing == suite else '0') + ')'], directory)
+                    checks.commands.append({'argv': argv, 'returncode': 0})
+                    return True
+                def metadata(checks, selector, expression):
+                    self.assertEqual(selector, '.#go-build')
+                    return {'path': '/fixture', 'manifest': {}, 'compiled': '/fixture/compiled'}
+                with patch.object(verify, 'supported_platform', return_value=True), patch.object(verify.Checks, 'run', run), patch.object(verify.Checks, 'metadata', metadata), contextlib.redirect_stdout(io.StringIO()) as stdout:
+                    verify.check('go-build', root, out)
+                expected = 'passed' if failing == 'none' else 'failed'
+                self.assertEqual(stdout.getvalue(), expected)
+                statuses = {name: 'passed' for name in verify.TASKS}
+                statuses['go-build'] = expected
+                with contextlib.redirect_stdout(io.StringIO()) as result:
+                    verify.aggregate(out, out / 'aggregate', statuses)
+                self.assertEqual(result.getvalue(), expected)
 
     def test_cancellation_terminates_child_group(self):
         with tempfile.TemporaryDirectory() as directory:

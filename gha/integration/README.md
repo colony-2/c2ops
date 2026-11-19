@@ -55,11 +55,12 @@ is shared by direct and embedded probes. Building these helpers requires Go
 1.26.10 or newer and an authorized private Git route; Nix source builds also
 require the [prefetch step](../../NIX_PACKAGES.md#private-gha-build-input).
 
-The native verification hook partitions the existing runtime tests and the
-matching-worker matrix into complementary `-skip` and `-run` processes. Both use
-`-race` and the existing eight-minute process timeout. Either failure fails the
-runtime receipt; no test is omitted. This keeps the expanded suite within its
-process budget without weakening instrumentation.
+The native verification hook partitions artifact/history workflows, other
+submitted workflows, matching workers, Act, instances, diagnostics/identity and
+all remaining tests into seven complementary `-skip` and `-run` processes.
+All use `-race` and the existing eight-minute process timeout. Any failure fails
+the runtime receipt; every test runs exactly once, and the complement retains
+new tests. Each harness retains its own deadline.
 
 The separate module keeps c2j/JobDB test dependencies out of the GHA executable's
 Nix closure. Tests added here should use public op coordinates and replace only

@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "source_commit": "a0cdb9f65b9769eef4631cb9b375de7d8320cb94",
+  "source_tree": "626d6ea7a0979654f9a31087ddbb13f31e6c06ba",
+  "object_format": "sha1",
+  "policy": "git-tree-blobs-v1",
+  "entries": [
+    {
+      "path_base64": "Z28ubW9k",
+      "mode": "100644",
+      "object_id": "0d3b1cce7466d65e42776a7355d12faa9b9c50d9",
+      "size": 34
+    },
+    {
+      "path_base64": "bWFpbi5nbw==",
+      "mode": "100644",
+      "object_id": "c652a14818b737eeb02942ea5c79a91ed16c2704",
+      "size": 143
+    }
+  ]
+}

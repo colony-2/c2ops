@@ -215,6 +215,19 @@ sequence:
       VERIFY_CANDIDATE: ${{ inputs.candidate }}
       VERIFY_BASE: ${{ inputs.base }}
     run: python3 "$VERIFY_ROOT/scripts/verify.py" check kimi
+- id: go_build
+  op: command_execution
+  const: true
+  execution_needs:
+    packages: *id001
+  inputs:
+    env:
+      VERIFY_ROOT: ${{ context.environment.op.worktree_path }}
+      VERIFY_OUTBOX: ${{ context.environment.op.outbox }}
+      VERIFY_TARGET: ${{ inputs.target_directory }}
+      VERIFY_CANDIDATE: ${{ inputs.candidate }}
+      VERIFY_BASE: ${{ inputs.base }}
+    run: python3 "$VERIFY_ROOT/scripts/verify.py" check go-build
 - id: nix_metadata
   op: command_execution
   const: true
@@ -280,6 +293,8 @@ sequence:
     jev.json: ${{ sequence.jev.artifacts['jev.json'] }}
     kimi.log: ${{ sequence.kimi.artifacts['kimi.log'] }}
     kimi.json: ${{ sequence.kimi.artifacts['kimi.json'] }}
+    go-build.log: ${{ sequence.go_build.artifacts['go-build.log'] }}
+    go-build.json: ${{ sequence.go_build.artifacts['go-build.json'] }}
     nix-metadata.log: ${{ sequence.nix_metadata.artifacts['nix-metadata.log'] }}
     nix-metadata.json: ${{ sequence.nix_metadata.artifacts['nix-metadata.json'] }}
     nix-process.log: ${{ sequence.nix_process.artifacts['nix-process.log'] }}
@@ -304,6 +319,7 @@ sequence:
       VERIFY_STATUS_PYDANTIC: ${{ sequence.pydantic.outputs.stdout }}
       VERIFY_STATUS_JEV: ${{ sequence.jev.outputs.stdout }}
       VERIFY_STATUS_KIMI: ${{ sequence.kimi.outputs.stdout }}
+      VERIFY_STATUS_GO_BUILD: ${{ sequence.go_build.outputs.stdout }}
       VERIFY_STATUS_NIX_METADATA: ${{ sequence.nix_metadata.outputs.stdout }}
       VERIFY_STATUS_NIX_PROCESS: ${{ sequence.nix_process.outputs.stdout }}
     run: python3 "$VERIFY_ROOT/scripts/verify.py" aggregate
@@ -325,6 +341,7 @@ outputs:
     ''litellm.json'': sequence.litellm.artifacts[''litellm.json''], ''pydantic.log'': sequence.pydantic.artifacts[''pydantic.log''],
     ''pydantic.json'': sequence.pydantic.artifacts[''pydantic.json''], ''jev.log'': sequence.jev.artifacts[''jev.log''], ''jev.json'':
     sequence.jev.artifacts[''jev.json''], ''kimi.log'': sequence.kimi.artifacts[''kimi.log''], ''kimi.json'': sequence.kimi.artifacts[''kimi.json''],
+    ''go-build.log'': sequence.go_build.artifacts[''go-build.log''], ''go-build.json'': sequence.go_build.artifacts[''go-build.json''],
     ''nix-metadata.log'': sequence.nix_metadata.artifacts[''nix-metadata.log''], ''nix-metadata.json'': sequence.nix_metadata.artifacts[''nix-metadata.json''],
     ''nix-process.log'': sequence.nix_process.artifacts[''nix-process.log''], ''nix-process.json'': sequence.nix_process.artifacts[''nix-process.json''],
     ''verification.md'': sequence.report.artifacts[''verification.md''], ''verification.json'': sequence.report.artifacts[''verification.json'']}

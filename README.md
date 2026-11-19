@@ -59,6 +59,7 @@ sequence:
 | `kimi` | Kimi Code CLI with resumable sessions and execution artifacts. | `./kimi` | `nix:github:colony-2/c2ops/published#kimi` |
 | `jev` | TypeSafe System One evaluation with typed questions and probabilities. | `./jev` | `nix:github:colony-2/c2ops/published#jev` |
 | `github.release` | Create source tags and publish byte-verified GitHub assets. | `./github_release` | `nix:github:colony-2/c2ops/published#github-release` |
+| `go.build` | [Go release binaries](go_build/README.md) with automatic/manual pinned Nix SDK selection and verified Git source. | `./go_build` | `nix:github:colony-2/c2ops/published#go-build` |
 | `rule_gate` | Deterministic recipe policy checks. | `./rule_gate` | `nix:github:colony-2/c2ops/published#rule_gate` |
 
 The manifest name `skill.run` is packaged under the flake attribute `skill-run`.

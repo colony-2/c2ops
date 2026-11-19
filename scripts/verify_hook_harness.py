@@ -75,7 +75,7 @@ def main():
         assertions = [
             {'type': 'output_equals', 'path': 'api_version', 'value': 'c2.build-hook/v1'},
             {'type': 'output_equals', 'path': 'status', 'value': 'failed' if case == 'failed' else 'passed'},
-            {'type': 'cel_true', 'expr': 'size(outputs.artifact_refs) == 36 && outputs.artifact_refs.all(k, outputs.artifact_refs[k].kind == "stored")'},
+            {'type': 'cel_true', 'expr': f'size(outputs.artifact_refs) == {2 * len(verify.TASKS) + 2} && outputs.artifact_refs.all(k, outputs.artifact_refs[k].kind == "stored")'},
             {'type': 'cel_true', 'expr': 'repositories.root.clean && repositories.root.new_commits == 0'},
         ]
         suite = {'recipe': case + '-caller.yaml', 'cases': [{

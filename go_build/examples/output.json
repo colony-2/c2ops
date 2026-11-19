@@ -1,0 +1,150 @@
+{
+  "output": {
+    "intent": {
+      "schema_version": 1,
+      "release_id": "fixture-1",
+      "repository": "github.com/example/cli",
+      "source_commit": "a0cdb9f65b9769eef4631cb9b375de7d8320cb94",
+      "target_branch": "main",
+      "version": "1.2.3",
+      "tag": "v1.2.3",
+      "build_date": "2026-11-18T12:00:00Z",
+      "binary_name": "cli"
+    },
+    "files": [
+      {
+        "schema_version": 1,
+        "release_id": "fixture-1",
+        "repository": "github.com/example/cli",
+        "source_commit": "a0cdb9f65b9769eef4631cb9b375de7d8320cb94",
+        "version": "1.2.3",
+        "tag": "v1.2.3",
+        "name": "go-build/binaries/darwin_amd64/cli",
+        "size": 1698192,
+        "sha256": "a77ff75be61839ad64e0dbcb0663e5258c6a888eda48fd6f49ef4cdec32ec1d6",
+        "kind": "binary",
+        "goos": "darwin",
+        "goarch": "amd64"
+      },
+      {
+        "schema_version": 1,
+        "release_id": "fixture-1",
+        "repository": "github.com/example/cli",
+        "source_commit": "a0cdb9f65b9769eef4631cb9b375de7d8320cb94",
+        "version": "1.2.3",
+        "tag": "v1.2.3",
+        "name": "go-build/binaries/darwin_arm64/cli",
+        "size": 1641346,
+        "sha256": "9df41050cdb007e954fad94e1b84ae570da3e8f215bbdc808e7b67c8ac5e32c6",
+        "kind": "binary",
+        "goos": "darwin",
+        "goarch": "arm64"
+      },
+      {
+        "schema_version": 1,
+        "release_id": "fixture-1",
+        "repository": "github.com/example/cli",
+        "source_commit": "a0cdb9f65b9769eef4631cb9b375de7d8320cb94",
+        "version": "1.2.3",
+        "tag": "v1.2.3",
+        "name": "go-build/binaries/linux_amd64/cli",
+        "size": 1585314,
+        "sha256": "620450d115b19082243d6d31f2d2e3a9759e31d2ddf21d4032ccb9cef6929086",
+        "kind": "binary",
+        "goos": "linux",
+        "goarch": "amd64"
+      },
+      {
+        "schema_version": 1,
+        "release_id": "fixture-1",
+        "repository": "github.com/example/cli",
+        "source_commit": "a0cdb9f65b9769eef4631cb9b375de7d8320cb94",
+        "version": "1.2.3",
+        "tag": "v1.2.3",
+        "name": "go-build/binaries/linux_arm64/cli",
+        "size": 1573026,
+        "sha256": "441d7f6bd4431176ed44715194c1b27751bbbf6eb881a165d570635fdcd92291",
+        "kind": "binary",
+        "goos": "linux",
+        "goarch": "arm64"
+      },
+      {
+        "schema_version": 1,
+        "release_id": "fixture-1",
+        "repository": "github.com/example/cli",
+        "source_commit": "a0cdb9f65b9769eef4631cb9b375de7d8320cb94",
+        "version": "1.2.3",
+        "tag": "v1.2.3",
+        "name": "go-build/provenance/source-tree.json",
+        "size": 534,
+        "sha256": "51ccb00254a88deca8479656b1edadd3874080069e481484da8be0395cbbd01e",
+        "kind": "document"
+      }
+    ],
+    "provenance": {
+      "schema_version": 1,
+      "source": {
+        "commit": "a0cdb9f65b9769eef4631cb9b375de7d8320cb94",
+        "tree": "626d6ea7a0979654f9a31087ddbb13f31e6c06ba",
+        "object_format": "sha1",
+        "policy": "git-tree-blobs-v1",
+        "path_count": 2,
+        "inventory_name": "go-build/provenance/source-tree.json",
+        "inventory_sha256": "51ccb00254a88deca8479656b1edadd3874080069e481484da8be0395cbbd01e"
+      },
+      "sdk": {
+        "requested": "1.26.1",
+        "selection_file": "go.mod",
+        "directive": "go",
+        "resolved_version": "1.26.1",
+        "actual_version": "1.26.1",
+        "nixpkgs_revision": "e4074f13905f5117d20ad71358596b41694863aa",
+        "attribute": "go_1_26",
+        "store_path": "/nix/store/wjr8n27223n15jb05yibi4z4ilkkgnp0-go-1.26.1",
+        "compiler_path": "/nix/store/wjr8n27223n15jb05yibi4z4ilkkgnp0-go-1.26.1/bin/go",
+        "host_system": "aarch64-linux"
+      },
+      "build": {
+        "module_dir": ".",
+        "entrypoint": ".",
+        "workspace_file": null,
+        "targets": [
+          {
+            "goos": "darwin",
+            "goarch": "amd64"
+          },
+          {
+            "goos": "darwin",
+            "goarch": "arm64"
+          },
+          {
+            "goos": "linux",
+            "goarch": "amd64"
+          },
+          {
+            "goos": "linux",
+            "goarch": "arm64"
+          }
+        ],
+        "linker_symbols": [
+          "main.version"
+        ],
+        "linker_values_sha256": "b5d62a5093831ab95c1058f91c1130a7af0b17f06bc481185d49f3b295e77596",
+        "environment": {
+          "CGO_ENABLED": "0",
+          "GOENV": "off",
+          "GOROOT": "/nix/store/wjr8n27223n15jb05yibi4z4ilkkgnp0-go-1.26.1/share/go",
+          "GOTOOLCHAIN": "local",
+          "GOWORK": "off"
+        },
+        "flags": [
+          "-mod=readonly",
+          "-trimpath",
+          "-buildvcs=false",
+          "-ldflags=-s -w"
+        ],
+        "assembly_policy": "contained-includes-v1"
+      }
+    }
+  }
+}
