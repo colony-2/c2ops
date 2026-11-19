@@ -96,6 +96,8 @@ sequence:
       VERIFY_BASE: ${{ inputs.base }}
     run: python3 "$VERIFY_ROOT/scripts/verify.py" check gha-many
 - id: gha_runtime
+  # Runner partitions general, child, diagnostic, workflow and matching contracts;
+  # every test runs once with race helpers and unchanged per-process limits.
   op: command_execution
   const: true
   execution_needs:
@@ -134,6 +136,19 @@ sequence:
       VERIFY_CANDIDATE: ${{ inputs.candidate }}
       VERIFY_BASE: ${{ inputs.base }}
     run: python3 "$VERIFY_ROOT/scripts/verify.py" check rule-gate
+- id: github_release
+  op: command_execution
+  const: true
+  execution_needs:
+    packages: *id001
+  inputs:
+    env:
+      VERIFY_ROOT: ${{ context.environment.op.worktree_path }}
+      VERIFY_OUTBOX: ${{ context.environment.op.outbox }}
+      VERIFY_TARGET: ${{ inputs.target_directory }}
+      VERIFY_CANDIDATE: ${{ inputs.candidate }}
+      VERIFY_BASE: ${{ inputs.base }}
+    run: python3 "$VERIFY_ROOT/scripts/verify.py" check github-release
 - id: aider
   op: command_execution
   const: true
@@ -213,6 +228,8 @@ sequence:
       VERIFY_CANDIDATE: ${{ inputs.candidate }}
       VERIFY_BASE: ${{ inputs.base }}
     run: python3 "$VERIFY_ROOT/scripts/verify.py" check nix-metadata
+# Includes mandatory installed github-release success/failure checks over local TLS,
+# from immutable package cwd with empty PATH; failures stay in nix-process evidence.
 - id: nix_process
   op: command_execution
   const: true
@@ -251,6 +268,8 @@ sequence:
     codex.json: ${{ sequence.codex.artifacts['codex.json'] }}
     rule-gate.log: ${{ sequence.rule_gate.artifacts['rule-gate.log'] }}
     rule-gate.json: ${{ sequence.rule_gate.artifacts['rule-gate.json'] }}
+    github-release.log: ${{ sequence.github_release.artifacts['github-release.log'] }}
+    github-release.json: ${{ sequence.github_release.artifacts['github-release.json'] }}
     aider.log: ${{ sequence.aider.artifacts['aider.log'] }}
     aider.json: ${{ sequence.aider.artifacts['aider.json'] }}
     litellm.log: ${{ sequence.litellm.artifacts['litellm.log'] }}
@@ -279,6 +298,7 @@ sequence:
       VERIFY_STATUS_GHA_RUNTIME: ${{ sequence.gha_runtime.outputs.stdout }}
       VERIFY_STATUS_CODEX: ${{ sequence.codex.outputs.stdout }}
       VERIFY_STATUS_RULE_GATE: ${{ sequence.rule_gate.outputs.stdout }}
+      VERIFY_STATUS_GITHUB_RELEASE: ${{ sequence.github_release.outputs.stdout }}
       VERIFY_STATUS_AIDER: ${{ sequence.aider.outputs.stdout }}
       VERIFY_STATUS_LITELLM: ${{ sequence.litellm.outputs.stdout }}
       VERIFY_STATUS_PYDANTIC: ${{ sequence.pydantic.outputs.stdout }}
@@ -300,7 +320,7 @@ outputs:
     sequence.gha_many.artifacts[''gha-many.json''], ''gha-runtime.log'': sequence.gha_runtime.artifacts[''gha-runtime.log''],
     ''gha-runtime.json'': sequence.gha_runtime.artifacts[''gha-runtime.json''], ''codex.log'': sequence.codex.artifacts[''codex.log''],
     ''codex.json'': sequence.codex.artifacts[''codex.json''], ''rule-gate.log'': sequence.rule_gate.artifacts[''rule-gate.log''],
-    ''rule-gate.json'': sequence.rule_gate.artifacts[''rule-gate.json''], ''aider.log'': sequence.aider.artifacts[''aider.log''],
+    ''rule-gate.json'': sequence.rule_gate.artifacts[''rule-gate.json''], ''github-release.log'': sequence.github_release.artifacts[''github-release.log''], ''github-release.json'': sequence.github_release.artifacts[''github-release.json''], ''aider.log'': sequence.aider.artifacts[''aider.log''],
     ''aider.json'': sequence.aider.artifacts[''aider.json''], ''litellm.log'': sequence.litellm.artifacts[''litellm.log''],
     ''litellm.json'': sequence.litellm.artifacts[''litellm.json''], ''pydantic.log'': sequence.pydantic.artifacts[''pydantic.log''],
     ''pydantic.json'': sequence.pydantic.artifacts[''pydantic.json''], ''jev.log'': sequence.jev.artifacts[''jev.log''], ''jev.json'':

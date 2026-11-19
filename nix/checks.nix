@@ -21,6 +21,16 @@ in {
     PY
     touch "$out"
   '';
+  github-release-source = pkgs.runCommand "c2ops-github-release-source-contract" {
+    nativeBuildInputs = [ pkgs.go ];
+  } ''
+    cp -R ${../github_release} github_release
+    chmod -R u+w github_release
+    cd github_release
+    export HOME="$TMPDIR/home" GOCACHE="$TMPDIR/go-cache" GOTOOLCHAIN=local CGO_ENABLED=0
+    go test -mod=readonly -count=1 ./...
+    touch "$out"
+  '';
   manifests = pkgs.runCommand "c2ops-manifests" {
     nativeBuildInputs = [ (pkgs.python3.withPackages (p: [ p.pyyaml p.jsonschema ])) ];
   } ''
@@ -41,11 +51,18 @@ in {
   pkgs.runCommand "c2ops-${name}-contract" {
     nativeBuildInputs = if builtins.elem name [ "gha" "gha-workflow" ]
       then [ (pkgs.python3.withPackages (p: [ p.pyyaml ])) pkgs.gitMinimal ]
-      else [ pkgs.python3 ];
+      else [ pkgs.python3 ] ++ lib.optional (name == "github-release") pkgs.go;
     SSL_CERT_FILE = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
   } ''
     python ${../scripts/check-package.py} ${package} ${pkgs.writeText "${name}-manifest.json" (builtins.toJSON package.c2j)} nix:github:colony-2/c2ops/published#${name} \
       ${lib.optionalString (package.compiledExecutable != null) "--compiled-executable ${package.compiledExecutable} --system ${pkgs.stdenv.hostPlatform.system}"}
+    ${lib.optionalString (name == "github-release") ''
+      cp -R ${../github_release} github_release
+      chmod -R u+w github_release
+      export HOME="$TMPDIR/home" GOCACHE="$TMPDIR/go-cache" GOTOOLCHAIN=local CGO_ENABLED=0
+      C2OPS_GITHUB_INSTALLED_BINARY=${package}/bin/github-release \
+        go -C github_release test -mod=readonly -count=1 -v -run '^TestC03InstalledPackageFromImmutableCWD$' .
+    ''}
     ${lib.optionalString (builtins.elem name [ "gha" "gha-workflow" ]) ''
       python ${../scripts/check-gha-release.py} ${package}/bin/${name} --revision ${lib.escapeShellArg releaseRevision}
     ''}

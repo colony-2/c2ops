@@ -58,6 +58,7 @@ sequence:
 | `litellm` | Python-backed alternative to `llm`, implemented with LiteLLM. | `./litellm` | `nix:github:colony-2/c2ops/published#litellm` |
 | `kimi` | Kimi Code CLI with resumable sessions and execution artifacts. | `./kimi` | `nix:github:colony-2/c2ops/published#kimi` |
 | `jev` | TypeSafe System One evaluation with typed questions and probabilities. | `./jev` | `nix:github:colony-2/c2ops/published#jev` |
+| `github.release` | Create source tags and publish byte-verified GitHub assets. | `./github_release` | `nix:github:colony-2/c2ops/published#github-release` |
 | `rule_gate` | Deterministic recipe policy checks. | `./rule_gate` | `nix:github:colony-2/c2ops/published#rule_gate` |
 
 The manifest name `skill.run` is packaged under the flake attribute `skill-run`.
@@ -220,6 +221,7 @@ sequence:
 - [`litellm/README.md`](./litellm/README.md)
 - [`kimi/README.md`](./kimi/README.md)
 - [`jev/README.md`](./jev/README.md)
+- [`github_release/README.md`](./github_release/README.md)
 - [`rule_gate/README.md`](./rule_gate/README.md)
 
 Dependency versions, compatibility notes, and validation are recorded in

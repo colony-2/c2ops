@@ -99,5 +99,10 @@
     "runtime": [
       "gitMinimal"
     ]
+  },
+  "github-release": {
+    "path": "github_release",
+    "kind": "go",
+    "runtime": []
   }
 }

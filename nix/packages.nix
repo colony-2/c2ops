@@ -67,6 +67,11 @@ let
           "-X ${lib.escapeShellArg "github.com/colony-2/c2ops/gha/internal/workflow.releaseRevision=${releaseRevision}"}"
         ];
         doCheck = false;
+      } // lib.optionalAttrs (module == "github_release") {
+        preBuild = ''
+          export HOME="$TMPDIR/c2ops-github-release-build-home"
+          mkdir -p "$HOME"
+        '';
       } // lib.optionalAttrs (module == "gha") {
         # Keep even empty GHA-specific hooks out of unrelated derivations.
         postPatch = ''
@@ -116,7 +121,7 @@ let
         install -Dm644 ${manifestPath} "$out/share/c2j/op.json"
       '' + (if op.kind == "go" then ''
         makeWrapper ${goBinary}/bin/${binaryName} "$out/bin/${name}" \
-          ${lib.optionalString (module == "codex") "--set-default C2OPS_CODEX_BIN ${lib.getExe pkgs.codex}"} \
+          ${if name == "github-release" then "--set-default SSL_CERT_FILE ${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt" else lib.optionalString (module == "codex") "--set-default C2OPS_CODEX_BIN ${lib.getExe pkgs.codex}"} \
           --prefix PATH : ${lib.escapeShellArg (lib.makeBinPath runtime)}
       '' else ''
         install -Dm644 ${opPath + "/main.py"} "$out/libexec/main.py"

@@ -60,7 +60,7 @@ sequence:
 ```
 
 Package attributes are `llm`, `llm2`, `codex`, `skill-run`, `gha`, `gha-many`,
-`rule_gate`, `pydantic`, `aider`, `litellm`, `kimi`, and `jev`. `skill-run` has
+`github-release` (`github.release`), `rule_gate`, `pydantic`, `aider`, `litellm`, `kimi`, and `jev`. `skill-run` has
 manifest name `skill.run`. The selector already identifies the op package; do
 not repeat it in `dependencies` or wrap it in `extension_execution`.
 
@@ -183,6 +183,7 @@ use `op.json` with `command: ["bin/<op>"]` and no self-dependency. Use
 | `llm`, `llm2` | Compiled Go op and Git | None |
 | `codex`, `skill-run` | Compiled Go op, SQLite implementation, Git, native Codex 0.161.0 | None |
 | `gha`, `gha-many` | Compiled Go op, Git, Docker client | Reachable Docker daemon for the local backend; credentials for the GitHub backend |
+| `github-release` | Standalone Go op; HTTPS trust roots use the worker/platform certificate configuration | None |
 | `rule_gate` | Compiled Go op | None |
 | `pydantic` | Python 3.14, PydanticAI Slim 2.31.0 and OpenAI/Anthropic/Google provider libraries | Provider credentials |
 | `litellm` | Python 3.14 and nixpkgs LiteLLM 1.102.1 with a shutdown fix | Provider credentials |

@@ -6,6 +6,7 @@ import io
 import json
 import os
 from pathlib import Path
+import re
 import signal
 import subprocess
 import sys
@@ -82,36 +83,46 @@ class VerificationTests(unittest.TestCase):
                     suites = [c for c in report['commands'] if c['argv'][:2] == ['go', 'test']]
                     if available:
                         self.assertEqual(report['tools']['go'], str(pinned_go))
-                        self.assertEqual(len(suites), 2 if task == 'gha-runtime' else 1)
+                        self.assertEqual(len(suites), len(verify.GHA_RUNTIME_PARTITIONS) if task == 'gha-runtime' else 1)
                         for suite in suites:
                             self.assertIn('-race', suite['argv'])
                             self.assertEqual(suite['returncode'], 9, 'suite failure must remain a failure')
                         if task == 'gha-runtime':
-                            self.assertIn('-skip', suites[0]['argv'])
-                            self.assertIn('-run', suites[1]['argv'])
-                            self.assertEqual(suites[0]['argv'][suites[0]['argv'].index('-skip') + 1],
-                                             suites[1]['argv'][suites[1]['argv'].index('-run') + 1])
+                            for suite, (flag, pattern) in zip(suites, verify.GHA_RUNTIME_PARTITIONS):
+                                self.assertEqual(suite['argv'][suite['argv'].index(flag) + 1], pattern)
                     else:
                         self.assertEqual(suites, [], 'missing pinned compiler must block the suite')
                         self.assertIn('pinned GHA compiler', report['error'])
 
     def test_each_gha_runtime_partition_failure_remains_visible(self):
-        for failed_flag in ('-skip', '-run'):
-            with self.subTest(failed_flag=failed_flag), tempfile.TemporaryDirectory() as directory:
+        for failed_pattern in (p for _, p in verify.GHA_RUNTIME_PARTITIONS):
+            with self.subTest(failed_pattern=failed_pattern), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 (root / 'gha/integration').mkdir(parents=True)
                 go = root / 'go'
                 go.write_text('#!' + sys.executable + '\nimport sys\n'
-                              + 'raise SystemExit(9 if ' + repr(failed_flag) + ' in sys.argv else 0)\n')
+                              + 'raise SystemExit(9 if ' + repr(failed_pattern) + ' in sys.argv else 0)\n')
                 go.chmod(0o755)
                 with (root / 'runtime.log').open('wb') as log, patch.dict(os.environ, {'PATH':str(root)+os.pathsep+os.environ['PATH']}):
                     checks = verify.Checks(root, dict(os.environ), log)
                     verify.execute('gha-runtime', checks, race=True)
-                self.assertEqual(len(checks.commands), 2)
-                self.assertEqual(sorted(c['returncode'] for c in checks.commands), [0, 9])
+                self.assertEqual(len(checks.commands), len(verify.GHA_RUNTIME_PARTITIONS))
+                self.assertEqual(sorted(c['returncode'] for c in checks.commands),
+                                 [0] * (len(verify.GHA_RUNTIME_PARTITIONS) - 1) + [9])
                 self.assertFalse(all(c['returncode'] == 0 for c in checks.commands))
                 self.assertEqual(checks.env['C2OPS_TEST_GHA_RACE'], '1')
                 self.assertTrue(all('-race' in c['argv'] and '-timeout=8m' in c['argv'] for c in checks.commands))
+
+    def test_runtime_partitions_include_every_test_once(self):
+        source = Path(verify.__file__).resolve().parents[1] / 'gha/integration'
+        names = [name for path in source.glob('*_test.go')
+                 for name in re.findall(r'^func (Test\w+)\(t \*testing\.T\)', path.read_text(), re.MULTILINE)]
+        self.assertGreater(len(names), 30)
+        # Include a future name to prove the complement cannot drop new tests.
+        for name in [*names, 'TestFutureRuntimeContract']:
+            matches = [bool(re.search(pattern, name)) == (flag == '-run')
+                       for flag, pattern in verify.GHA_RUNTIME_PARTITIONS]
+            self.assertEqual(sum(matches), 1, (name, matches))
 
     def test_command_failures_timeout_and_independent_continuation(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -126,6 +137,64 @@ class VerificationTests(unittest.TestCase):
                 self.assertTrue(checks.run([sys.executable, '-c', 'print("independent check ran")']))
             self.assertEqual([c['returncode'] for c in checks.commands], [127, 3, 124, 0])
             self.assertIn('independent check ran', (root / 'checks.log').read_text())
+
+    def test_github_release_dispatch_and_hook_evidence(self):
+        # A failed real suite must remain failed in the shared runner.
+        source = Path(verify.__file__).resolve().parents[1]
+        hook = (source / '.c2/recipes/hooks/build/verify.yaml').read_text()
+        self.assertIn('github-release', verify.TASKS)
+        for text in ('check github-release', "sequence.github_release.artifacts['github-release.json']",
+                     'VERIFY_STATUS_GITHUB_RELEASE: ${{ sequence.github_release.outputs.stdout }}',
+                     "''github-release.log'': sequence.github_release.artifacts[''github-release.log'']"):
+            self.assertIn(text, hook)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'github_release').mkdir()
+            go = root / 'go'
+            go.write_text('#!' + sys.executable + '\nimport sys\n'
+                          + 'assert "-race" in sys.argv\nraise SystemExit(9)\n')
+            go.chmod(0o755)
+            with (root / 'release.log').open('wb') as log:
+                checks = verify.Checks(root, {**os.environ, 'PATH':str(root)+os.pathsep+os.environ['PATH']}, log)
+                verify.execute('github-release', checks, race=False)
+            self.assertEqual(len(checks.commands), 1)
+            self.assertEqual(checks.commands[0]['directory'], 'github_release')
+            self.assertEqual(checks.commands[0]['returncode'], 9)
+
+    def test_installed_github_success_check_failure_propagates(self):
+        # Run a real failing subprocess through the installed-check dispatch.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'nix').mkdir()
+            (root / 'github_release').mkdir()
+            (root / 'nix/ops.json').write_text('{"github-release":{"path":"github_release"}}')
+            (root / 'flake.lock').write_text('{"nodes":{"nixpkgs":{"locked":{"rev":"fixture"}}}}')
+            go = root / 'go'
+            go.write_text('#!' + sys.executable + '\nimport os,sys\n'
+                          + 'assert os.environ["C2OPS_GITHUB_INSTALLED_BINARY"] == "/fixture/bin/github-release"\n'
+                          + 'assert "^TestC03InstalledPackageFromImmutableCWD$" in sys.argv\n'
+                          + 'raise SystemExit(9)\n')
+            go.chmod(0o755)
+            def metadata(checks, selector, expression):
+                if selector == '.#github-release':
+                    return {'path':'/fixture', 'manifest':{}, 'compiled':None}
+                return None
+            original = verify.Checks.run
+            def run(checks, argv, directory='.', input_text=None):
+                if argv[0] == 'env':
+                    return original(checks, argv, directory, input_text)
+                checks.commands.append({'argv':argv, 'returncode':0})
+                return True
+            with (root / 'release.log').open('wb') as log, \
+                 patch.object(verify.Checks, 'metadata', metadata), \
+                 patch.object(verify.Checks, 'run', run):
+                checks = verify.Checks(root, {**os.environ, 'PATH':str(root)+os.pathsep+os.environ['PATH']}, log)
+                verify.execute('nix-process', checks, race=False)
+            installed = [c for c in checks.commands if c['argv'][0] == 'env']
+            self.assertEqual(len(installed), 1)
+            self.assertEqual(installed[0]['returncode'], 9)
+            self.assertEqual(installed[0]['directory'], 'github_release')
+            self.assertFalse(all(c['returncode'] == 0 for c in checks.commands))
 
     def fixtures(self, root):
         for name in verify.TASKS:

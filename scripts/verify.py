@@ -14,7 +14,7 @@ import tempfile
 import time
 
 TASKS = ('manifests', 'tooling', 'llm', 'llm2', 'gha', 'gha-many',
-         'gha-runtime', 'codex', 'rule-gate', 'aider', 'litellm', 'pydantic',
+         'gha-runtime', 'codex', 'rule-gate', 'github-release', 'aider', 'litellm', 'pydantic',
          'jev', 'kimi', 'nix-metadata', 'nix-process')
 NIX = ['nix', '--extra-experimental-features', 'nix-command flakes']
 HELD = {
@@ -26,6 +26,18 @@ HELD = {
     'release': 'Signing, publication and deployment require external infrastructure/credentials and are held even if available.',
 }
 _ACTIVE = None
+GHA_MATCHING = '^TestMatchingWorkersPersistAcrossNativeRuntimeRestart$'
+GHA_WORKFLOWS = '^Test(Submitted|GHABackend)'
+GHA_CHILDREN = '^TestAct'
+GHA_DIAGNOSTICS = '^Test(Instances|MatrixFailure|WorkflowInfrastructure|CancelledShard|SecretBindings|IdentityEmbeddedChild|EmbeddedIdentityThroughHostExecutor)'
+# The complement includes future tests; no test disappears between partitions.
+GHA_RUNTIME_PARTITIONS = (
+    ('-skip', '|'.join((GHA_MATCHING, GHA_WORKFLOWS, GHA_CHILDREN, GHA_DIAGNOSTICS))),
+    ('-run', GHA_CHILDREN),
+    ('-run', GHA_DIAGNOSTICS),
+    ('-run', GHA_WORKFLOWS),
+    ('-run', GHA_MATCHING),
+)
 
 
 def stop(signum, frame):
@@ -104,6 +116,8 @@ def execute(name, checks, race):
         checks.go('gha', ['-race', './...'] if race else None)
     elif name in ('llm', 'llm2', 'gha-many', 'rule-gate', 'aider', 'litellm'):
         checks.go('rule_gate' if name == 'rule-gate' else name)
+    elif name == 'github-release':
+        checks.go('github_release', ['-race', './...'])
     elif name == 'pydantic':
         # Build and consume in this task: local paths are evidence, not distribution.
         system = {'arm64': 'aarch64'}.get(platform.machine(), platform.machine()) + '-linux'
@@ -134,13 +148,11 @@ def execute(name, checks, race):
         # rather than only the test driver that submits their jobs.
         if race:
             checks.env['C2OPS_TEST_GHA_RACE'] = '1'
-        # Keep the existing runtime suite and the matching/replay matrix in
-        # separate test processes. Both retain the same timeout and race mode;
-        # together they cover every test without making one process time out.
-        selection = '^TestMatchingWorkersPersistAcrossNativeRuntimeRestart$'
+        # Workflow history tests exceeded the shared process budget late in
+        # the suite. Keep every test and the same per-process timeout/race mode.
         flags = ['-race'] if race else []
-        checks.go('gha/integration', [*flags, '-skip', selection, './...'])
-        checks.go('gha/integration', [*flags, '-run', selection, './...'])
+        for selection in GHA_RUNTIME_PARTITIONS:
+            checks.go('gha/integration', [*flags, '-v', *selection, './...'])
     elif name == 'codex':
         checks.run(['python3', '../scripts/with-codex.py', '--', 'go', 'test', '-mod=readonly',
                     '-count=1', '-timeout=8m', './...'], 'codex')
@@ -170,6 +182,10 @@ def execute(name, checks, race):
             if data['compiled']:
                 argv += ['--compiled-executable', data['compiled'], '--system', 'aarch64-linux']
             checks.run(argv)
+            if op == 'github-release':
+                checks.run(['env', 'C2OPS_GITHUB_INSTALLED_BINARY=' + data['path'] + '/bin/github-release',
+                            'go', 'test', '-count=1', '-v', '-run', '^TestC03InstalledPackageFromImmutableCWD$', '.'],
+                           'github_release')
             if op in ('pydantic', 'litellm', 'jev') and pydantic is not None:
                 checks.run([data['python'] + '/bin/python3', 'scripts/check-python-runtime.py',
                             catalog[op]['path'] + '/main.py', pydantic, op])
@@ -212,7 +228,8 @@ def check(name, root, outbox, *, race=False):
                     '.git', '__pycache__', '.pytest_cache', '.pnpm-store', 'node_modules'))
                 env = dict(os.environ)
                 # Preserve supplied credential configuration; never edit global Git or go env.
-                for key in ('C2OPS_TEST_GHA_ACTIONS', 'C2OPS_TEST_NIX_PUBLICATION', 'C2OPS_CODEX_COMPAT_RESUME_BIN'):
+                for key in ('C2OPS_TEST_GHA_ACTIONS', 'C2OPS_TEST_NIX_PUBLICATION', 'C2OPS_CODEX_COMPAT_RESUME_BIN',
+                            'C2OPS_GITHUB_LIVE', 'C2OPS_GITHUB_INSTALLED_BINARY'):
                     env.pop(key, None)
                 for key in ('GOCACHE', 'GOMODCACHE', 'GOTMPDIR', 'UV_CACHE_DIR', 'UV_PROJECT_ENVIRONMENT', 'XDG_CACHE_HOME', 'TMPDIR', 'C2J_TOOL_CACHE_DIR'):
                     path = temp / key.lower()
