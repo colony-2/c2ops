@@ -60,9 +60,11 @@ sequence:
 | `jev` | TypeSafe System One evaluation with typed questions and probabilities. | `./jev` | `nix:github:colony-2/c2ops/published#jev` |
 | `github.release` | Create source tags and publish byte-verified GitHub assets. | `./github_release` | `nix:github:colony-2/c2ops/published#github-release` |
 | `go.build` | [Go release binaries](go_build/README.md) with automatic/manual pinned Nix SDK selection and verified Git source. | `./go_build` | `nix:github:colony-2/c2ops/published#go-build` |
+| `release.pack` | [Portable release archives and final-byte checksums](release_pack/README.md). | `./release_pack` | `nix:github:colony-2/c2ops/published#release-pack` |
 | `rule_gate` | Deterministic recipe policy checks. | `./rule_gate` | `nix:github:colony-2/c2ops/published#rule_gate` |
 
-The manifest name `skill.run` is packaged under the flake attribute `skill-run`.
+The manifest names `skill.run` and `release.pack` use the flake attributes
+`skill-run` and `release-pack`, respectively.
 Use selectors directly in `op:`; bare names such as `codex` or `skill.run` do not
 identify this repository or declare an installation dependency.
 

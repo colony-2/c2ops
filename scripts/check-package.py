@@ -22,7 +22,7 @@ assert manifest == json.loads(args.manifest.read_text()), "manifest mismatch"
 coordinate = args.coordinate
 assert coordinate.startswith("nix:github:colony-2/c2ops/published#"), coordinate
 attribute = coordinate.split("#", 1)[1]
-assert manifest["name"] == ({"skill-run": "skill.run", "github-release": "github.release", "go-build": "go.build"}.get(attribute, attribute))
+assert manifest["name"] == ({"skill-run": "skill.run", "github-release": "github.release", "go-build": "go.build", "release-pack": "release.pack"}.get(attribute, attribute))
 command = manifest["command"]
 assert command[0] == f"bin/{attribute}", "coordinate selected the wrong executable"
 assert command[0].startswith("bin/") and ".." not in Path(command[0]).parts

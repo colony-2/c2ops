@@ -146,6 +146,25 @@ class VerificationTests(unittest.TestCase):
             self.assertTrue(any((pattern.search(name) is not None) == (flag == '-run')
                                 for name in names), 'partition must select real tests')
 
+    def test_runtime_partitions_cover_each_actual_test_once(self):
+        with tempfile.TemporaryDirectory() as directory, (Path(directory) / 'checks.log').open('wb') as log:
+            checks = verify.Checks(Path(directory), {}, log)
+            with patch.object(checks, 'go') as go:
+                verify.execute('gha-runtime', checks, race=True)
+            selections = []
+            for call in go.call_args_list:
+                argv = call.args[1]
+                flag = '-skip' if '-skip' in argv else '-run'
+                selections.append((flag, re.compile(argv[argv.index(flag) + 1])))
+            names = []
+            for path in Path(verify.__file__).resolve().parents[1].glob('gha/integration/*_test.go'):
+                names.extend(re.findall(r'^func (Test\w+)\(t \*testing.T\)', path.read_text(), re.M))
+            self.assertGreater(len(names), 30)
+            for name in names:
+                with self.subTest(name=name):
+                    matches = [bool(pattern.search(name)) != (flag == '-skip') for flag, pattern in selections]
+                    self.assertEqual(sum(matches), 1, 'every runtime test must run exactly once')
+
     def test_command_failures_timeout_and_independent_continuation(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

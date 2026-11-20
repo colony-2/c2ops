@@ -112,5 +112,12 @@
       "gitMinimal",
       "nix"
     ]
+  },
+  "release-pack": {
+    "path": "release_pack",
+    "kind": "go",
+    "runtime": [
+      "gitMinimal"
+    ]
   }
 }

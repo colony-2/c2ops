@@ -6,5 +6,6 @@
   "gha-many": "sha256-9pk0i2cOpNKLVn2wPXcA+SRr5nBiz/GHSA4NokmZgT8=",
   "rule_gate": "sha256-Pw0nUpZRG0QMDOvXvWfihcnQQtSC0pogIdBnFM41098=",
   "github_release": null,
-  "go_build": "sha256-nolS8JY7nEam4QVaR3QOOmhX9u5KW3RVGO9yrLN+B+M="
+  "go_build": "sha256-nolS8JY7nEam4QVaR3QOOmhX9u5KW3RVGO9yrLN+B+M=",
+  "release_pack": null
 }

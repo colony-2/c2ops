@@ -19,7 +19,7 @@ import sys
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--out', type=Path, required=True, help='Scratch directory outside the repository')
-    parser.add_argument('--case', choices=('absent', 'null', 'value', 'failed', 'native', 'gha'),
+    parser.add_argument('--case', choices=('absent', 'null', 'value', 'failed', 'native', 'gha', 'release-pack', 'release-pack-failed'),
                         help='native runs manifests; gha runs tooling and both GHA suites using declared operation tools')
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
@@ -32,17 +32,18 @@ def main():
     verify = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(verify)
     results = []
-    for case in ((args.case,) if args.case else ('absent', 'null', 'value', 'failed')):
+    for case in ((args.case,) if args.case else ('absent', 'null', 'value', 'failed', 'release-pack-failed')):
         mocks = []
         for name in verify.TASKS:
             log = 'fixture command evidence for ' + name + '\n'
-            status = 'failed' if case == 'failed' and name == 'manifests' else 'passed'
+            status = 'failed' if ((case == 'failed' and name == 'manifests') or
+                                  (case == 'release-pack-failed' and name == 'release-pack')) else 'passed'
             evidence = {'task': name, 'status': status,
                         'commands': [{'argv': ['fixture'], 'returncode': 1 if status == 'failed' else 0}],
                         'log_sha256': hashlib.sha256(log.encode()).hexdigest()}
             behavior = {'mode': 'return', 'outputs': {'stdout': status},
                         'artifacts': {name + '.log': log, name + '.json': json.dumps(evidence)}}
-            if (case == 'native' and name == 'manifests') or (case == 'gha' and name in ('tooling', 'gha', 'gha-runtime')):
+            if (case == 'native' and name == 'manifests') or (case == 'release-pack' and name == 'release-pack') or (case == 'gha' and name in ('tooling', 'gha', 'gha-runtime')):
                 behavior = {'mode': 'passthrough'}
             mocks.append({'match': {'op': 'command_execution'}, 'behavior': behavior})
         mocks.append({'match': {'op': 'command_execution'}, 'behavior': {'mode': 'passthrough'}})
@@ -67,14 +68,19 @@ def main():
         (out / (case + '-caller.yaml')).write_text(json.dumps(wrapper, indent=2))
         files = {name: os.path.relpath(root / name, out)
                  for name in ('.c2/recipes/hooks/build/verify.yaml', 'scripts/verify.py')}
-        if case in ('native', 'gha'):
+        if case in ('native', 'gha', 'release-pack'):
             files = {str(path.relative_to(root)): os.path.relpath(path, out)
                      for path in root.rglob('*') if path.is_file()
                      and '.git' not in path.relative_to(root).parts
                      and '__pycache__' not in path.parts}
         assertions = [
             {'type': 'output_equals', 'path': 'api_version', 'value': 'c2.build-hook/v1'},
-            {'type': 'output_equals', 'path': 'status', 'value': 'failed' if case == 'failed' else 'passed'},
+            {'type': 'output_equals', 'path': 'status', 'value': 'failed' if case in ('failed', 'release-pack-failed') else 'passed'},
+            {'type': 'output_equals', 'path': 'summary', 'value':
+                'Verification: ' + ('failed' if case in ('failed', 'release-pack-failed') else 'passed') +
+                '. release.pack archive test (release_pack / release-pack): ' +
+                ('failed' if case == 'release-pack-failed' else 'passed') +
+                '. Inspect verification.md and release-pack.log/json for task evidence; exclusions are recorded.'},
             {'type': 'cel_true', 'expr': f'size(outputs.artifact_refs) == {2 * len(verify.TASKS) + 2} && outputs.artifact_refs.all(k, outputs.artifact_refs[k].kind == "stored")'},
             {'type': 'cel_true', 'expr': 'repositories.root.clean && repositories.root.new_commits == 0'},
         ]

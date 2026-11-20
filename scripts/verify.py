@@ -14,7 +14,7 @@ import tempfile
 import time
 
 TASKS = ('manifests', 'tooling', 'llm', 'llm2', 'gha', 'gha-many',
-         'gha-runtime', 'codex', 'rule-gate', 'github-release', 'aider', 'litellm', 'pydantic',
+         'gha-runtime', 'codex', 'rule-gate', 'release-pack', 'github-release', 'aider', 'litellm', 'pydantic',
          'jev', 'kimi', 'go-build', 'nix-metadata', 'nix-process')
 NIX = ['nix', '--extra-experimental-features', 'nix-command flakes']
 HELD = {
@@ -118,6 +118,9 @@ def execute(name, checks, race):
         checks.go('gha', ['-race', './...'] if race else None)
     elif name in ('llm', 'llm2', 'gha-many', 'rule-gate', 'aider', 'litellm'):
         checks.go('rule_gate' if name == 'rule-gate' else name)
+    elif name == 'release-pack':
+        # Include authenticated-tree and isolated-index regression cases.
+        checks.go('release_pack', ['-race', './...'])
     elif name == 'github-release':
         checks.go('github_release', ['-race', './...'])
     elif name == 'pydantic':

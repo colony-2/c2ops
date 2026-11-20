@@ -50,13 +50,18 @@ in {
   '';
 } // lib.mapAttrs (name: package:
   pkgs.runCommand "c2ops-${name}-contract" {
-    nativeBuildInputs = if builtins.elem name [ "gha" "gha-workflow" ]
+    nativeBuildInputs = if name == "release-pack"
+      then [ (pkgs.python3.withPackages (p: [ p.jsonschema ])) pkgs.gitMinimal ]
+      else if builtins.elem name [ "gha" "gha-workflow" ]
       then [ (pkgs.python3.withPackages (p: [ p.pyyaml ])) pkgs.gitMinimal ]
       else [ pkgs.python3 ] ++ lib.optional (name == "github-release") pkgs.go;
     SSL_CERT_FILE = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
   } ''
     python ${../scripts/check-package.py} ${package} ${pkgs.writeText "${name}-manifest.json" (builtins.toJSON package.c2j)} nix:github:colony-2/c2ops/published#${name} \
       ${lib.optionalString (package.compiledExecutable != null) "--compiled-executable ${package.compiledExecutable} --system ${pkgs.stdenv.hostPlatform.system}"}
+    ${lib.optionalString (name == "release-pack") ''
+      python ${../scripts/check-release-pack.py} ${package}/bin/release-pack --empty-path --manifest ${../release_pack/op.json}
+    ''}
     ${lib.optionalString (name == "github-release") ''
       cp -R ${../github_release} github_release
       chmod -R u+w github_release

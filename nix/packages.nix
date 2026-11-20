@@ -105,6 +105,13 @@ let
           export HOME="$TMPDIR/c2ops-build-home"
           mkdir -p "$HOME"
         '';
+      } // lib.optionalAttrs (module == "release_pack") {
+        # Go telemetry must stay inside this build on unsandboxed builders.
+        # Do not create the reserved /homeless-shelter between derivations.
+        preBuild = ''
+          export XDG_CONFIG_HOME="$TMPDIR/release-pack-config"
+          mkdir -p "$XDG_CONFIG_HOME"
+        '';
       } // lib.optionalAttrs (module == "go_build") {
         # Keep telemetry/config writes inside this build, including goModules.
         # Never create /homeless-shelter on an unsandboxed local builder.

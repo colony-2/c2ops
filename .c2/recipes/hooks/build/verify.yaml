@@ -136,6 +136,19 @@ sequence:
       VERIFY_CANDIDATE: ${{ inputs.candidate }}
       VERIFY_BASE: ${{ inputs.base }}
     run: python3 "$VERIFY_ROOT/scripts/verify.py" check rule-gate
+- id: release_pack
+  op: command_execution
+  const: true
+  execution_needs:
+    packages: *id001
+  inputs:
+    env:
+      VERIFY_ROOT: ${{ context.environment.op.worktree_path }}
+      VERIFY_OUTBOX: ${{ context.environment.op.outbox }}
+      VERIFY_TARGET: ${{ inputs.target_directory }}
+      VERIFY_CANDIDATE: ${{ inputs.candidate }}
+      VERIFY_BASE: ${{ inputs.base }}
+    run: python3 "$VERIFY_ROOT/scripts/verify.py" check release-pack
 - id: github_release
   op: command_execution
   const: true
@@ -283,6 +296,8 @@ sequence:
     rule-gate.json: ${{ sequence.rule_gate.artifacts['rule-gate.json'] }}
     github-release.log: ${{ sequence.github_release.artifacts['github-release.log'] }}
     github-release.json: ${{ sequence.github_release.artifacts['github-release.json'] }}
+    release-pack.log: ${{ sequence.release_pack.artifacts['release-pack.log'] }}
+    release-pack.json: ${{ sequence.release_pack.artifacts['release-pack.json'] }}
     aider.log: ${{ sequence.aider.artifacts['aider.log'] }}
     aider.json: ${{ sequence.aider.artifacts['aider.json'] }}
     litellm.log: ${{ sequence.litellm.artifacts['litellm.log'] }}
@@ -314,6 +329,7 @@ sequence:
       VERIFY_STATUS_CODEX: ${{ sequence.codex.outputs.stdout }}
       VERIFY_STATUS_RULE_GATE: ${{ sequence.rule_gate.outputs.stdout }}
       VERIFY_STATUS_GITHUB_RELEASE: ${{ sequence.github_release.outputs.stdout }}
+      VERIFY_STATUS_RELEASE_PACK: ${{ sequence.release_pack.outputs.stdout }}
       VERIFY_STATUS_AIDER: ${{ sequence.aider.outputs.stdout }}
       VERIFY_STATUS_LITELLM: ${{ sequence.litellm.outputs.stdout }}
       VERIFY_STATUS_PYDANTIC: ${{ sequence.pydantic.outputs.stdout }}
@@ -326,8 +342,10 @@ sequence:
 outputs:
   api_version: c2.build-hook/v1
   status: ${{ sequence.report.outputs.stdout }}
-  summary: Native manifests, tooling, operation and nested contracts, Nix metadata and installed processes completed. Inspect
-    verification.md and per-task evidence; exclusions are recorded.
+  summary: >-
+    Verification: ${{ sequence.report.outputs.stdout }}.
+    release.pack archive test (release_pack / release-pack): ${{ sequence.release_pack.outputs.stdout }}.
+    Inspect verification.md and release-pack.log/json for task evidence; exclusions are recorded.
   artifact_refs: '${{ {''manifests.log'': sequence.manifests.artifacts[''manifests.log''], ''manifests.json'': sequence.manifests.artifacts[''manifests.json''],
     ''tooling.log'': sequence.tooling.artifacts[''tooling.log''], ''tooling.json'': sequence.tooling.artifacts[''tooling.json''],
     ''llm.log'': sequence.llm.artifacts[''llm.log''], ''llm.json'': sequence.llm.artifacts[''llm.json''], ''llm2.log'': sequence.llm2.artifacts[''llm2.log''],
@@ -344,5 +362,6 @@ outputs:
     ''go-build.log'': sequence.go_build.artifacts[''go-build.log''], ''go-build.json'': sequence.go_build.artifacts[''go-build.json''],
     ''nix-metadata.log'': sequence.nix_metadata.artifacts[''nix-metadata.log''], ''nix-metadata.json'': sequence.nix_metadata.artifacts[''nix-metadata.json''],
     ''nix-process.log'': sequence.nix_process.artifacts[''nix-process.log''], ''nix-process.json'': sequence.nix_process.artifacts[''nix-process.json''],
+    ''release-pack.log'': sequence.release_pack.artifacts[''release-pack.log''], ''release-pack.json'': sequence.release_pack.artifacts[''release-pack.json''],
     ''verification.md'': sequence.report.artifacts[''verification.md''], ''verification.json'': sequence.report.artifacts[''verification.json'']}
     }}'

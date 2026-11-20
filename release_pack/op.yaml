@@ -1,0 +1,513 @@
+{
+  "name": "release.pack",
+  "description": "Package verified final release binaries and committed docs with final-byte checksums",
+  "command": [
+    "nix",
+    "run",
+    "github:colony-2/c2ops/published#release-pack",
+    "--"
+  ],
+  "dependencies": [
+    "nix:github:colony-2/c2ops/published#release-pack"
+  ],
+  "input_schema": {
+    "type": "object",
+    "required": [
+      "intent",
+      "worktree_path",
+      "artifact_inbox_path",
+      "artifact_outbox_path",
+      "files"
+    ],
+    "properties": {
+      "intent": {
+        "type": "object",
+        "required": [
+          "schema_version",
+          "release_id",
+          "repository",
+          "source_commit",
+          "version",
+          "tag",
+          "target_branch",
+          "build_date",
+          "binary_name"
+        ],
+        "properties": {
+          "schema_version": {
+            "type": "integer",
+            "const": 1
+          },
+          "release_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "repository": {
+            "type": "string",
+            "pattern": "^github\\.com/[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*$"
+          },
+          "source_commit": {
+            "type": "string",
+            "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"
+          },
+          "version": {
+            "type": "string",
+            "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
+          },
+          "tag": {
+            "type": "string",
+            "minLength": 2
+          },
+          "target_branch": {
+            "type": "string",
+            "minLength": 1
+          },
+          "build_date": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "Z$"
+          },
+          "binary_name": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+          }
+        }
+      },
+      "worktree_path": {
+        "type": "string",
+        "minLength": 1,
+        "default": "{{ context.environment.op.worktree_path }}"
+      },
+      "artifact_inbox_path": {
+        "type": "string",
+        "minLength": 1,
+        "default": "{{ context.environment.op.inbox }}"
+      },
+      "artifact_outbox_path": {
+        "type": "string",
+        "minLength": 1,
+        "default": "{{ context.environment.op.outbox }}"
+      },
+      "files": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 4,
+        "items": {
+          "type": "object",
+          "required": [
+            "schema_version",
+            "release_id",
+            "repository",
+            "source_commit",
+            "version",
+            "tag",
+            "name",
+            "size",
+            "sha256",
+            "kind",
+            "goos",
+            "goarch"
+          ],
+          "properties": {
+            "schema_version": {
+              "type": "integer",
+              "const": 1
+            },
+            "release_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "repository": {
+              "type": "string",
+              "pattern": "^github\\.com/[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*$"
+            },
+            "source_commit": {
+              "type": "string",
+              "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"
+            },
+            "version": {
+              "type": "string",
+              "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
+            },
+            "tag": {
+              "type": "string",
+              "minLength": 2
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "size": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "kind": {
+              "const": "binary"
+            },
+            "goos": {
+              "enum": [
+                "linux",
+                "darwin"
+              ]
+            },
+            "goarch": {
+              "enum": [
+                "amd64",
+                "arm64"
+              ]
+            },
+            "unsigned_sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        }
+      },
+      "required_targets": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 4,
+        "uniqueItems": true,
+        "items": {
+          "type": "object",
+          "required": [
+            "goos",
+            "goarch"
+          ],
+          "properties": {
+            "goos": {
+              "enum": [
+                "linux",
+                "darwin"
+              ]
+            },
+            "goarch": {
+              "enum": [
+                "amd64",
+                "arm64"
+              ]
+            }
+          }
+        }
+      },
+      "docs": {
+        "type": "array",
+        "uniqueItems": true,
+        "items": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "required": [
+      "intent",
+      "files",
+      "provenance"
+    ],
+    "properties": {
+      "intent": {
+        "type": "object",
+        "required": [
+          "schema_version",
+          "release_id",
+          "repository",
+          "source_commit",
+          "version",
+          "tag",
+          "target_branch",
+          "build_date",
+          "binary_name"
+        ],
+        "properties": {
+          "schema_version": {
+            "type": "integer",
+            "const": 1
+          },
+          "release_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "repository": {
+            "type": "string",
+            "pattern": "^github\\.com/[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*$"
+          },
+          "source_commit": {
+            "type": "string",
+            "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"
+          },
+          "version": {
+            "type": "string",
+            "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
+          },
+          "tag": {
+            "type": "string",
+            "minLength": 2
+          },
+          "target_branch": {
+            "type": "string",
+            "minLength": 1
+          },
+          "build_date": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "Z$"
+          },
+          "binary_name": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+          }
+        }
+      },
+      "files": {
+        "type": "array",
+        "minItems": 2,
+        "maxItems": 5,
+        "items": {
+          "type": "object",
+          "required": [
+            "schema_version",
+            "release_id",
+            "repository",
+            "source_commit",
+            "version",
+            "tag",
+            "name",
+            "size",
+            "sha256",
+            "kind"
+          ],
+          "properties": {
+            "schema_version": {
+              "type": "integer",
+              "const": 1
+            },
+            "release_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "repository": {
+              "type": "string",
+              "pattern": "^github\\.com/[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*$"
+            },
+            "source_commit": {
+              "type": "string",
+              "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"
+            },
+            "version": {
+              "type": "string",
+              "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
+            },
+            "tag": {
+              "type": "string",
+              "minLength": 2
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "size": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "kind": {
+              "enum": [
+                "archive",
+                "checksums"
+              ]
+            },
+            "goos": {
+              "enum": [
+                "linux",
+                "darwin"
+              ]
+            },
+            "goarch": {
+              "enum": [
+                "amd64",
+                "arm64"
+              ]
+            },
+            "unsigned_sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "kind": {
+                    "const": "archive"
+                  }
+                }
+              },
+              "then": {
+                "required": [
+                  "goos",
+                  "goarch"
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "provenance": {
+        "type": "object",
+        "required": [
+          "schema_version",
+          "operation",
+          "archive_policy",
+          "source_commit",
+          "source_tree",
+          "selected_inputs",
+          "documents"
+        ],
+        "properties": {
+          "schema_version": {
+            "const": 1
+          },
+          "operation": {
+            "const": "release.pack"
+          },
+          "archive_policy": {
+            "const": "release-pack-v1"
+          },
+          "source_commit": {
+            "type": "string",
+            "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"
+          },
+          "source_tree": {
+            "type": "string",
+            "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"
+          },
+          "selected_inputs": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 4,
+            "items": {
+              "type": "object",
+              "required": [
+                "schema_version",
+                "release_id",
+                "repository",
+                "source_commit",
+                "version",
+                "tag",
+                "name",
+                "size",
+                "sha256",
+                "kind",
+                "goos",
+                "goarch"
+              ],
+              "properties": {
+                "schema_version": {
+                  "type": "integer",
+                  "const": 1
+                },
+                "release_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "repository": {
+                  "type": "string",
+                  "pattern": "^github\\.com/[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*$"
+                },
+                "source_commit": {
+                  "type": "string",
+                  "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"
+                },
+                "version": {
+                  "type": "string",
+                  "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
+                },
+                "tag": {
+                  "type": "string",
+                  "minLength": 2
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "size": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "kind": {
+                  "const": "binary"
+                },
+                "goos": {
+                  "enum": [
+                    "linux",
+                    "darwin"
+                  ]
+                },
+                "goarch": {
+                  "enum": [
+                    "amd64",
+                    "arm64"
+                  ]
+                },
+                "unsigned_sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              }
+            }
+          },
+          "documents": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "name",
+                "git_blob",
+                "git_mode",
+                "size",
+                "sha256"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "git_blob": {
+                  "type": "string",
+                  "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"
+                },
+                "git_mode": {
+                  "enum": [
+                    "100644",
+                    "100755"
+                  ]
+                },
+                "size": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

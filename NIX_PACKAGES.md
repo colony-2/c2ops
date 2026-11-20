@@ -488,3 +488,14 @@ provides them. Python unit-test libraries may be downloaded by uv. `scripts/with
 uses c2j to prepare the CLI dependencies declared in the installed manifest,
 for packaged process tests and the Codex test launcher. These harness dependencies
 are distinct from packaged op libraries, which are already in the Nix outputs.
+
+### Release archives
+
+`release-pack` packages the `release.pack` operation from `release_pack/` with
+Git as its runtime dependency. It uses a standard-library Go module and null
+vendor hash, preserves the existing host matrix, and ships no runtime compiler.
+Its contract check compares manifests and executes the installed wrapper with
+an empty ambient PATH against committed-doc and copied-byte fixtures. Build
+telemetry stays in a temporary build configuration directory, including on
+unsandboxed builders. See [the archive contract and checks](release_pack/README.md)
+for explicit artifact hydration, package selectors and live integration gates.
