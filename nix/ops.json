@@ -119,5 +119,16 @@
     "runtime": [
       "gitMinimal"
     ]
+  },
+  "npm-publish": {
+    "path": "npm_publish",
+    "kind": "python",
+    "runtime": [
+      "gitMinimal",
+      "nodejs_24",
+      "gnutar",
+      "gzip",
+      "cacert"
+    ]
   }
 }

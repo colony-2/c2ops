@@ -51,7 +51,8 @@ class ReleasePackagingTests(unittest.TestCase):
         self.assertIn('release-pack', verify.TASKS)
         import re
         order = re.findall(r'^- id: ([a-z0-9_]+)$', (ROOT / '.c2/recipes/hooks/build/verify.yaml').read_text(), re.M)
-        self.assertEqual([name.replace('_','-') for name in order[:-1]], list(verify.TASKS))
+        self.assertEqual(['npm.publish' if name == 'npm_publish' else name.replace('_','-')
+                          for name in order[:-1]], list(verify.TASKS))
         # Actual command failure must remain visible even when other tasks pass.
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

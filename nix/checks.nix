@@ -2,6 +2,16 @@
 let
   inherit (pkgs) lib;
 in {
+  npm-fixtures = pkgs.runCommand "c2ops-npm-fixtures" {
+    nativeBuildInputs = [ (pkgs.python3.withPackages (p: [ p.jsonschema ])) pkgs.gitMinimal pkgs.nodejs_24 pkgs.gnutar pkgs.gzip ];
+    C2OPS_NPM_TEST_MODULE = "${packages.npm-publish}/libexec/main.py";
+    C2OPS_NPM_SOURCE = "${../npm_publish}";
+  } ''
+    export HOME="$TMPDIR/npm-fixture-home"
+    mkdir -p "$HOME"
+    python -m unittest discover -s ${../scripts} -p 'test_npm_publish*.py' -v
+    touch "$out"
+  '';
   gha-source = pkgs.runCommand "c2ops-gha-source-contract" {
     nativeBuildInputs = [ pkgs.python3 ];
   } ''

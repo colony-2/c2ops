@@ -56,3 +56,25 @@ class CompiledPackageTests(unittest.TestCase):
                 result = self.check("aarch64-darwin", header)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("AssertionError", result.stderr)
+
+    def test_npm_contract_is_bundled_and_matches_the_manifest(self):
+        source = Path(__file__).resolve().parents[1]
+        manifest_value = json.loads((source / 'npm_publish/op.json').read_text())
+        for damage in ('none', 'missing', 'mismatch', 'launcher'):
+            with self.subTest(damage=damage), tempfile.TemporaryDirectory() as directory:
+                package = Path(directory)
+                for name in ('bin', 'libexec', 'share/c2j'):
+                    (package / name).mkdir(parents=True)
+                manifest = package / 'share/c2j/op.json'
+                manifest.write_text(json.dumps(manifest_value))
+                contract = package / 'libexec/contract.json'
+                if damage != 'missing':
+                    contract.write_text(json.dumps({} if damage == 'mismatch' else manifest_value['input_schema']))
+                launcher = package / 'bin/npm-publish'
+                tools = 'node npm git tar gzip' if damage != 'launcher' else ''
+                launcher.write_text("#!/bin/sh\n# " + tools + "\necho 'missing input' >&2\nexit 1\n")
+                launcher.chmod(0o755)
+                result = subprocess.run([sys.executable, str(source / 'scripts/check-package.py'),
+                    str(package), str(manifest), 'nix:github:colony-2/c2ops/published#npm-publish'],
+                    capture_output=True, text=True)
+                self.assertEqual(result.returncode == 0, damage == 'none', result.stderr)

@@ -59,8 +59,11 @@ sequence:
       worktree_path: "${{ context.environment.op.worktree_path }}"
 ```
 
+The `npm-publish` package exposes [`npm.publish`](npm_publish/README.md).
+Its first use requires confirmation of the merged revision on each selected host.
+
 Package attributes are `llm`, `llm2`, `codex`, `skill-run`, `gha`, `gha-many`,
-`github-release` (`github.release`), `rule_gate`, `pydantic`, `aider`, `litellm`, `kimi`, and `jev`. `skill-run` has
+`github-release` (`github.release`), `rule_gate`, `pydantic`, `aider`, `litellm`, `kimi`, `jev`, and `npm-publish`. `skill-run` has
 manifest name `skill.run`. The selector already identifies the op package; do
 not repeat it in `dependencies` or wrap it in `extension_execution`.
 
@@ -190,6 +193,7 @@ use `op.json` with `command: ["bin/<op>"]` and no self-dependency. Use
 | `jev` | Python 3.14, TypeSafe SDK 0.7.4 and nixpkgs library dependencies | Provider credentials |
 | `aider` | Python 3.14, nixpkgs Aider 0.86.1 using the same patched LiteLLM, Git | Provider credentials |
 | `kimi` | Python 3.14 and Git | `pnpm:@moonshot-ai/kimi-code@2.1.1` |
+| `npm-publish` | Python standard library, Node/npm 24, Git, GNU tar/gzip, TLS roots | Native token for publication; public GitHub release |
 
 Python environments use nixpkgs' `python3.withPackages`: each environment links
 to separately packaged libraries in `/nix/store`. Ops with matching dependencies

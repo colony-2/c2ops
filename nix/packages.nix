@@ -19,6 +19,7 @@ let
   # Reuse nixpkgs derivations, with only the compatibility fixes above/below.
   # withPackages links libraries into an environment; it does not vendor them.
   pythonEnvs = {
+    npm-publish = pythonRuntime;
     pydantic = pythonRuntime.withPackages (p: [
       (p.callPackage ./pydantic-ai.nix { })
       (p.callPackage ./anthropic-compat.nix { })
@@ -130,6 +131,8 @@ let
       # its compiler anywhere in its runtime closure.
       disallowedRequisites = lib.optionals (op.kind == "go")
         ([ pkgs.go ] ++ lib.optionals (module == "gha") [ ghaGo actSource ]);
+      # Keep npm-only additions conditional without adding whitespace to other
+      # install scripts: even an empty extra line changes their store identities.
       installPhase = ''
         runHook preInstall
         install -Dm644 ${manifestPath} "$out/share/c2j/op.json"
@@ -143,9 +146,11 @@ let
           --add-flags "$out/libexec/main.py" \
           --set PYTHONNOUSERSITE 1 \
           --set PYTHONDONTWRITEBYTECODE 1 \
-          ${lib.optionalString (name == "aider") "--set C2OPS_AIDER_BIN ${lib.getExe aiderPackage}"} \
+          ${lib.optionalString (name == "aider") "--set C2OPS_AIDER_BIN ${lib.getExe aiderPackage}" + lib.optionalString (name == "npm-publish") "--set SSL_CERT_FILE ${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"} \
           --prefix PATH : ${lib.makeBinPath ([ python ] ++ runtime)}
-      '') + ''
+      '') + lib.optionalString (name == "npm-publish") ''
+        install -Dm644 ${opPath + "/contract.json"} "$out/libexec/contract.json"
+      '' + ''
         runHook postInstall
       '';
       passthru.c2j = manifest;

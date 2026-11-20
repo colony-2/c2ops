@@ -13,11 +13,12 @@ import sys
 import tempfile
 import time
 
-TASKS = ('manifests', 'tooling', 'llm', 'llm2', 'gha', 'gha-many',
+TASKS = ('manifests', 'tooling', 'npm.publish', 'llm', 'llm2', 'gha', 'gha-many',
          'gha-runtime', 'codex', 'rule-gate', 'release-pack', 'github-release', 'aider', 'litellm', 'pydantic',
          'jev', 'kimi', 'go-build', 'nix-metadata', 'nix-process')
 NIX = ['nix', '--extra-experimental-features', 'nix-command flakes']
 HELD = {
+    'npm-live': 'Fixture checks run in the dedicated npm.publish task; live N08 requires confirmed package revisions and authorized disposable destinations.',
     'platforms': 'Only native Linux arm64; x86_64-linux and aarch64-darwin matrix held.',
     'worker-image': 'scripts/check-codex-worker.py requires Docker daemon/image execution.',
     'public-actions': 'C2OPS_TEST_GHA_ACTIONS remains unset; real public Actions/service actions and remote CI held.',
@@ -114,6 +115,12 @@ def execute(name, checks, race):
         checks.run(['uv', 'run', 'go_build/check_examples.py'])
     elif name == 'tooling':
         checks.run(['make', 'test-tools'])
+    elif name == 'npm.publish':
+        # Bind the fixtures to this candidate, never an ambient test-module override.
+        checks.env['C2OPS_NPM_TEST_MODULE'] = str(checks.root / 'npm_publish/main.py')
+        checks.env['C2OPS_NPM_SOURCE'] = str(checks.root / 'npm_publish')
+        checks.run(['uv', 'run', '--with', 'jsonschema==4.26.0', 'python', '-m', 'unittest',
+                    'discover', '-s', 'scripts', '-p', 'test_npm_publish*.py', '-v'])
     elif name == 'gha':
         checks.go('gha', ['-race', './...'] if race else None)
     elif name in ('llm', 'llm2', 'gha-many', 'rule-gate', 'aider', 'litellm'):
@@ -256,7 +263,7 @@ def check(name, root, outbox, *, race=False):
                 env = dict(os.environ)
                 # Preserve supplied credential configuration; never edit global Git or go env.
                 for key in ('C2OPS_TEST_GHA_ACTIONS', 'C2OPS_TEST_NIX_PUBLICATION', 'C2OPS_CODEX_COMPAT_RESUME_BIN',
-                            'C2OPS_GITHUB_LIVE', 'C2OPS_GITHUB_INSTALLED_BINARY'):
+                            'C2OPS_GITHUB_LIVE', 'C2OPS_GITHUB_INSTALLED_BINARY', 'C2OPS_NPM_LIVE_REQUEST'):
                     env.pop(key, None)
                 for key in ('GOCACHE', 'GOMODCACHE', 'GOTMPDIR', 'UV_CACHE_DIR', 'UV_PROJECT_ENVIRONMENT', 'XDG_CACHE_HOME', 'TMPDIR', 'C2J_TOOL_CACHE_DIR'):
                     path = temp / key.lower()
@@ -293,7 +300,7 @@ def check(name, root, outbox, *, race=False):
 def aggregate(inbox, outbox, statuses=None):
     outbox.mkdir(parents=True, exist_ok=True)
     if statuses is None:
-        statuses = {name: os.environ.get('VERIFY_STATUS_' + name.upper().replace('-', '_')) for name in TASKS}
+        statuses = {name: os.environ.get('VERIFY_STATUS_' + name.upper().replace('-', '_').replace('.', '_')) for name in TASKS}
     rows, errors = [], []
     for name in TASKS:
         try:

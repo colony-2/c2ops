@@ -22,13 +22,19 @@ assert manifest == json.loads(args.manifest.read_text()), "manifest mismatch"
 coordinate = args.coordinate
 assert coordinate.startswith("nix:github:colony-2/c2ops/published#"), coordinate
 attribute = coordinate.split("#", 1)[1]
-assert manifest["name"] == ({"skill-run": "skill.run", "github-release": "github.release", "go-build": "go.build", "release-pack": "release.pack"}.get(attribute, attribute))
+assert manifest["name"] == ({"skill-run": "skill.run", "github-release": "github.release", "go-build": "go.build", "release-pack": "release.pack", "npm-publish": "npm.publish"}.get(attribute, attribute))
 command = manifest["command"]
 assert command[0] == f"bin/{attribute}", "coordinate selected the wrong executable"
 assert command[0].startswith("bin/") and ".." not in Path(command[0]).parts
 executable = package / command[0]
 assert executable.is_file() and os.access(executable, os.X_OK)
 assert not any(ref.startswith("nix:") for ref in manifest.get("dependencies", []))
+
+if attribute == "npm-publish":
+    contract = json.loads((package / "libexec/contract.json").read_text())
+    assert manifest["input_schema"] == contract, "bundled npm contract mismatch"
+    for tool in ("node", "npm", "git", "tar", "gzip"):
+        assert tool in executable.read_text(), "npm runtime tool is not bound: " + tool
 
 if args.compiled_executable:
     compiled = args.compiled_executable

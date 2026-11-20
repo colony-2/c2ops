@@ -27,7 +27,7 @@ nix-check:
 	nix flake check -L "git+file://$(CURDIR)"
 
 test-tools:
-	python3 -m unittest discover -s scripts -p 'test_*.py'
+	uv run --with jsonschema==4.26.0 python -m unittest discover -s scripts -p 'test_*.py'
 
 test: test-tools
 

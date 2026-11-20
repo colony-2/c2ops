@@ -16,6 +16,9 @@ sequence:
     - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#gnumake
     - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#uv
     - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#nodejs_24
+    # npm fixture checks use the unchanged product installer, including tar/gzip.
+    - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#gnutar
+    - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#gzip
     - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#pnpm
     - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#gcc
     - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#nix
@@ -43,6 +46,21 @@ sequence:
       VERIFY_CANDIDATE: ${{ inputs.candidate }}
       VERIFY_BASE: ${{ inputs.base }}
     run: python3 "$VERIFY_ROOT/scripts/verify.py" check tooling
+- id: npm_publish
+  # Dedicated npm.publish fixture task. Live N08 stays gated: the runner removes
+  # C2OPS_NPM_LIVE_REQUEST and binds fixtures to this candidate's operation.
+  op: command_execution
+  const: true
+  execution_needs:
+    packages: *id001
+  inputs:
+    env:
+      VERIFY_ROOT: ${{ context.environment.op.worktree_path }}
+      VERIFY_OUTBOX: ${{ context.environment.op.outbox }}
+      VERIFY_TARGET: ${{ inputs.target_directory }}
+      VERIFY_CANDIDATE: ${{ inputs.candidate }}
+      VERIFY_BASE: ${{ inputs.base }}
+    run: python3 "$VERIFY_ROOT/scripts/verify.py" check npm.publish
 - id: llm
   op: command_execution
   const: true
@@ -280,6 +298,8 @@ sequence:
     manifests.json: ${{ sequence.manifests.artifacts['manifests.json'] }}
     tooling.log: ${{ sequence.tooling.artifacts['tooling.log'] }}
     tooling.json: ${{ sequence.tooling.artifacts['tooling.json'] }}
+    npm.publish.log: ${{ sequence.npm_publish.artifacts['npm.publish.log'] }}
+    npm.publish.json: ${{ sequence.npm_publish.artifacts['npm.publish.json'] }}
     llm.log: ${{ sequence.llm.artifacts['llm.log'] }}
     llm.json: ${{ sequence.llm.artifacts['llm.json'] }}
     llm2.log: ${{ sequence.llm2.artifacts['llm2.log'] }}
@@ -321,6 +341,7 @@ sequence:
       VERIFY_OUTBOX: ${{ context.environment.op.outbox }}
       VERIFY_STATUS_MANIFESTS: ${{ sequence.manifests.outputs.stdout }}
       VERIFY_STATUS_TOOLING: ${{ sequence.tooling.outputs.stdout }}
+      VERIFY_STATUS_NPM_PUBLISH: ${{ sequence.npm_publish.outputs.stdout }}
       VERIFY_STATUS_LLM: ${{ sequence.llm.outputs.stdout }}
       VERIFY_STATUS_LLM2: ${{ sequence.llm2.outputs.stdout }}
       VERIFY_STATUS_GHA: ${{ sequence.gha.outputs.stdout }}
@@ -348,6 +369,7 @@ outputs:
     Inspect verification.md and release-pack.log/json for task evidence; exclusions are recorded.
   artifact_refs: '${{ {''manifests.log'': sequence.manifests.artifacts[''manifests.log''], ''manifests.json'': sequence.manifests.artifacts[''manifests.json''],
     ''tooling.log'': sequence.tooling.artifacts[''tooling.log''], ''tooling.json'': sequence.tooling.artifacts[''tooling.json''],
+    ''npm.publish.log'': sequence.npm_publish.artifacts[''npm.publish.log''], ''npm.publish.json'': sequence.npm_publish.artifacts[''npm.publish.json''],
     ''llm.log'': sequence.llm.artifacts[''llm.log''], ''llm.json'': sequence.llm.artifacts[''llm.json''], ''llm2.log'': sequence.llm2.artifacts[''llm2.log''],
     ''llm2.json'': sequence.llm2.artifacts[''llm2.json''], ''gha.log'': sequence.gha.artifacts[''gha.log''], ''gha.json'':
     sequence.gha.artifacts[''gha.json''], ''gha-many.log'': sequence.gha_many.artifacts[''gha-many.log''], ''gha-many.json'':

@@ -1,0 +1,1924 @@
+{
+  "name": "npm.publish",
+  "description": "Install-check a committed npm wrapper and publish exactly the retained tested tarball",
+  "command": [
+    "python3",
+    "./main.py"
+  ],
+  "input_schema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "npm.publish v1 request and result contract",
+    "description": "Runtime contract. Root validates requests; #/$defs/result validates stdout. Synthetic examples authorize no publication.",
+    "type": "object",
+    "properties": {
+      "intent": {
+        "$ref": "#/$defs/intent"
+      },
+      "workspace": {
+        "$ref": "#/$defs/absolutePath"
+      },
+      "inbox": {
+        "$ref": "#/$defs/absolutePath"
+      },
+      "outbox": {
+        "$ref": "#/$defs/absolutePath"
+      },
+      "wrapper_path": {
+        "$ref": "#/$defs/relativePath"
+      },
+      "package_name": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 214,
+        "pattern": "^(?:@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*$"
+      },
+      "documents": {
+        "type": "array",
+        "maxItems": 32,
+        "items": {
+          "type": "object",
+          "properties": {
+            "source": {
+              "$ref": "#/$defs/relativePath"
+            },
+            "destination": {
+              "$ref": "#/$defs/relativePath"
+            }
+          },
+          "required": [
+            "source",
+            "destination"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "files": {
+        "type": "array",
+        "minItems": 5,
+        "maxItems": 5,
+        "items": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/file"
+            },
+            {
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "archive",
+                    "checksums"
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      },
+      "release": {
+        "$ref": "#/$defs/release"
+      },
+      "registry": {
+        "type": "string",
+        "format": "uri",
+        "pattern": "^https://[^/@?#\\s]+(?:/[^?#\\s]*)?/$"
+      },
+      "registry_token_file": {
+        "$ref": "#/$defs/absolutePath"
+      },
+      "access": {
+        "const": "public",
+        "default": "public"
+      },
+      "dist_tag": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_-]*$",
+        "maxLength": 128,
+        "default": "latest"
+      },
+      "check": {
+        "$ref": "#/$defs/check"
+      },
+      "resume": {
+        "type": "boolean",
+        "default": false
+      },
+      "retained_tarball": {
+        "$ref": "#/$defs/npmTarball"
+      },
+      "phase": {
+        "type": "string",
+        "enum": [
+          "prepare",
+          "publish"
+        ]
+      }
+    },
+    "required": [
+      "intent",
+      "workspace",
+      "inbox",
+      "outbox",
+      "wrapper_path",
+      "package_name",
+      "files",
+      "release",
+      "registry",
+      "check"
+    ],
+    "additionalProperties": false,
+    "allOf": [
+      {
+        "if": {
+          "required": [
+            "resume"
+          ],
+          "properties": {
+            "resume": {
+              "const": true
+            }
+          }
+        },
+        "then": {
+          "required": [
+            "retained_tarball"
+          ]
+        },
+        "else": {
+          "not": {
+            "required": [
+              "retained_tarball"
+            ]
+          }
+        }
+      },
+      {
+        "if": {
+          "required": [
+            "phase"
+          ],
+          "properties": {
+            "phase": {
+              "const": "prepare"
+            }
+          }
+        },
+        "then": {
+          "not": {
+            "required": [
+              "registry_token_file"
+            ]
+          }
+        },
+        "else": {
+          "required": [
+            "registry_token_file"
+          ]
+        }
+      },
+      {
+        "if": {
+          "required": [
+            "phase"
+          ],
+          "properties": {
+            "phase": {
+              "const": "publish"
+            }
+          }
+        },
+        "then": {
+          "required": [
+            "resume",
+            "retained_tarball",
+            "registry_token_file"
+          ],
+          "properties": {
+            "resume": {
+              "const": true
+            }
+          }
+        }
+      }
+    ],
+    "$defs": {
+      "relativePath": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 1024,
+        "pattern": "^(?!/)(?!.*\\\\)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)(?!.*\\/$)[^\\u0000-\\u001f\\u007f]+$"
+      },
+      "absolutePath": {
+        "type": "string",
+        "minLength": 2,
+        "maxLength": 4096,
+        "pattern": "^/[^\\u0000-\\u001f\\u007f]+$"
+      },
+      "intent": {
+        "type": "object",
+        "properties": {
+          "schema_version": {
+            "const": 1
+          },
+          "release_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "repository": {
+            "type": "string",
+            "pattern": "^github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+          },
+          "source_commit": {
+            "type": "string",
+            "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+          },
+          "version": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?$"
+          },
+          "tag": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 256,
+            "pattern": "^v[^\\s/]+$"
+          },
+          "target_branch": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "build_date": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "Z$"
+          },
+          "binary_name": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+          }
+        },
+        "required": [
+          "schema_version",
+          "release_id",
+          "repository",
+          "source_commit",
+          "version",
+          "tag",
+          "target_branch",
+          "build_date",
+          "binary_name"
+        ],
+        "additionalProperties": false
+      },
+      "file": {
+        "type": "object",
+        "properties": {
+          "schema_version": {
+            "const": 1
+          },
+          "release_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "repository": {
+            "type": "string",
+            "pattern": "^github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+          },
+          "source_commit": {
+            "type": "string",
+            "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+          },
+          "version": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?$"
+          },
+          "tag": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 256,
+            "pattern": "^v[^\\s/]+$"
+          },
+          "name": {
+            "$ref": "#/$defs/relativePath"
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "kind": {
+            "enum": [
+              "binary",
+              "archive",
+              "checksums",
+              "document",
+              "npm_tarball"
+            ]
+          },
+          "goos": {
+            "enum": [
+              "linux",
+              "darwin"
+            ]
+          },
+          "goarch": {
+            "enum": [
+              "amd64",
+              "arm64"
+            ]
+          }
+        },
+        "required": [
+          "schema_version",
+          "release_id",
+          "repository",
+          "source_commit",
+          "version",
+          "tag",
+          "name",
+          "size",
+          "sha256",
+          "kind"
+        ],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "binary",
+                    "archive"
+                  ]
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "goos",
+                "goarch"
+              ]
+            },
+            "else": {
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "goos"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "goarch"
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "asset": {
+        "type": "object",
+        "properties": {
+          "schema_version": {
+            "const": 1
+          },
+          "release_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "repository": {
+            "type": "string",
+            "pattern": "^github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+          },
+          "source_commit": {
+            "type": "string",
+            "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+          },
+          "version": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?$"
+          },
+          "tag": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 256,
+            "pattern": "^v[^\\s/]+$"
+          },
+          "name": {
+            "$ref": "#/$defs/relativePath"
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "kind": {
+            "enum": [
+              "archive",
+              "checksums"
+            ]
+          },
+          "goos": {
+            "enum": [
+              "linux",
+              "darwin"
+            ]
+          },
+          "goarch": {
+            "enum": [
+              "amd64",
+              "arm64"
+            ]
+          },
+          "download_url": {
+            "type": "string",
+            "format": "uri",
+            "pattern": "^https://github\\.com/"
+          }
+        },
+        "required": [
+          "schema_version",
+          "release_id",
+          "repository",
+          "source_commit",
+          "version",
+          "tag",
+          "name",
+          "size",
+          "sha256",
+          "kind",
+          "download_url"
+        ],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "binary",
+                    "archive"
+                  ]
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "goos",
+                "goarch"
+              ]
+            },
+            "else": {
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "goos"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "goarch"
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "release": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "oneOf": [
+              {
+                "type": "integer",
+                "minimum": 1
+              },
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              }
+            ]
+          },
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "pattern": "^https://github\\.com/"
+          },
+          "tag": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 256,
+            "pattern": "^v[^\\s/]+$"
+          },
+          "commit": {
+            "type": "string",
+            "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+          },
+          "public": {
+            "const": true
+          },
+          "draft": {
+            "const": false
+          },
+          "assets": {
+            "type": "array",
+            "minItems": 5,
+            "maxItems": 5,
+            "items": {
+              "$ref": "#/$defs/asset"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "url",
+          "tag",
+          "commit",
+          "public",
+          "draft",
+          "assets"
+        ],
+        "additionalProperties": false
+      },
+      "check": {
+        "type": "object",
+        "properties": {
+          "bin": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+          },
+          "args": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 32,
+            "items": {
+              "type": "string",
+              "maxLength": 4096
+            }
+          },
+          "stdout": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 16384
+          },
+          "timeout_seconds": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 300,
+            "default": 60
+          }
+        },
+        "required": [
+          "bin",
+          "args",
+          "stdout"
+        ],
+        "additionalProperties": false
+      },
+      "npmTarball": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/file"
+          },
+          {
+            "properties": {
+              "kind": {
+                "const": "npm_tarball"
+              }
+            }
+          }
+        ]
+      },
+      "integrity": {
+        "type": "string",
+        "pattern": "^sha512-[A-Za-z0-9+/]{86}==$"
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "intent": {
+            "$ref": "#/$defs/intent"
+          },
+          "files": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 1,
+            "items": {
+              "$ref": "#/$defs/npmTarball"
+            }
+          },
+          "provenance": {
+            "type": "object",
+            "properties": {
+              "source_tree": {
+                "type": "string",
+                "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+              },
+              "wrapper_path": {
+                "$ref": "#/$defs/relativePath"
+              },
+              "node_version": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "npm_version": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              }
+            },
+            "required": [
+              "source_tree",
+              "wrapper_path",
+              "node_version",
+              "npm_version"
+            ],
+            "additionalProperties": false
+          },
+          "package": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 214,
+                "pattern": "^(?:@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*$"
+              },
+              "version": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?$"
+              }
+            },
+            "required": [
+              "name",
+              "version"
+            ],
+            "additionalProperties": false
+          },
+          "release": {
+            "$ref": "#/$defs/release"
+          },
+          "install_check": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "const": "passed"
+              },
+              "goos": {
+                "enum": [
+                  "linux",
+                  "darwin"
+                ]
+              },
+              "goarch": {
+                "enum": [
+                  "amd64",
+                  "arm64"
+                ]
+              },
+              "check": {
+                "$ref": "#/$defs/check"
+              }
+            },
+            "required": [
+              "status",
+              "goos",
+              "goarch",
+              "check"
+            ],
+            "additionalProperties": false
+          },
+          "registry": {
+            "type": "object",
+            "properties": {
+              "url": {
+                "type": "string",
+                "format": "uri",
+                "pattern": "^https://[^/@?#\\s]+(?:/[^?#\\s]*)?/$"
+              },
+              "integrity": {
+                "$ref": "#/$defs/integrity"
+              },
+              "observed_integrity": {
+                "$ref": "#/$defs/integrity"
+              },
+              "outcome": {
+                "enum": [
+                  "published",
+                  "reconciled",
+                  "not_attempted"
+                ]
+              }
+            },
+            "required": [
+              "url",
+              "integrity",
+              "outcome"
+            ],
+            "additionalProperties": false
+          },
+          "phase": {
+            "type": "string",
+            "enum": [
+              "prepare",
+              "publish"
+            ]
+          }
+        },
+        "required": [
+          "intent",
+          "files",
+          "provenance",
+          "package",
+          "release",
+          "install_check",
+          "registry"
+        ],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "required": [
+                "phase"
+              ],
+              "properties": {
+                "phase": {
+                  "const": "prepare"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "registry": {
+                  "properties": {
+                    "outcome": {
+                      "const": "not_attempted"
+                    }
+                  },
+                  "not": {
+                    "required": [
+                      "observed_integrity"
+                    ]
+                  }
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "registry": {
+                  "required": [
+                    "observed_integrity"
+                  ],
+                  "properties": {
+                    "outcome": {
+                      "enum": [
+                        "published",
+                        "reconciled"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "output": {
+            "$ref": "#/$defs/output"
+          }
+        },
+        "required": [
+          "output"
+        ],
+        "additionalProperties": false,
+        "examples": [
+          {
+            "output": {
+              "intent": {
+                "schema_version": 1,
+                "release_id": "example-product-1.2.3",
+                "repository": "github.com/example/product",
+                "source_commit": "0123456789abcdef0123456789abcdef01234567",
+                "target_branch": "main",
+                "version": "1.2.3",
+                "tag": "v1.2.3",
+                "build_date": "2026-11-18T12:00:00Z",
+                "binary_name": "product"
+              },
+              "files": [
+                {
+                  "schema_version": 1,
+                  "release_id": "example-product-1.2.3",
+                  "repository": "github.com/example/product",
+                  "source_commit": "0123456789abcdef0123456789abcdef01234567",
+                  "version": "1.2.3",
+                  "tag": "v1.2.3",
+                  "name": "npm/product-1.2.3.tgz",
+                  "size": 2048,
+                  "sha256": "6666666666666666666666666666666666666666666666666666666666666666",
+                  "kind": "npm_tarball"
+                }
+              ],
+              "provenance": {
+                "source_tree": "89abcdef0123456789abcdef0123456789abcdef",
+                "wrapper_path": "npm/product",
+                "node_version": "v24.0.0",
+                "npm_version": "11.0.0"
+              },
+              "package": {
+                "name": "@example/product",
+                "version": "1.2.3"
+              },
+              "release": {
+                "id": 123,
+                "url": "https://github.com/example/product/releases/tag/v1.2.3",
+                "tag": "v1.2.3",
+                "commit": "0123456789abcdef0123456789abcdef01234567",
+                "public": true,
+                "draft": false,
+                "assets": [
+                  {
+                    "schema_version": 1,
+                    "release_id": "example-product-1.2.3",
+                    "repository": "github.com/example/product",
+                    "source_commit": "0123456789abcdef0123456789abcdef01234567",
+                    "version": "1.2.3",
+                    "tag": "v1.2.3",
+                    "name": "product_1.2.3_Linux_x86_64.tar.gz",
+                    "size": 1024,
+                    "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+                    "kind": "archive",
+                    "goos": "linux",
+                    "goarch": "amd64",
+                    "download_url": "https://github.com/example/product/releases/download/v1.2.3/product_1.2.3_Linux_x86_64.tar.gz"
+                  },
+                  {
+                    "schema_version": 1,
+                    "release_id": "example-product-1.2.3",
+                    "repository": "github.com/example/product",
+                    "source_commit": "0123456789abcdef0123456789abcdef01234567",
+                    "version": "1.2.3",
+                    "tag": "v1.2.3",
+                    "name": "product_1.2.3_Linux_arm64.tar.gz",
+                    "size": 1025,
+                    "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+                    "kind": "archive",
+                    "goos": "linux",
+                    "goarch": "arm64",
+                    "download_url": "https://github.com/example/product/releases/download/v1.2.3/product_1.2.3_Linux_arm64.tar.gz"
+                  },
+                  {
+                    "schema_version": 1,
+                    "release_id": "example-product-1.2.3",
+                    "repository": "github.com/example/product",
+                    "source_commit": "0123456789abcdef0123456789abcdef01234567",
+                    "version": "1.2.3",
+                    "tag": "v1.2.3",
+                    "name": "product_1.2.3_Darwin_x86_64.tar.gz",
+                    "size": 1026,
+                    "sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+                    "kind": "archive",
+                    "goos": "darwin",
+                    "goarch": "amd64",
+                    "download_url": "https://github.com/example/product/releases/download/v1.2.3/product_1.2.3_Darwin_x86_64.tar.gz"
+                  },
+                  {
+                    "schema_version": 1,
+                    "release_id": "example-product-1.2.3",
+                    "repository": "github.com/example/product",
+                    "source_commit": "0123456789abcdef0123456789abcdef01234567",
+                    "version": "1.2.3",
+                    "tag": "v1.2.3",
+                    "name": "product_1.2.3_Darwin_arm64.tar.gz",
+                    "size": 1027,
+                    "sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+                    "kind": "archive",
+                    "goos": "darwin",
+                    "goarch": "arm64",
+                    "download_url": "https://github.com/example/product/releases/download/v1.2.3/product_1.2.3_Darwin_arm64.tar.gz"
+                  },
+                  {
+                    "schema_version": 1,
+                    "release_id": "example-product-1.2.3",
+                    "repository": "github.com/example/product",
+                    "source_commit": "0123456789abcdef0123456789abcdef01234567",
+                    "version": "1.2.3",
+                    "tag": "v1.2.3",
+                    "name": "checksums.txt",
+                    "size": 416,
+                    "sha256": "5555555555555555555555555555555555555555555555555555555555555555",
+                    "kind": "checksums",
+                    "download_url": "https://github.com/example/product/releases/download/v1.2.3/checksums.txt"
+                  }
+                ]
+              },
+              "install_check": {
+                "status": "passed",
+                "goos": "linux",
+                "goarch": "amd64",
+                "check": {
+                  "bin": "product",
+                  "args": [
+                    "version"
+                  ],
+                  "stdout": "product version 1.2.3\n",
+                  "timeout_seconds": 60
+                }
+              },
+              "registry": {
+                "url": "https://registry.npmjs.org/",
+                "integrity": "sha512-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+                "observed_integrity": "sha512-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+                "outcome": "published"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "examples": [
+      {
+        "intent": {
+          "schema_version": 1,
+          "release_id": "example-product-1.2.3",
+          "repository": "github.com/example/product",
+          "source_commit": "0123456789abcdef0123456789abcdef01234567",
+          "target_branch": "main",
+          "version": "1.2.3",
+          "tag": "v1.2.3",
+          "build_date": "2026-11-18T12:00:00Z",
+          "binary_name": "product"
+        },
+        "workspace": "/bound/workspace",
+        "inbox": "/bound/inbox",
+        "outbox": "/bound/outbox",
+        "wrapper_path": "npm/product",
+        "package_name": "@example/product",
+        "documents": [
+          {
+            "source": "README.md",
+            "destination": "README.md"
+          },
+          {
+            "source": "LICENSE",
+            "destination": "LICENSE"
+          }
+        ],
+        "files": [
+          {
+            "schema_version": 1,
+            "release_id": "example-product-1.2.3",
+            "repository": "github.com/example/product",
+            "source_commit": "0123456789abcdef0123456789abcdef01234567",
+            "version": "1.2.3",
+            "tag": "v1.2.3",
+            "name": "product_1.2.3_Linux_x86_64.tar.gz",
+            "size": 1024,
+            "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+            "kind": "archive",
+            "goos": "linux",
+            "goarch": "amd64"
+          },
+          {
+            "schema_version": 1,
+            "release_id": "example-product-1.2.3",
+            "repository": "github.com/example/product",
+            "source_commit": "0123456789abcdef0123456789abcdef01234567",
+            "version": "1.2.3",
+            "tag": "v1.2.3",
+            "name": "product_1.2.3_Linux_arm64.tar.gz",
+            "size": 1025,
+            "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+            "kind": "archive",
+            "goos": "linux",
+            "goarch": "arm64"
+          },
+          {
+            "schema_version": 1,
+            "release_id": "example-product-1.2.3",
+            "repository": "github.com/example/product",
+            "source_commit": "0123456789abcdef0123456789abcdef01234567",
+            "version": "1.2.3",
+            "tag": "v1.2.3",
+            "name": "product_1.2.3_Darwin_x86_64.tar.gz",
+            "size": 1026,
+            "sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+            "kind": "archive",
+            "goos": "darwin",
+            "goarch": "amd64"
+          },
+          {
+            "schema_version": 1,
+            "release_id": "example-product-1.2.3",
+            "repository": "github.com/example/product",
+            "source_commit": "0123456789abcdef0123456789abcdef01234567",
+            "version": "1.2.3",
+            "tag": "v1.2.3",
+            "name": "product_1.2.3_Darwin_arm64.tar.gz",
+            "size": 1027,
+            "sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+            "kind": "archive",
+            "goos": "darwin",
+            "goarch": "arm64"
+          },
+          {
+            "schema_version": 1,
+            "release_id": "example-product-1.2.3",
+            "repository": "github.com/example/product",
+            "source_commit": "0123456789abcdef0123456789abcdef01234567",
+            "version": "1.2.3",
+            "tag": "v1.2.3",
+            "name": "checksums.txt",
+            "size": 416,
+            "sha256": "5555555555555555555555555555555555555555555555555555555555555555",
+            "kind": "checksums"
+          }
+        ],
+        "release": {
+          "id": 123,
+          "url": "https://github.com/example/product/releases/tag/v1.2.3",
+          "tag": "v1.2.3",
+          "commit": "0123456789abcdef0123456789abcdef01234567",
+          "public": true,
+          "draft": false,
+          "assets": [
+            {
+              "schema_version": 1,
+              "release_id": "example-product-1.2.3",
+              "repository": "github.com/example/product",
+              "source_commit": "0123456789abcdef0123456789abcdef01234567",
+              "version": "1.2.3",
+              "tag": "v1.2.3",
+              "name": "product_1.2.3_Linux_x86_64.tar.gz",
+              "size": 1024,
+              "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+              "kind": "archive",
+              "goos": "linux",
+              "goarch": "amd64",
+              "download_url": "https://github.com/example/product/releases/download/v1.2.3/product_1.2.3_Linux_x86_64.tar.gz"
+            },
+            {
+              "schema_version": 1,
+              "release_id": "example-product-1.2.3",
+              "repository": "github.com/example/product",
+              "source_commit": "0123456789abcdef0123456789abcdef01234567",
+              "version": "1.2.3",
+              "tag": "v1.2.3",
+              "name": "product_1.2.3_Linux_arm64.tar.gz",
+              "size": 1025,
+              "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+              "kind": "archive",
+              "goos": "linux",
+              "goarch": "arm64",
+              "download_url": "https://github.com/example/product/releases/download/v1.2.3/product_1.2.3_Linux_arm64.tar.gz"
+            },
+            {
+              "schema_version": 1,
+              "release_id": "example-product-1.2.3",
+              "repository": "github.com/example/product",
+              "source_commit": "0123456789abcdef0123456789abcdef01234567",
+              "version": "1.2.3",
+              "tag": "v1.2.3",
+              "name": "product_1.2.3_Darwin_x86_64.tar.gz",
+              "size": 1026,
+              "sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+              "kind": "archive",
+              "goos": "darwin",
+              "goarch": "amd64",
+              "download_url": "https://github.com/example/product/releases/download/v1.2.3/product_1.2.3_Darwin_x86_64.tar.gz"
+            },
+            {
+              "schema_version": 1,
+              "release_id": "example-product-1.2.3",
+              "repository": "github.com/example/product",
+              "source_commit": "0123456789abcdef0123456789abcdef01234567",
+              "version": "1.2.3",
+              "tag": "v1.2.3",
+              "name": "product_1.2.3_Darwin_arm64.tar.gz",
+              "size": 1027,
+              "sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+              "kind": "archive",
+              "goos": "darwin",
+              "goarch": "arm64",
+              "download_url": "https://github.com/example/product/releases/download/v1.2.3/product_1.2.3_Darwin_arm64.tar.gz"
+            },
+            {
+              "schema_version": 1,
+              "release_id": "example-product-1.2.3",
+              "repository": "github.com/example/product",
+              "source_commit": "0123456789abcdef0123456789abcdef01234567",
+              "version": "1.2.3",
+              "tag": "v1.2.3",
+              "name": "checksums.txt",
+              "size": 416,
+              "sha256": "5555555555555555555555555555555555555555555555555555555555555555",
+              "kind": "checksums",
+              "download_url": "https://github.com/example/product/releases/download/v1.2.3/checksums.txt"
+            }
+          ]
+        },
+        "registry": "https://registry.npmjs.org/",
+        "registry_token_file": "/bound/secrets/npm-token",
+        "access": "public",
+        "dist_tag": "latest",
+        "check": {
+          "bin": "product",
+          "args": [
+            "version"
+          ],
+          "stdout": "product version 1.2.3\n",
+          "timeout_seconds": 60
+        },
+        "resume": false
+      }
+    ]
+  },
+  "output_schema": {
+    "$defs": {
+      "relativePath": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 1024,
+        "pattern": "^(?!/)(?!.*\\\\)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)(?!.*\\/$)[^\\u0000-\\u001f\\u007f]+$"
+      },
+      "absolutePath": {
+        "type": "string",
+        "minLength": 2,
+        "maxLength": 4096,
+        "pattern": "^/[^\\u0000-\\u001f\\u007f]+$"
+      },
+      "intent": {
+        "type": "object",
+        "properties": {
+          "schema_version": {
+            "const": 1
+          },
+          "release_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "repository": {
+            "type": "string",
+            "pattern": "^github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+          },
+          "source_commit": {
+            "type": "string",
+            "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+          },
+          "version": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?$"
+          },
+          "tag": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 256,
+            "pattern": "^v[^\\s/]+$"
+          },
+          "target_branch": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "build_date": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "Z$"
+          },
+          "binary_name": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+          }
+        },
+        "required": [
+          "schema_version",
+          "release_id",
+          "repository",
+          "source_commit",
+          "version",
+          "tag",
+          "target_branch",
+          "build_date",
+          "binary_name"
+        ],
+        "additionalProperties": false
+      },
+      "file": {
+        "type": "object",
+        "properties": {
+          "schema_version": {
+            "const": 1
+          },
+          "release_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "repository": {
+            "type": "string",
+            "pattern": "^github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+          },
+          "source_commit": {
+            "type": "string",
+            "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+          },
+          "version": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?$"
+          },
+          "tag": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 256,
+            "pattern": "^v[^\\s/]+$"
+          },
+          "name": {
+            "$ref": "#/$defs/relativePath"
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "kind": {
+            "enum": [
+              "binary",
+              "archive",
+              "checksums",
+              "document",
+              "npm_tarball"
+            ]
+          },
+          "goos": {
+            "enum": [
+              "linux",
+              "darwin"
+            ]
+          },
+          "goarch": {
+            "enum": [
+              "amd64",
+              "arm64"
+            ]
+          }
+        },
+        "required": [
+          "schema_version",
+          "release_id",
+          "repository",
+          "source_commit",
+          "version",
+          "tag",
+          "name",
+          "size",
+          "sha256",
+          "kind"
+        ],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "binary",
+                    "archive"
+                  ]
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "goos",
+                "goarch"
+              ]
+            },
+            "else": {
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "goos"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "goarch"
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "asset": {
+        "type": "object",
+        "properties": {
+          "schema_version": {
+            "const": 1
+          },
+          "release_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "repository": {
+            "type": "string",
+            "pattern": "^github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+          },
+          "source_commit": {
+            "type": "string",
+            "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+          },
+          "version": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?$"
+          },
+          "tag": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 256,
+            "pattern": "^v[^\\s/]+$"
+          },
+          "name": {
+            "$ref": "#/$defs/relativePath"
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "kind": {
+            "enum": [
+              "archive",
+              "checksums"
+            ]
+          },
+          "goos": {
+            "enum": [
+              "linux",
+              "darwin"
+            ]
+          },
+          "goarch": {
+            "enum": [
+              "amd64",
+              "arm64"
+            ]
+          },
+          "download_url": {
+            "type": "string",
+            "format": "uri",
+            "pattern": "^https://github\\.com/"
+          }
+        },
+        "required": [
+          "schema_version",
+          "release_id",
+          "repository",
+          "source_commit",
+          "version",
+          "tag",
+          "name",
+          "size",
+          "sha256",
+          "kind",
+          "download_url"
+        ],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "binary",
+                    "archive"
+                  ]
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "goos",
+                "goarch"
+              ]
+            },
+            "else": {
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "goos"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "goarch"
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "release": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "oneOf": [
+              {
+                "type": "integer",
+                "minimum": 1
+              },
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              }
+            ]
+          },
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "pattern": "^https://github\\.com/"
+          },
+          "tag": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 256,
+            "pattern": "^v[^\\s/]+$"
+          },
+          "commit": {
+            "type": "string",
+            "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+          },
+          "public": {
+            "const": true
+          },
+          "draft": {
+            "const": false
+          },
+          "assets": {
+            "type": "array",
+            "minItems": 5,
+            "maxItems": 5,
+            "items": {
+              "$ref": "#/$defs/asset"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "url",
+          "tag",
+          "commit",
+          "public",
+          "draft",
+          "assets"
+        ],
+        "additionalProperties": false
+      },
+      "check": {
+        "type": "object",
+        "properties": {
+          "bin": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+          },
+          "args": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 32,
+            "items": {
+              "type": "string",
+              "maxLength": 4096
+            }
+          },
+          "stdout": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 16384
+          },
+          "timeout_seconds": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 300,
+            "default": 60
+          }
+        },
+        "required": [
+          "bin",
+          "args",
+          "stdout"
+        ],
+        "additionalProperties": false
+      },
+      "npmTarball": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/file"
+          },
+          {
+            "properties": {
+              "kind": {
+                "const": "npm_tarball"
+              }
+            }
+          }
+        ]
+      },
+      "integrity": {
+        "type": "string",
+        "pattern": "^sha512-[A-Za-z0-9+/]{86}==$"
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "intent": {
+            "$ref": "#/$defs/intent"
+          },
+          "files": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 1,
+            "items": {
+              "$ref": "#/$defs/npmTarball"
+            }
+          },
+          "provenance": {
+            "type": "object",
+            "properties": {
+              "source_tree": {
+                "type": "string",
+                "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+              },
+              "wrapper_path": {
+                "$ref": "#/$defs/relativePath"
+              },
+              "node_version": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "npm_version": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              }
+            },
+            "required": [
+              "source_tree",
+              "wrapper_path",
+              "node_version",
+              "npm_version"
+            ],
+            "additionalProperties": false
+          },
+          "package": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 214,
+                "pattern": "^(?:@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*$"
+              },
+              "version": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?$"
+              }
+            },
+            "required": [
+              "name",
+              "version"
+            ],
+            "additionalProperties": false
+          },
+          "release": {
+            "$ref": "#/$defs/release"
+          },
+          "install_check": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "const": "passed"
+              },
+              "goos": {
+                "enum": [
+                  "linux",
+                  "darwin"
+                ]
+              },
+              "goarch": {
+                "enum": [
+                  "amd64",
+                  "arm64"
+                ]
+              },
+              "check": {
+                "$ref": "#/$defs/check"
+              }
+            },
+            "required": [
+              "status",
+              "goos",
+              "goarch",
+              "check"
+            ],
+            "additionalProperties": false
+          },
+          "registry": {
+            "type": "object",
+            "properties": {
+              "url": {
+                "type": "string",
+                "format": "uri",
+                "pattern": "^https://[^/@?#\\s]+(?:/[^?#\\s]*)?/$"
+              },
+              "integrity": {
+                "$ref": "#/$defs/integrity"
+              },
+              "observed_integrity": {
+                "$ref": "#/$defs/integrity"
+              },
+              "outcome": {
+                "enum": [
+                  "published",
+                  "reconciled",
+                  "not_attempted"
+                ]
+              }
+            },
+            "required": [
+              "url",
+              "integrity",
+              "outcome"
+            ],
+            "additionalProperties": false
+          },
+          "phase": {
+            "type": "string",
+            "enum": [
+              "prepare",
+              "publish"
+            ]
+          }
+        },
+        "required": [
+          "intent",
+          "files",
+          "provenance",
+          "package",
+          "release",
+          "install_check",
+          "registry"
+        ],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "required": [
+                "phase"
+              ],
+              "properties": {
+                "phase": {
+                  "const": "prepare"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "registry": {
+                  "properties": {
+                    "outcome": {
+                      "const": "not_attempted"
+                    }
+                  },
+                  "not": {
+                    "required": [
+                      "observed_integrity"
+                    ]
+                  }
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "registry": {
+                  "required": [
+                    "observed_integrity"
+                  ],
+                  "properties": {
+                    "outcome": {
+                      "enum": [
+                        "published",
+                        "reconciled"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "output": {
+            "$ref": "#/$defs/output"
+          }
+        },
+        "required": [
+          "output"
+        ],
+        "additionalProperties": false,
+        "examples": [
+          {
+            "output": {
+              "intent": {
+                "schema_version": 1,
+                "release_id": "example-product-1.2.3",
+                "repository": "github.com/example/product",
+                "source_commit": "0123456789abcdef0123456789abcdef01234567",
+                "target_branch": "main",
+                "version": "1.2.3",
+                "tag": "v1.2.3",
+                "build_date": "2026-11-18T12:00:00Z",
+                "binary_name": "product"
+              },
+              "files": [
+                {
+                  "schema_version": 1,
+                  "release_id": "example-product-1.2.3",
+                  "repository": "github.com/example/product",
+                  "source_commit": "0123456789abcdef0123456789abcdef01234567",
+                  "version": "1.2.3",
+                  "tag": "v1.2.3",
+                  "name": "npm/product-1.2.3.tgz",
+                  "size": 2048,
+                  "sha256": "6666666666666666666666666666666666666666666666666666666666666666",
+                  "kind": "npm_tarball"
+                }
+              ],
+              "provenance": {
+                "source_tree": "89abcdef0123456789abcdef0123456789abcdef",
+                "wrapper_path": "npm/product",
+                "node_version": "v24.0.0",
+                "npm_version": "11.0.0"
+              },
+              "package": {
+                "name": "@example/product",
+                "version": "1.2.3"
+              },
+              "release": {
+                "id": 123,
+                "url": "https://github.com/example/product/releases/tag/v1.2.3",
+                "tag": "v1.2.3",
+                "commit": "0123456789abcdef0123456789abcdef01234567",
+                "public": true,
+                "draft": false,
+                "assets": [
+                  {
+                    "schema_version": 1,
+                    "release_id": "example-product-1.2.3",
+                    "repository": "github.com/example/product",
+                    "source_commit": "0123456789abcdef0123456789abcdef01234567",
+                    "version": "1.2.3",
+                    "tag": "v1.2.3",
+                    "name": "product_1.2.3_Linux_x86_64.tar.gz",
+                    "size": 1024,
+                    "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+                    "kind": "archive",
+                    "goos": "linux",
+                    "goarch": "amd64",
+                    "download_url": "https://github.com/example/product/releases/download/v1.2.3/product_1.2.3_Linux_x86_64.tar.gz"
+                  },
+                  {
+                    "schema_version": 1,
+                    "release_id": "example-product-1.2.3",
+                    "repository": "github.com/example/product",
+                    "source_commit": "0123456789abcdef0123456789abcdef01234567",
+                    "version": "1.2.3",
+                    "tag": "v1.2.3",
+                    "name": "product_1.2.3_Linux_arm64.tar.gz",
+                    "size": 1025,
+                    "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+                    "kind": "archive",
+                    "goos": "linux",
+                    "goarch": "arm64",
+                    "download_url": "https://github.com/example/product/releases/download/v1.2.3/product_1.2.3_Linux_arm64.tar.gz"
+                  },
+                  {
+                    "schema_version": 1,
+                    "release_id": "example-product-1.2.3",
+                    "repository": "github.com/example/product",
+                    "source_commit": "0123456789abcdef0123456789abcdef01234567",
+                    "version": "1.2.3",
+                    "tag": "v1.2.3",
+                    "name": "product_1.2.3_Darwin_x86_64.tar.gz",
+                    "size": 1026,
+                    "sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+                    "kind": "archive",
+                    "goos": "darwin",
+                    "goarch": "amd64",
+                    "download_url": "https://github.com/example/product/releases/download/v1.2.3/product_1.2.3_Darwin_x86_64.tar.gz"
+                  },
+                  {
+                    "schema_version": 1,
+                    "release_id": "example-product-1.2.3",
+                    "repository": "github.com/example/product",
+                    "source_commit": "0123456789abcdef0123456789abcdef01234567",
+                    "version": "1.2.3",
+                    "tag": "v1.2.3",
+                    "name": "product_1.2.3_Darwin_arm64.tar.gz",
+                    "size": 1027,
+                    "sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+                    "kind": "archive",
+                    "goos": "darwin",
+                    "goarch": "arm64",
+                    "download_url": "https://github.com/example/product/releases/download/v1.2.3/product_1.2.3_Darwin_arm64.tar.gz"
+                  },
+                  {
+                    "schema_version": 1,
+                    "release_id": "example-product-1.2.3",
+                    "repository": "github.com/example/product",
+                    "source_commit": "0123456789abcdef0123456789abcdef01234567",
+                    "version": "1.2.3",
+                    "tag": "v1.2.3",
+                    "name": "checksums.txt",
+                    "size": 416,
+                    "sha256": "5555555555555555555555555555555555555555555555555555555555555555",
+                    "kind": "checksums",
+                    "download_url": "https://github.com/example/product/releases/download/v1.2.3/checksums.txt"
+                  }
+                ]
+              },
+              "install_check": {
+                "status": "passed",
+                "goos": "linux",
+                "goarch": "amd64",
+                "check": {
+                  "bin": "product",
+                  "args": [
+                    "version"
+                  ],
+                  "stdout": "product version 1.2.3\n",
+                  "timeout_seconds": 60
+                }
+              },
+              "registry": {
+                "url": "https://registry.npmjs.org/",
+                "integrity": "sha512-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+                "observed_integrity": "sha512-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+                "outcome": "published"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "$ref": "#/$defs/result"
+  },
+  "dependencies": [
+    "nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#python3",
+    "nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#gitMinimal",
+    "nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#nodejs_24",
+    "nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#gnutar",
+    "nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#gzip"
+  ]
+}

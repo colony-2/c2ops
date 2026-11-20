@@ -20,6 +20,108 @@ spec.loader.exec_module(verify)
 
 
 class VerificationTests(unittest.TestCase):
+    def test_npm_hook_has_const_task_and_exports_evidence(self):
+        root = Path(verify.__file__).resolve().parents[1]
+        hook = (root / '.c2/recipes/hooks/build/verify.yaml').read_text()
+        task = hook.split('- id: npm_publish\n', 1)[1].split('\n- id:', 1)[0]
+        for text in ('const: true', 'op: command_execution', 'check npm.publish'):
+            self.assertIn(text, task)
+        for text in ("sequence.npm_publish.artifacts['npm.publish.log']",
+                     "sequence.npm_publish.artifacts['npm.publish.json']",
+                     'VERIFY_STATUS_NPM_PUBLISH'):
+            self.assertIn(text, hook)
+        for sibling in ('github_release', 'go_build', 'gha', 'gha_runtime'):
+            self.assertIn('- id: ' + sibling + '\n', hook)
+        self.assertIn('github-release', verify.TASKS)
+        self.assertIn('go-build', verify.TASKS)
+
+    def test_verification_does_not_inherit_live_npm_request(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / 'candidate'
+            (root / 'nix').mkdir(parents=True)
+            (root / 'nix/pnpm-build-policy.json').write_text('{}')
+            def execute(name, checks, race):
+                self.assertEqual(name, 'tooling')
+                self.assertNotIn('C2OPS_NPM_LIVE_REQUEST', checks.env)
+                checks.commands.append({'argv': ['fixture-only'], 'returncode': 0})
+            def run(checks, argv, *args, **kwargs):
+                checks.commands.append({'argv': argv, 'returncode': 0})
+                return True
+            with patch.dict(os.environ, {'C2OPS_NPM_LIVE_REQUEST': '/must/not/publish.json'}), \
+                 patch.object(verify, 'supported_platform', return_value=True), \
+                 patch.object(verify, 'execute', execute), patch.object(verify.Checks, 'run', run), \
+                 contextlib.redirect_stdout(io.StringIO()) as stdout:
+                verify.check('tooling', root, Path(directory) / 'out')
+            self.assertEqual(stdout.getvalue(), 'passed')
+
+    def test_npm_task_retains_results_and_failure_blocks_aggregate(self):
+        # Execute the real task runner and unittest subprocess with a controlled
+        # suite. Only unrelated tool probes are stubbed; suite exits are real.
+        for failing in (False, True):
+            with self.subTest(failing=failing), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory) / 'candidate'
+                for name in ('scripts', 'npm_publish', 'nix'):
+                    (root / name).mkdir(parents=True)
+                (root / 'nix/pnpm-build-policy.json').write_text('{}')
+                (root / 'npm_publish/main.py').write_text('# candidate operation\n')
+                (root / 'scripts/test_npm_publish.py').write_text(
+                    'import os,unittest\nfrom pathlib import Path\n'
+                    'class Fixtures(unittest.TestCase):\n'
+                    ' def test_fixture(self):\n'
+                    '  self.assertNotIn("C2OPS_NPM_LIVE_REQUEST", os.environ)\n'
+                    '  self.assertEqual(Path(os.environ["C2OPS_NPM_TEST_MODULE"]), '
+                    'Path(__file__).resolve().parents[1] / "npm_publish/main.py")\n'
+                    '  self.assertEqual(Path(os.environ["C2OPS_NPM_SOURCE"]), '
+                    'Path(__file__).resolve().parents[1] / "npm_publish")\n'
+                    '  print("local fixture suite reached")\n'
+                    '  self.assertFalse(' + repr(failing) + ')\n')
+                out = Path(directory) / 'evidence'
+                out.mkdir()
+                self.fixtures(out)
+                original = verify.Checks.run
+                def run(checks, argv, directory='.', input_text=None):
+                    if 'unittest' in argv:
+                        return original(checks, argv, directory, input_text)
+                    checks.commands.append({'argv': argv, 'returncode': 0})
+                    return True
+                with patch.dict(os.environ, {'C2OPS_NPM_LIVE_REQUEST': '/must/not/publish.json',
+                        'C2OPS_NPM_TEST_MODULE': '/must/not/test-another-operation.py',
+                        'C2OPS_NPM_SOURCE': '/must/not/check-another-source'}), \
+                     patch.object(verify, 'supported_platform', return_value=True), \
+                     patch.object(verify.Checks, 'run', run), \
+                     contextlib.redirect_stdout(io.StringIO()) as stdout:
+                    verify.check('npm.publish', root, out)
+                expected = 'failed' if failing else 'passed'
+                self.assertEqual(stdout.getvalue(), expected)
+                receipt = json.loads((out / 'npm.publish.json').read_text())
+                self.assertEqual(receipt['task'], 'npm.publish')
+                self.assertEqual(receipt['status'], expected)
+                suites = [c for c in receipt['commands'] if 'unittest' in c['argv']]
+                self.assertEqual(len(suites), 1)
+                self.assertEqual(suites[0]['returncode'], 1 if failing else 0)
+                log = (out / 'npm.publish.log').read_bytes()
+                self.assertIn(b'local fixture suite reached', log)
+                self.assertEqual(receipt['log_sha256'], hashlib.sha256(log).hexdigest())
+                statuses = {'VERIFY_STATUS_' + name.upper().replace('-', '_').replace('.', '_'): 'passed'
+                            for name in verify.TASKS}
+                statuses['VERIFY_STATUS_NPM_PUBLISH'] = stdout.getvalue()
+                with patch.dict(os.environ, statuses), contextlib.redirect_stdout(io.StringIO()) as aggregate_stdout:
+                    verify.aggregate(out, out / 'aggregate')
+                self.assertEqual(aggregate_stdout.getvalue(), expected)
+                aggregate = json.loads((out / 'aggregate/verification.json').read_text())
+                self.assertIn({'task': 'npm.publish', 'status': expected}, aggregate['tasks'])
+                if not failing:
+                    for damage in ('changed log', 'missing receipt'):
+                        if damage == 'changed log':
+                            (out / 'npm.publish.log').write_bytes(log + b'tampered')
+                        else:
+                            (out / 'npm.publish.log').write_bytes(log)
+                            (out / 'npm.publish.json').unlink()
+                        with patch.dict(os.environ, statuses), contextlib.redirect_stdout(io.StringIO()) as aggregate_stdout:
+                            verify.aggregate(out, out / 'aggregate')
+                        self.assertEqual(aggregate_stdout.getvalue(), 'failed', damage)
+
+
     def test_gha_cli_without_explicit_race_fails_task_and_aggregate(self):
         for task in ('gha', 'gha-runtime'):
             with self.subTest(task=task), tempfile.TemporaryDirectory() as directory:
@@ -423,7 +525,11 @@ with open(sys.argv[2]+'.log','wb') as log:
                 self.assertEqual(proc.wait(timeout=5), 128 + signal.SIGTERM)
                 # A killed child may briefly remain a zombie until init reaps it.
                 stat = Path('/proc') / str(child) / 'stat'
-                self.assertTrue(not stat.exists() or stat.read_text().split()[2] == 'Z')
+                try:
+                    state = stat.read_text().split()[2]
+                except FileNotFoundError:
+                    state = None  # Reaped between termination and inspection.
+                self.assertIn(state, (None, 'Z'))
             finally:
                 if proc.poll() is None:
                     proc.kill()
