@@ -3,6 +3,7 @@ package codex
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -156,6 +157,76 @@ func requireNoNativeSchema(t *testing.T, request map[string]any) {
 		if format, ok := text["format"].(map[string]any); ok {
 			require.NotEqual(t, "json_schema", format["type"])
 		}
+	}
+}
+
+func TestArtifactTextNativeSessionAndRepairs(t *testing.T) {
+	requireCodexCLI(t)
+	for _, rejection := range []bool{false, true} {
+		t.Run(fmt.Sprintf("nativeRejection=%t", rejection), func(t *testing.T) {
+			t.Setenv("C2J_OBJECT_OUTBOX", t.TempDir())
+			secondTurn := mockCodexTurn{Summary: `{"answer":"invalid"}`}
+			if rejection {
+				secondTurn = mockCodexTurn{SchemaRejection: true}
+			}
+			api := newMockCodexAPI(t, []mockCodexTurn{{Summary: "remembered"}, secondTurn, {Summary: `{"answer":42}`}})
+			defer api.Close()
+			ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+			defer cancel()
+			first := liveExecuteOptions(t, api)
+			t.Setenv("CODEX_HOME", first.HostCodexHome)
+			input := ExecOpInput{Prompt: "Remember the answer 42.", Env: first.ExtraEnv,
+				WorkdirPath: first.WorkDirRoot, WorktreePath: first.WorktreeRoot,
+				ArtifactInboxPath: first.ArtifactInbox, ArtifactOutboxPath: first.ArtifactOutbox,
+				InstructionsFile: artifactTextFixture(t, first.WorkDirRoot, "instructions.txt", "initial-session-guidance: keep quoted \"text\".\nPreserve this guidance."),
+				PromptPrefixFile: artifactTextFixture(t, first.WorkDirRoot, "prefix.txt", "initial-prefix-marker\t\r\n"),
+			}
+			output, err := Run(ctx, input)
+			require.NoError(t, err)
+			store := checkpointStore(t)
+			draft := output.Objects[output.Session.Name]
+			ref, err := store.Publish(ctx, draft.Type, draft.Metadata, draft.Files)
+			require.NoError(t, err)
+			require.NoError(t, os.RemoveAll(first.WorkDirRoot))
+			second := liveExecuteOptions(t, api)
+			t.Setenv("CODEX_HOME", second.HostCodexHome)
+			input = ExecOpInput{Prompt: "Return the remembered answer.", Session: hydrateSession(t, store, ref), Env: second.ExtraEnv,
+				WorkdirPath: second.WorkDirRoot, WorktreePath: second.WorktreeRoot,
+				ArtifactInboxPath: second.ArtifactInbox, ArtifactOutboxPath: second.ArtifactOutbox,
+				InstructionsFile: artifactTextFixture(t, second.WorkDirRoot, "instructions.txt", "ignored-continuation-guidance"),
+				PromptPrefixFile: artifactTextFixture(t, second.WorkDirRoot, "prefix.txt", "current-prefix-marker"),
+				Output:           ResponseOutputSpec{Schema: json.RawMessage(answerSchema)},
+				StatusContract:   StatusContractRef{Path: "status.json"},
+			}
+			repaired, err := Run(ctx, input)
+			require.NoError(t, err)
+			require.Equal(t, output.SessionID, repaired.SessionID)
+			require.True(t, *repaired.OutputSchemaValid)
+			require.Equal(t, 1, repaired.OutputRepairAttempts)
+			api.mu.Lock()
+			defer api.mu.Unlock()
+			require.Len(t, api.requests, 3)
+			for i, request := range api.requests {
+				requireInitialInstructions(t, request)
+				history, err := json.Marshal(request["input"])
+				require.NoError(t, err)
+				require.Equal(t, 1, strings.Count(string(history), "initial-prefix-marker"))
+				wantCurrent := 0
+				if i > 0 {
+					wantCurrent = 1
+				}
+				require.Equal(t, wantCurrent, strings.Count(string(history), "current-prefix-marker"))
+			}
+			if rejection {
+				require.Equal(t, "prompt", repaired.SchemaMode)
+				requireNoNativeSchema(t, api.requests[2])
+				history, err := json.Marshal(api.requests[2]["input"])
+				require.NoError(t, err)
+				require.Contains(t, string(history), "Native structured output is unavailable")
+				require.Contains(t, string(history), "Execution contract:")
+				require.Contains(t, string(history), "Return the remembered answer.")
+			}
+		})
 	}
 }
 

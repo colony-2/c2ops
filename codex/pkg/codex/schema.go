@@ -57,6 +57,9 @@ func Execute(ctx context.Context, opts Options) (Result, string, string, string,
 	}
 	var events, items []json.RawMessage
 	originalPrompt := opts.Prompt
+	if opts.schemaFallbackPrompt != "" {
+		originalPrompt = opts.schemaFallbackPrompt
+	}
 	mode := "native"
 	for attempt := 0; ; attempt++ {
 		result, attemptStdout, attemptStderr, attemptDir, runErr := executeOnce(ctx, opts)

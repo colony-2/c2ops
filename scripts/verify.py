@@ -23,7 +23,7 @@ HELD = {
     'worker-image': 'scripts/check-codex-worker.py requires Docker daemon/image execution.',
     'public-actions': 'C2OPS_TEST_GHA_ACTIONS remains unset; real public Actions/service actions and remote CI held.',
     'publication': 'C2OPS_TEST_NIX_PUBLICATION remains unset; four real cache tests, Cachix record/verify/push/pin and promote-published held.',
-    'nix-build-checks': 'Pydantic and go-build packages build locally; other operation checks retain cached realization.',
+    'nix-build-checks': 'Codex, pydantic and go-build packages build locally; other operation checks retain cached realization.',
     'release': 'Signing, publication and deployment require external infrastructure/credentials and are held even if available.',
 }
 _ACTIVE = None
@@ -76,6 +76,13 @@ class Checks:
         except OSError as error:
             record.update(returncode=127, error=str(error))
         finally:
+            # A test runner may exit after timing out only its immediate child.
+            # Stop remaining group members before deleting their scratch/cache.
+            if _ACTIVE is not None:
+                try:
+                    os.killpg(_ACTIVE.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
             _ACTIVE = None
         record['seconds'] = round(time.monotonic() - started, 3)
         self.log.write(('\n' + json.dumps(record) + '\n').encode())
@@ -188,12 +195,41 @@ def execute(name, checks, race):
         for selection in GHA_RUNTIME_PARTITIONS:
             checks.go('gha/integration', [*flags, '-v', *selection, './...'])
     elif name == 'codex':
+        # Use this module's runtime pin even when a worker inherits a Go workspace.
+        checks.env['GOWORK'] = 'off'
+        # Embedded recipe fixtures use their own tenants and execution context.
+        for key in list(checks.env):
+            if key.startswith(('C2J_CURRENT_', 'C2J_CHILD_JOB_', 'C2J_WORKSPACE_')) or key in (
+                    'C2J_JOBDB', 'C2J_TENANT_ID', 'C2J_OBJECT_OUTBOX',
+                    'C2J_TEST_SUBMIT_BINARY', 'C2J_NIX_TEST_CONTAINER'):
+                checks.env.pop(key)
+        # Direct-reference handoff/decoder and retry failures surface before packaging.
+        # Native session checks need the CLI prepared for the full suite below.
+        if not checks.go('codex', ['-run', '^Test(Artifact(Text|Prefix|FileInputManifests)|DecodeArtifact|OutputSchema|NoSchema)',
+                                   '-skip', '^TestArtifactTextNativeSessionAndRepairs$',
+                                   './pkg/codex', './internal/extensioncmd', './test-fixtures']):
+            return
+        # Exercise this checkout, including its manifests, in recipe fixtures.
+        # with-codex/op_test only realize prepared packages; build them here.
+        if not checks.run([*NIX, 'build', '--no-link', '--no-write-lock-file',
+                           '--max-jobs', '1', '--cores', '2',
+                           '.#codex', '.#skill-run', '.#codex-cli']):
+            return
         checks.run(['python3', '../scripts/with-codex.py', '--', 'go', 'test', '-mod=readonly',
                     '-count=1', '-timeout=8m', './...'], 'codex')
     elif name == 'jev':
         checks.run(['uv', 'run', '--with', 'typesafe-sdk==0.7.4', '--with', 'httpx2==2.9.1',
                     '--with', 'jsonschema==4.26.0', 'python', '-m', 'unittest', '-v', 'test_main.py'], 'jev')
     elif name == 'kimi':
+        # The CLI fixture has a 90s invocation deadline. Cold compilation of
+        # its real c2j tool preparer belongs to setup, under this runner's limit.
+        checks.env['GOWORK'] = 'off'
+        # The runtime now owns pnpm's private install policy. The verifier's
+        # legacy override conflicts with that policy and is unnecessary here.
+        checks.env.pop('PNPM_CONFIG_ALLOW_BUILDS', None)
+        if not checks.run(['go', 'build', '-mod=readonly', '-o',
+                           str(checks.root.parent / 'with-tools'), '../scripts/with-tools.go'], 'codex'):
+            return
         checks.run(['uv', 'run', '--with', 'jsonschema==4.26.0', 'python', '-m', 'unittest', '-v', 'test_main.py'], 'kimi')
     elif name == 'nix-metadata':
         checks.run([*NIX, 'flake', 'check', '--no-build', '--no-write-lock-file', '--system', 'aarch64-linux'])

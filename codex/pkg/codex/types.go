@@ -74,4 +74,8 @@ type Options struct {
 
 	StructuredSchema  []byte
 	MaxRepairAttempts *int
+
+	// The task without its artifact prefix, used only for native-schema fallback.
+	// Empty preserves the original prompt for direct Execute and skill.run callers.
+	schemaFallbackPrompt string
 }

@@ -182,3 +182,28 @@ func TestDecodeModelEffortInputs(t *testing.T) {
 		require.Equal(t, exec.ReasoningEffort, skill.ReasoningEffort)
 	}
 }
+
+func TestDecodeArtifactFileInputs(t *testing.T) {
+	for _, field := range []string{"instructions_file", "prompt_prefix_file"} {
+		for _, value := range []string{
+			`null`, `42`, `false`, `[]`, `"/invocation/inbox/shared.txt"`,
+			`{"kind":"stored","stored":{}}`, `{"ref":{},"path":"/invocation/file"}`,
+			`{"ref":null,"path":"/invocation/file"}`, `{"path":"/invocation/file"}`,
+			`{"ref":{"kind":"stored"}}`,
+		} {
+			_, err := decodeInput[codex.ExecOpInput](strings.NewReader(`{"` + field + `":` + value + `}`))
+			require.ErrorContains(t, err, field)
+		}
+		value := `{"ref":{"kind":"stored","stored":{"key":{"jobId":"job","taskOrdinal":7,"name":"shared.txt"}}},"path":"/invocation/artifact-files-123/000000"}`
+		input, err := decodeInput[codex.ExecOpInput](strings.NewReader(`{"` + field + `":` + value + `}`))
+		require.NoError(t, err)
+		path := input.InstructionsFile
+		if field == "prompt_prefix_file" {
+			path = input.PromptPrefixFile
+		}
+		require.Equal(t, "/invocation/artifact-files-123/000000", path.Path)
+		require.JSONEq(t, `{"kind":"stored","stored":{"key":{"jobId":"job","taskOrdinal":7,"name":"shared.txt"}}}`, string(path.Ref))
+		_, err = decodeInput[codex.SkillRunInput](strings.NewReader(`{"` + field + `":` + value + `}`))
+		require.Error(t, err, "skill.run does not gain these inputs")
+	}
+}

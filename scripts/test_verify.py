@@ -11,6 +11,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -20,6 +21,119 @@ spec.loader.exec_module(verify)
 
 
 class VerificationTests(unittest.TestCase):
+    @unittest.skipUnless(sys.platform == 'linux', 'inspects Linux process state')
+    def test_completed_command_stops_leftover_descendants(self):
+        for returncode in (0, 7):
+            with self.subTest(returncode=returncode), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                marker = root / 'child.pid'
+                child = 'import os,time;from pathlib import Path;Path("child.pid").write_text(str(os.getpid()));time.sleep(30)'
+                parent = ('import subprocess,sys,time;from pathlib import Path;'
+                          'subprocess.Popen([sys.executable,"-c",sys.argv[1]]);'
+                          'deadline=time.monotonic()+5\n'
+                          'while (not Path("child.pid").exists() or not Path("child.pid").read_text()) and time.monotonic()<deadline: time.sleep(.01)\n'
+                          'assert Path("child.pid").read_text()\n'
+                          'raise SystemExit(int(sys.argv[2]))')
+                with (root / 'checks.log').open('wb') as log:
+                    checks = verify.Checks(root, dict(os.environ), log, timeout=10)
+                    self.assertEqual(checks.run([sys.executable, '-c', parent, child, str(returncode)]), returncode == 0)
+                pid = int(marker.read_text())
+                try:
+                    deadline = time.monotonic() + 2
+                    while True:
+                        try:
+                            state = Path(f'/proc/{pid}/stat').read_text().split()[2]
+                        except FileNotFoundError:
+                            break
+                        if state == 'Z':
+                            break
+                        self.assertLess(time.monotonic(), deadline, 'descendant still running after command completion')
+                        time.sleep(.01)
+                finally:
+                    try:
+                        os.kill(pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                self.assertEqual(checks.commands[0]['returncode'], returncode)
+
+    def test_kimi_prepares_helper_before_cli_deadline(self):
+        for build_fails in (False, True):
+            with self.subTest(build_fails=build_fails), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                (root / 'codex').mkdir()
+                (root / 'kimi').mkdir()
+                tools = root / 'tools'
+                tools.mkdir()
+                go = tools / 'go'
+                go.write_text('#!' + sys.executable + '\nimport os,sys\n'
+                              'assert os.environ["GOWORK"] == "off"\n'
+                              'assert "PNPM_CONFIG_ALLOW_BUILDS" not in os.environ\n'
+                              'assert sys.argv[1:3] == ["build", "-mod=readonly"]\n'
+                              'raise SystemExit(' + ('9' if build_fails else '0') + ')\n')
+                go.chmod(0o755)
+                uv = tools / 'uv'
+                uv.write_text('#!' + sys.executable + '\nraise SystemExit(0)\n')
+                uv.chmod(0o755)
+                with (root / 'checks.log').open('wb') as log:
+                    checks = verify.Checks(root, {**os.environ, 'GOWORK':'/ambient/go.work',
+                        'PNPM_CONFIG_ALLOW_BUILDS':'{"legacy":false}',
+                        'PATH':str(tools)+os.pathsep+os.environ['PATH']}, log)
+                    verify.execute('kimi', checks, race=False)
+                self.assertEqual(len(checks.commands), 1 if build_fails else 2)
+                build = checks.commands[0]
+                self.assertEqual(build['directory'], 'codex')
+                self.assertEqual(build['argv'][-1], '../scripts/with-tools.go')
+                self.assertEqual(build['returncode'], 9 if build_fails else 0)
+                if not build_fails:
+                    self.assertEqual(checks.commands[1]['directory'], 'kimi')
+                    self.assertIn('test_main.py', checks.commands[1]['argv'])
+
+    def test_codex_failure_stops_before_unprepared_candidate_use(self):
+        root = Path(verify.__file__).resolve().parents[1]
+        hook = (root / ".c2/recipes/hooks/build/verify.yaml").read_text()
+        task = hook.split("- id: codex\n", 1)[1].split("\n- id:", 1)[0]
+        self.assertIn('GOWORK: "off"', task)
+        for failed_stage in ('reader', 'package', 'suite'):
+            with self.subTest(failed_stage=failed_stage), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                (root / 'codex').mkdir()
+                tools = root / 'tools'
+                tools.mkdir()
+                # Real failing subprocesses exercise Checks' failure recording.
+                for name, stage in (('go', 'reader'), ('nix', 'package'), ('python3', 'suite')):
+                    program = tools / name
+                    program.write_text('#!' + sys.executable + '\nimport os\nassert os.environ["GOWORK"] == "off"\nassert "C2J_CURRENT_JOB_ID" not in os.environ\nassert "C2J_JOBDB" not in os.environ\nraise SystemExit(' +
+                                       ('9' if stage == failed_stage else '0') + ')\n')
+                    program.chmod(0o755)
+                env = {**os.environ, 'PATH':str(tools)+os.pathsep+os.environ['PATH'],
+                       'C2OPS_TEST_FLAKE':'path:' + str(root), 'GOWORK':'/ambient/go.work',
+                       'C2J_CURRENT_JOB_ID':'parent', 'C2J_JOBDB':'parent-db'}
+                with (root / 'codex.log').open('wb') as log:
+                    checks = verify.Checks(root, env, log)
+                    verify.execute('codex', checks, race=False)
+                expected_count = {'reader':1, 'package':2, 'suite':3}[failed_stage]
+                self.assertEqual(len(checks.commands), expected_count)
+                self.assertEqual(checks.commands[-1]['returncode'], 9)
+                self.assertIn('./internal/extensioncmd', checks.commands[0]['argv'])
+                self.assertIn('./test-fixtures', checks.commands[0]['argv'])
+                selection = checks.commands[0]['argv'][checks.commands[0]['argv'].index('-run') + 1]
+                exclusion = checks.commands[0]['argv'][checks.commands[0]['argv'].index('-skip') + 1]
+                for name in ('TestArtifactTextExactComposition', 'TestArtifactPrefixSchemaRetries',
+                             'TestArtifactFileInputManifests', 'TestDecodeArtifactFileInputs'):
+                    self.assertRegex(name, selection)
+                    self.assertNotRegex(name, exclusion)
+                self.assertRegex('TestArtifactTextNativeSessionAndRepairs', exclusion,
+                                 'native session tests need the CLI prepared for the full suite')
+                self.assertNotRegex('TestArtifactInputRecipeReferences', selection,
+                                    'recipe fixtures must wait until the candidate is built')
+                if expected_count >= 2:
+                    self.assertEqual(checks.commands[1]['argv'][-3:], ['.#codex', '.#skill-run', '.#codex-cli'])
+                if expected_count == 3:
+                    self.assertEqual(checks.commands[2]['directory'], 'codex')
+                    self.assertEqual(checks.commands[2]['argv'][-1], './...')
+                    self.assertNotIn('-run', checks.commands[2]['argv'])
+                    self.assertNotIn('-skip', checks.commands[2]['argv'])
+
     def test_npm_hook_has_const_task_and_exports_evidence(self):
         root = Path(verify.__file__).resolve().parents[1]
         hook = (root / '.c2/recipes/hooks/build/verify.yaml').read_text()

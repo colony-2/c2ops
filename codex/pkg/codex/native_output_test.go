@@ -279,3 +279,53 @@ func TestSchemaSetupErrorKeepsReadableArtifacts(t *testing.T) {
 	assertFileContent(t, stdout, "")
 	assertFileContent(t, stderr, "")
 }
+
+func TestArtifactPrefixSchemaRetries(t *testing.T) {
+	for _, nativeRejected := range []bool{false, true} {
+		for _, taskContainsPrefix := range []bool{false, true} {
+			t.Run(fmt.Sprintf("nativeRejected=%t/taskContainsPrefix=%t", nativeRejected, taskContainsPrefix), func(t *testing.T) {
+				firstStream := nativeTurn(`{"answer":"invalid"}`)
+				if nativeRejected {
+					firstStream = "{\"type\":\"thread.started\",\"thread_id\":\"test-session\"}\n" +
+						"{\"type\":\"turn.failed\",\"error\":{\"message\":\"invalid_json_schema\"}}\n"
+				}
+				dir := installNativeSequence(t, []string{firstStream, nativeTurn(`{"answer":42}`)}, 0)
+				opts := testExecuteOptions(t)
+				prefix, task := "shared prefix", "task text"
+				if taskContainsPrefix {
+					task += " including shared prefix"
+				}
+				cfg := skillExecutionConfig{StatusContractPath: "status.json"}
+				opts.Prompt = renderSkillPrompt(composePrompt(prefix, task), cfg)
+				opts.schemaFallbackPrompt = renderSkillPrompt(task, cfg)
+				opts.Instructions = "developer guidance"
+				opts.StructuredSchema = []byte(answerSchema)
+				r, stdout, stderr, artifacts, err := Execute(context.Background(), opts)
+				defer cleanupArtifacts(stdout, stderr, artifacts)
+				require.NoError(t, err)
+				require.Equal(t, StatusCompleted, r.Status, r.ErrorMessage)
+				require.True(t, *r.OutputSchemaValid)
+				require.Equal(t, 1, r.OutputRepairAttempts)
+				initial, err := os.ReadFile(filepath.Join(dir, "args-1"))
+				require.NoError(t, err)
+				require.Contains(t, string(initial), opts.Prompt)
+				retry, err := os.ReadFile(filepath.Join(dir, "args-2"))
+				require.NoError(t, err)
+				require.Contains(t, string(retry), "resume\ntest-session\n")
+				require.NotContains(t, string(retry), "developer_instructions=")
+				if nativeRejected {
+					require.Contains(t, string(retry), opts.schemaFallbackPrompt)
+					require.Contains(t, string(retry), "Native structured output is unavailable")
+					wantCount := 0
+					if taskContainsPrefix {
+						wantCount = 1
+					}
+					require.Equal(t, wantCount, strings.Count(string(retry), prefix))
+				} else {
+					require.Contains(t, string(retry), "Correct your previous final response")
+					require.NotContains(t, string(retry), prefix)
+				}
+			})
+		}
+	}
+}

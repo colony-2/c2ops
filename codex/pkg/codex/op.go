@@ -20,6 +20,8 @@ import (
 // ExecOpInput defines the codex.exec command input.
 type ExecOpInput struct {
 	Instructions       string             `json:"instructions,omitempty"`
+	InstructionsFile   *ArtifactFileInput `json:"instructions_file,omitempty"`
+	PromptPrefixFile   *ArtifactFileInput `json:"prompt_prefix_file,omitempty"`
 	Output             ResponseOutputSpec `json:"output,omitempty"`
 	Prompt             string             `json:"prompt" validate:"required"`
 	Session            *SessionInput      `json:"session,omitempty"`
@@ -36,7 +38,8 @@ type ExecOpInput struct {
 	ArtifactInboxPath  string             `json:"artifact_inbox_path,omitempty" default:"{{ context.environment.op.inbox }}"`
 	ArtifactOutboxPath string             `json:"artifact_outbox_path,omitempty" default:"{{ context.environment.op.outbox }}"`
 
-	execution *sessionExecution
+	execution    *sessionExecution
+	promptPrefix string
 }
 
 // ExecOpOutput exposes native Codex data alongside host-managed session metadata.
@@ -107,6 +110,9 @@ var executeLibrary = Execute
 func Run(actx context.Context, input ExecOpInput) (result ExecOpOutput, retErr error) {
 	paths, err := normalizeExecRunPaths(input)
 	if err != nil {
+		return ExecOpOutput{}, err
+	}
+	if err := resolveArtifactTextInputs(&input, paths.Workdir); err != nil {
 		return ExecOpOutput{}, err
 	}
 	actx, closeProgress, err := withProgress(actx, paths.Outbox)
@@ -188,7 +194,7 @@ func runCodexActivityPrepared(
 	if err != nil {
 		return ExecOpOutput{}, err
 	}
-	promptForExec := renderSkillPrompt(prompt, skillCfg)
+	promptForExec := renderSkillPrompt(composePrompt(input.promptPrefix, prompt), skillCfg)
 	idleTimeout, err := parseDurationInput("idle_timeout", input.IdleTimeout, 0)
 	if err != nil {
 		return ExecOpOutput{}, err
@@ -211,6 +217,9 @@ func runCodexActivityPrepared(
 		ArtifactInbox:       paths.Inbox,
 		ArtifactOutbox:      paths.Outbox,
 		ConfiguredSkillDirs: configuredSkillDirs,
+	}
+	if input.PromptPrefixFile != nil {
+		opts.schemaFallbackPrompt = renderSkillPrompt(prompt, skillCfg)
 	}
 
 	result, stdoutPath, stderrPath, artifactDir, executeErr := executeLibrary(actx, opts)
@@ -369,6 +378,24 @@ func (input *ExecOpInput) UnmarshalJSON(data []byte) error {
 	if err := rejectLegacySessionFields(data); err != nil {
 		return err
 	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	for _, name := range []string{"instructions_file", "prompt_prefix_file"} {
+		if raw, exists := fields[name]; exists {
+			var file ArtifactFileInput
+			dec := json.NewDecoder(bytes.NewReader(raw))
+			dec.DisallowUnknownFields()
+			if err := dec.Decode(&file); err != nil {
+				return fmt.Errorf("%s: expected a runtime-resolved artifact reference: %w", name, err)
+			}
+			if err := file.validate(name); err != nil {
+				return err
+			}
+		}
+	}
+
 	type plain ExecOpInput
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()

@@ -1,0 +1,44 @@
+id: codex-artifact-inputs
+version: "1"
+perms: {jobdb: {secrets: {resolve: [codex_api_key]}}}
+sequence:
+  - id: instructions
+    op: command_execution
+    inputs:
+      working_directory: "{{ context.environment.op.outbox }}"
+      run: >-
+        python3 -c 'import base64; open("shared.txt", "wb").write(base64.b64decode("CkTDqXZlbG9wZXIJInF1b3RlZCINCiR7eyBsaXRlcmFsLmluc3RydWN0aW9ucyB9fQo="))'
+  - id: prefix
+    op: command_execution
+    inputs:
+      working_directory: "{{ context.environment.op.outbox }}"
+      run: >-
+        python3 -c 'import base64; open("shared.txt", "wb").write(base64.b64decode("U2hhcmVkIGNvbnRleHQg8J+QiAkNCiR7eyBsaXRlcmFsLnByZWZpeCB9fQo="))'
+  - id: current
+    op: command_execution
+    inputs:
+      working_directory: "{{ context.environment.op.outbox }}"
+      run: >-
+        python3 -c 'import base64; open("shared.txt", "wb").write(base64.b64decode("Q3VycmVudCBzaGFyZWQgY29udGV4dAo="))'
+  - id: initial
+    op: nix:github:colony-2/c2ops/published#codex
+    inputs:
+      instructions_file: '${{ sequence.instructions.artifacts["shared.txt"] }}'
+      prompt_prefix_file: '${{ sequence.prefix.artifacts["shared.txt"] }}'
+      env:
+        C2OPS_CODEX_CAPTURE_LABEL: initial
+      prompt: |
+        bash -lc 'true'
+  - id: resumed
+    op: nix:github:colony-2/c2ops/published#codex
+    inputs:
+      instructions_file: '${{ sequence.prefix.artifacts["shared.txt"] }}'
+      prompt_prefix_file: '${{ sequence.current.artifacts["shared.txt"] }}'
+      env:
+        C2OPS_CODEX_CAPTURE_LABEL: resumed
+      session: "${{ sequence.initial.outputs.session }}"
+      prompt: |
+        bash -lc 'true'
+outputs:
+  status: "${{ sequence.resumed.outputs.status }}"
+  session: "${{ sequence.resumed.outputs.session }}"

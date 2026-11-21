@@ -51,6 +51,7 @@ op: nix:github:colony-2/c2ops/published#codex
 
 - `prompt`
 - `instructions` (optional; new sessions only)
+- `instructions_file`, `prompt_prefix_file` (optional artifact references; see below)
 - `session` (optional `c2ops.codex.session/v1` reference)
 - `model`
 - `api` (optional external Responses API: `base_url`, `api_key`; legacy `api_key_env`)
@@ -84,6 +85,56 @@ applies to schema and artifact repair attempts. A recipe loop can therefore keep
 one op definition with the same inputs and pass its previous `session` output
 back on each iteration. No separate instruction field is added to checkpoint
 metadata. The ordinary `prompt` remains the user message for each invocation.
+
+## Reusable instructions and prompt context
+
+`codex` accepts optional `instructions_file` and `prompt_prefix_file` artifact
+references directly, without separate inbox bindings or path inputs:
+
+```yaml
+op: nix:github:colony-2/c2ops/published#codex
+inputs:
+  instructions_file: '${{ sequence.shared.artifacts["instructions.md"] }}'
+  prompt_prefix_file: '${{ sequence.shared.artifacts["context.md"] }}'
+  prompt: Fix the failing tests.
+```
+
+Omit either input when absent. Stored artifacts and external `file:`, `http:`
+and `https:` references are supported. Raw paths, null and caller-built
+`{ref, path}` objects are rejected. Same-named artifacts from different producers
+retain their identities. Existing inline inputs need no migration. `skill-run`
+does not expose these file inputs.
+
+This requires c2j commit `0c59f7b976b3d00f64dc0482ad0fbf53998081b9` or a
+compatible successor on every compiler/preparer and executing worker. Older
+runtimes do not interpret `x-c2j-artifact-file`; upgrading this library's test
+dependency alone does not upgrade deployed runtimes. The runtime stages a private
+regular file and supplies its descriptor only to subprocess stdin. Codex reads it
+during the invocation; callers never provide that descriptor themselves.
+
+Stored references provide stable bytes across attempts. External references fetch
+their current contents; local file URLs must be accessible on the executing worker.
+
+Files must contain UTF-8 text without NUL bytes. Instruction text retains its
+exact bytes and its developer role; nonblank inline `instructions` conflicts
+with `instructions_file`. Blank instruction text adds no developer instruction.
+File instructions apply only to new sessions. Supplied files must remain
+available and valid on resumed invocations too; change instructions by starting
+a new session.
+
+The operation trims the task's surrounding whitespace and sends
+`prefix + "\n\n" + task`. An empty prefix adds nothing; a whitespace-only prefix
+is preserved. The task remains required and nonblank. Artifact text is literal:
+expressions, Unicode, CRLF and trailing newlines are not transformed. Generated
+execution-contract guidance wraps the combined request. Each recipe invocation,
+including a resume, gets its current prefix once; internal schema repairs do
+not repeat it.
+
+Recorded operation inputs retain references, without embedding fetched bodies or
+staging paths. Resolved text and paths are not added to checkpoint metadata, but
+the existing Codex conversation and CLI logs can contain the delivered text.
+The runtime cleans staging files after ordinary completion, failure and cooperative
+cancellation; abrupt process or machine death can leave files behind.
 
 ## External API / CLIProxyAPI
 

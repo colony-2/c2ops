@@ -1,0 +1,7 @@
+tests:
+  - name: stored_text_new_and_resumed_session
+    description: Separate inbox aliases preserve same-named source artifacts and supply text on each invocation.
+    inputs: {}
+    want:
+      status: completed
+    wantErr: false

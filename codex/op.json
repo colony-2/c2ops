@@ -18,6 +18,16 @@
         "type": "string",
         "description": "Additional developer instructions for a new session only. Ignored when continuing a session, including repair attempts; the existing rollout supplies its instructions."
       },
+      "instructions_file": {
+        "type": "object",
+        "x-c2j-artifact-file": true,
+        "description": "Artifact reference to UTF-8 text supplying developer instructions for a new session. Conflicts with nonblank inline instructions. The runtime resolves the file internally; paths and caller-built descriptors are rejected."
+      },
+      "prompt_prefix_file": {
+        "type": "object",
+        "x-c2j-artifact-file": true,
+        "description": "Artifact reference to UTF-8 text prepended verbatim, then two newlines, to each task prompt. Empty text adds nothing; internal repairs do not repeat it. The runtime resolves the file internally; paths and caller-built descriptors are rejected."
+      },
       "session": {
         "type": "object",
         "x-c2j-object-type": "c2ops.codex.session/v1"

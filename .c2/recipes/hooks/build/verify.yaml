@@ -128,6 +128,8 @@ sequence:
       VERIFY_CANDIDATE: ${{ inputs.candidate }}
       VERIFY_BASE: ${{ inputs.base }}
     run: python3 "$VERIFY_ROOT/scripts/verify.py" check gha-runtime --race
+# Checks direct-reference handoff/text/manifest contracts before packaging, then
+# runs all CLI and source/Nix fixtures using the pinned c2j staging implementation.
 - id: codex
   op: command_execution
   const: true
@@ -135,6 +137,7 @@ sequence:
     packages: *id001
   inputs:
     env:
+      GOWORK: "off"
       VERIFY_ROOT: ${{ context.environment.op.worktree_path }}
       VERIFY_OUTBOX: ${{ context.environment.op.outbox }}
       VERIFY_TARGET: ${{ inputs.target_directory }}
@@ -234,6 +237,7 @@ sequence:
       VERIFY_BASE: ${{ inputs.base }}
     run: python3 "$VERIFY_ROOT/scripts/verify.py" check jev
 - id: kimi
+  # Prepare the real Go tool helper before the CLI fixture's invocation deadline.
   op: command_execution
   const: true
   execution_needs:

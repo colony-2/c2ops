@@ -113,7 +113,7 @@ let
           export XDG_CONFIG_HOME="$TMPDIR/release-pack-config"
           mkdir -p "$XDG_CONFIG_HOME"
         '';
-      } // lib.optionalAttrs (module == "go_build") {
+      } // lib.optionalAttrs (builtins.elem module [ "go_build" "codex" ]) {
         # Keep telemetry/config writes inside this build, including goModules.
         # Never create /homeless-shelter on an unsandboxed local builder.
         preBuild = ''

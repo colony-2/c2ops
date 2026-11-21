@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http/cgi"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path"
@@ -18,7 +20,10 @@ import (
 	"time"
 
 	"github.com/colony-2/c2j/pkg/contextual"
+	"github.com/colony-2/c2j/pkg/execution"
+	"github.com/colony-2/c2j/pkg/executionruntime"
 	gitexport "github.com/colony-2/c2j/pkg/git/export"
+	"github.com/colony-2/c2j/pkg/gitprofile"
 	"github.com/colony-2/c2j/pkg/jobdbschema"
 	"github.com/colony-2/c2j/pkg/objects"
 	coreops "github.com/colony-2/c2j/pkg/ops"
@@ -38,6 +43,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 )
+
+const fixtureCellRepo = "example.test/codex-fixture"
 
 var registerFixtureOpsOnce sync.Once
 
@@ -71,7 +78,7 @@ func TestRecipeFixtures(t *testing.T) {
 				t.Run(tc.Name, func(t *testing.T) {
 					jobCtx, gitCtx := generateTestContext(repoPath, repoHash, tc.JobContext, tc.GitContext)
 					result, artifacts, jobArtifacts, err := executeRecipeWithArtifacts(
-						context.Background(),
+						t, context.Background(),
 						activityRegistry,
 						recipeDef,
 						tc.Inputs,
@@ -140,9 +147,12 @@ if [[ -z "${cmd}" ]]; then
   echo "missing fixture command in prompt" >&2
   exit 1
 fi
-python3 - <<'PYCODE'
-import os, sqlite3
+python3 - "$@" <<'PYCODE'
+import json, os, sqlite3, sys, uuid
 from pathlib import Path
+if capture := os.environ.get('C2OPS_CODEX_CAPTURE_DIR'):
+    Path(capture, str(uuid.uuid4()) + '.json').write_text(json.dumps({
+        'argv': sys.argv[1:], 'label': os.environ.get('C2OPS_CODEX_CAPTURE_LABEL', '')}))
 home = Path(os.environ['CODEX_HOME'])
 (home / 'sessions').mkdir(exist_ok=True)
 rollout = home / 'sessions/fixture-session.jsonl'
@@ -209,12 +219,20 @@ func fixtureRecipeYAML(t *testing.T, path string) []byte {
 	require.NoError(t, err)
 	var authored any
 	require.NoError(t, yaml.Unmarshal(data, &authored))
+	// The production manifest's optional API-key default needs an explicit grant.
+	authored.(map[string]any)["perms"] = map[string]any{"jobdb": map[string]any{
+		"secrets": map[string]any{"resolve": []string{"codex_api_key"}},
+	}}
 	var override func(any)
 	override = func(value any) {
 		switch node := value.(type) {
 		case map[string]any:
 			if coordinate, ok := node["op"].(string); ok && coordinate != "command_execution" {
 				require.True(t, strings.HasPrefix(coordinate, "nix:github:colony-2/c2ops/published#"), "fixture must use a public op coordinate: %s", coordinate)
+				if source := os.Getenv("C2OPS_TEST_CODEX_SOURCE_MANIFEST"); source != "" && coordinate == "nix:github:colony-2/c2ops/published#codex" {
+					node["op"] = "./artifact-codex"
+					break
+				}
 				output, err := exec.Command("python3", filepath.Join(opRootDir(t), "..", "scripts", "op_test.py"),
 					"reference", coordinate).CombinedOutput()
 				require.NoError(t, err, string(output))
@@ -247,6 +265,13 @@ func createFixtureRepo(t *testing.T, primaryPath string, secondaryPaths []string
 	}
 
 	require.NoError(t, initFixtureRepo(repoDir))
+	if source := os.Getenv("C2OPS_TEST_CODEX_SOURCE_MANIFEST"); source != "" {
+		data, err := os.ReadFile(filepath.Join(source, "op.yaml"))
+		require.NoError(t, err)
+		dir := filepath.Join(repoDir, "artifact-codex")
+		require.NoError(t, os.MkdirAll(dir, 0755))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "op.yaml"), data, 0644))
+	}
 	require.NoError(t, copyRecipeIntoFixtureRepo(t, repoDir, primaryPath, fixtureRecipeRelPath(t, primaryPath)))
 	for _, relPath := range secondaryPaths {
 		sourcePath := filepath.Join(fixturesRootDir(t), "recipes", relPath)
@@ -394,6 +419,9 @@ func buildRecipeRegistry(
 		selector, err := buildFixtureRecipeSelector(repositorySource, relPath, ref)
 		require.NoError(t, err)
 		recipes[selector] = &def
+		cellSelector, err := buildFixtureRecipeSelector(fixtureCellRepo, relPath, ref)
+		require.NoError(t, err)
+		recipes[cellSelector] = &def
 	}
 
 	addRecipe(primaryPath, fixtureRecipeRelPath(t, primaryPath), primary)
@@ -412,9 +440,11 @@ func buildRecipeRegistry(
 }
 
 type artifactCapture struct {
-	mu          sync.Mutex
-	names       map[string]bool
-	nixPackages map[string]bool
+	mu             sync.Mutex
+	names          map[string]bool
+	nixPackages    map[string]bool
+	sourcePrepared bool
+	invocations    []workerops.ActivityInvocationRequest
 }
 
 func newArtifactCapture() *artifactCapture {
@@ -449,6 +479,14 @@ func (c *capturingTaskWorker) Name() string {
 }
 
 func (c *capturingTaskWorker) Run(ctx jobworkflow.TaskContext, input jobdb.TaskData) (jobdb.TaskData, error) {
+	if data, err := input.GetData(); err == nil {
+		var request workerops.ActivityInvocationRequest
+		if json.Unmarshal(data, &request) == nil && request.Preparation.Extension != nil {
+			c.capture.mu.Lock()
+			c.capture.invocations = append(c.capture.invocations, request)
+			c.capture.mu.Unlock()
+		}
+	}
 	output, err := c.inner.Run(ctx, input)
 	if err == nil && output != nil {
 		data, readErr := output.GetData()
@@ -456,11 +494,15 @@ func (c *capturingTaskWorker) Run(ctx jobworkflow.TaskContext, input jobdb.TaskD
 		var invocation workerops.ActivityInvocationOutput
 		if readErr == nil && json.Unmarshal(data, &envelope) == nil &&
 			envelope.Kind == coretask.OutputKindActivityInvocationOutput && envelope.DecodePayload(&invocation) == nil && invocation.Extension != nil &&
-			invocation.Extension.Nix != nil && invocation.Setup != nil && invocation.Setup.Error == "" {
+			invocation.Setup != nil && invocation.Setup.Error == "" {
 			// c2j prepares tools inside the consuming activity. Observe its
 			// successful Nix setup; the CLI override supplies the fixture client.
 			c.capture.mu.Lock()
-			c.capture.nixPackages[invocation.Extension.Nix.StorePath] = true
+			if invocation.Extension.Nix != nil {
+				c.capture.nixPackages[invocation.Extension.Nix.StorePath] = true
+			} else {
+				c.capture.sourcePrepared = true
+			}
 			c.capture.mu.Unlock()
 		}
 	}
@@ -481,6 +523,7 @@ func wrapTaskWorkers(workers map[string]jobworkflow.TaskWorker, capture *artifac
 }
 
 func executeRecipeWithArtifacts(
+	t *testing.T,
 	ctx context.Context,
 	registry *workerops.ActivityRegistry,
 	recipeDef recipe.Recipe,
@@ -489,7 +532,22 @@ func executeRecipeWithArtifacts(
 	gitRef string,
 	recipeRegistry workflow.RecipeProjectProvider,
 	deps coreops.ServiceDependencies2,
+	observe ...func(*artifactCapture),
 ) (map[string]interface{}, []string, []string, error) {
+	t.Helper()
+	// Serve a local Git fixture through the runtime's supported profile routing.
+	// Registry ownership remains portable and no global Git settings are changed.
+	gitRoot := t.TempDir()
+	gitFixture := filepath.Join(gitRoot, "fixture.git")
+	require.NoError(t, runGit(jobCtx.GitBase.BaseRepo, "clone", "--bare", jobCtx.GitBase.BaseRepo, gitFixture))
+	gitBinary, err := exec.LookPath("git")
+	require.NoError(t, err)
+	server := httptest.NewServer(&cgi.Handler{Path: gitBinary, Args: []string{"http-backend"},
+		Env: []string{"GIT_PROJECT_ROOT=" + gitRoot, "GIT_HTTP_EXPORT_ALL=1"}})
+	defer server.Close()
+	ctx = jobdb.WithCellAuthority(ctx, jobdb.CellAuthority{Principal: "codex-fixture", TenantID: "default",
+		Permissions: map[string]bool{"cells.create": true, "cells.get": true, "cells.list": true,
+			"jobs.submit": true, "jobs.list": true, "jobs.acquire": true}})
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -505,24 +563,45 @@ func executeRecipeWithArtifacts(
 	}
 
 	deps = coreops.NewServiceDepsBuilder().WithWorkflowControl(control).WithDatabase(deps.Database()).WithSSEManager(deps.SSEManager()).Build()
+	secretsProvider := &fixtureSecretProvider{}
+	fixtureRuntime := toyruntime.New(toyruntime.WithSecretProvider(secretsProvider))
+	if _, err := fixtureRuntime.CreateCell(ctx, jobdb.CreateCellRequest{TenantID: "default", Name: "fixture", Repo: fixtureCellRepo}); err != nil {
+		return nil, nil, nil, err
+	}
+	profile, err := json.Marshal(gitprofile.Profile{Version: 1, Entries: []gitprofile.Entry{{
+		URL: server.URL + "/fixture.git", RewriteFrom: []string{"https://" + fixtureCellRepo + ".git"},
+	}}})
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if _, err := fixtureRuntime.SetTenantConfigurationValue(ctx, jobdb.SetTenantConfigurationValueRequest{
+		TenantID: "default", Name: gitprofile.ProfilePrefix + "read", Value: profile,
+	}); err != nil {
+		return nil, nil, nil, err
+	}
+	executingRuntime := executionruntime.New(fixtureRuntime, execution.Allocation{SchemaVersion: 1})
 	workset, err := compiler.NewRecipeWorkerWithOptions(deps, registry, compiler.RecipeJobWorkerOptions{
 		RootSourceResolver: rootResolver,
+		Allocation:         executingRuntime.Allocation, StageExecution: executingRuntime.Stage,
+		WrapTaskWorker: executingRuntime.WrapTaskWorker,
 	})
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
 	capture := newArtifactCapture()
+	if len(observe) > 0 {
+		defer observe[0](capture)
+	}
 	workset.TaskWorkers = wrapTaskWorkers(workset.TaskWorkers, capture)
 
 	taskWorkers := make([]jobworkflow.TaskWorker, 0, len(workset.TaskWorkers))
 	for _, worker := range workset.TaskWorkers {
 		taskWorkers = append(taskWorkers, worker)
 	}
-	secretsProvider := &fixtureSecretProvider{}
-	fixtureRuntime := toyruntime.New(toyruntime.WithSecretProvider(secretsProvider))
+
 	engine, err := jobworkflow.NewEngineBuilder().
-		WithRuntime(fixtureRuntime).
+		WithRuntime(executingRuntime).
 		WithWorkerTenantId("default").
 		PlusWorkers(workset.JobWorker, taskWorkers...).
 		BuildEngine()
@@ -534,7 +613,8 @@ func executeRecipeWithArtifacts(
 	control.Engine = engine
 
 	jobKey, err := control.StartJob(ctx, workflowctl.StartJob{
-		TenantId:   "default",
+		TenantId: "default",
+		Cell:     "fixture", CellRepo: fixtureCellRepo,
 		RecipeName: recipeDef.GetMetadata().ID,
 		Inputs:     inputs,
 		JobContext: jobCtx,
@@ -543,24 +623,27 @@ func executeRecipeWithArtifacts(
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	if err := jobworkflow.WaitForJobToComplete(ctx, 5*time.Minute, jobKey, engine); err != nil {
+	if err := jobworkflow.WaitForJobToComplete(ctx, 5*time.Minute, jobKey.Key(), engine); err != nil {
 		return nil, nil, nil, err
 	}
 
+	out, err := swfutil.JobResult(ctx, engine, jobKey.Key())
+	if err != nil {
+		return nil, nil, nil, err
+	}
 	if secretsProvider.calls.Load() == 0 {
 		return nil, nil, nil, fmt.Errorf("fixture did not resolve the manifest's default secret binding")
 	}
 	capture.mu.Lock()
 	prepared := len(capture.nixPackages)
+	if capture.sourcePrepared {
+		prepared++
+	}
 	capture.mu.Unlock()
 	if prepared == 0 {
-		return nil, nil, nil, fmt.Errorf("fixture did not prepare a Nix op")
+		return nil, nil, nil, fmt.Errorf("fixture did not prepare an extension op")
 	}
 
-	out, err := swfutil.JobResult(ctx, engine, jobKey)
-	if err != nil {
-		return nil, nil, nil, err
-	}
 	jobArtifacts, err := out.GetArtifacts()
 	if err != nil {
 		return nil, nil, nil, err
