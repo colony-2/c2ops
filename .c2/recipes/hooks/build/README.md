@@ -46,7 +46,7 @@ Makefiles:
 | Workflow/check behavior | Hook task |
 | --- | --- |
 | `make check-manifests` | `manifests` |
-| `make test-tools` | `tooling` (including hook failure regressions) |
+| `make test-tools` | `tooling` (including real operation Make entrypoints and hook failure regressions) |
 | llm / llm2 native Go contracts | `llm`, `llm2` |
 | gha / gha-many native Go contracts | `gha`, `gha_many` |
 | Nested gha/integration SQLite/runtime/host-process fixtures | `gha_runtime` |
@@ -68,6 +68,24 @@ Local store paths establish local verification, not portable delivery.
 `nix_process` retains cache-only realization for the other operation process
 checks. Publication, immutable selectors and clean-worker ordinary resolution
 remain post-merge obligations (P02/P03).
+
+Prepare missing candidate inputs through the existing source-build route before
+retrying a cache-only failure. In the source builder, prepare the pinned private
+GHA input and the inputs reported missing by this repair's native hook:
+
+```sh
+python3 scripts/prefetch-act.py
+nix build --max-jobs 1 --cores 2 --no-link \
+  .#gha.buildCompiler .#gha .#gha-workflow \
+  .#github-release .#release-pack .#npm-publish .#go-build
+```
+
+Codex's manifest fixture exercises every
+Go operation, so preparing only `codex` and `skill-run` does not satisfy it.
+Use the candidate checkout, retaining the pinned compiler and normal sandboxing;
+do not substitute the published branch or waive the dependent tests. These local
+store paths must be available to the verification worker; a source build does
+not establish cache publication or availability on another worker.
 
 Held coverage: other platform matrix entries; Docker-based minimal Codex worker
 image tests; opt-in public GHA/service actions and remote CI; the four real Nix
@@ -112,3 +130,31 @@ available through prepared paths or the worker caches. Private Git/proxy and
 other native hosts remain explicitly unverified when their fixtures are absent.
 The real suite runs verbosely so the exported log retains the assembly escape
 controls, their executable results and explicit skips for missing prerequisites.
+
+The tooling suite discovers every immediate `*/op.yaml` directory independently
+of `OP_DIRS` and requires `build`, `test`, and `install-test-deps` in its Makefile.
+It probes GNU Make dry runs and checks for side effects in a scratch inventory.
+Direct Go source tests alone did not catch the missing `github_release/Makefile`;
+the former synthetic dispatch fixtures supplied their own complete Makefiles.
+
+For the real tooling task and report through the local runtime, run
+`python3 scripts/verify_hook_harness.py --case tooling --out /tmp/c2ops-tooling-hook`.
+Run `--case tooling-missing-makefile` with a separate output directory to omit
+only `github_release/Makefile` from the runtime snapshot. That case requires
+failed tooling and aggregate evidence; the harness succeeds when the expected
+failure is observed. Other tasks are explicit fixtures in both cases.
+
+These cases require a c2j `file_sources` importer that preserves executable bits
+in the initial fixture Git tree. Older importers write files as `0644`, losing
+the npm fixture shim's executable bit and failing its projection test. Both
+cases pass locally using the c2j owner's delivered `unstable-1b22ca4` CLI:
+positive tooling and aggregation pass; the missing-Makefile control exports
+failed tooling and aggregate results. Both exported-artifact readers pass,
+and both seeded repositories remain clean with zero new commits. Other tasks
+are fixtures, so these results establish tooling/report wiring only.
+
+A native hook pass still covers Linux arm64 only. Go on macOS ignores
+`SSL_CERT_FILE` by default; the GitHub release client now loads an explicit
+bundle there. The helper's Linux tests exercise that branch, but native macOS
+installed tests and the existing three-platform CI matrix remain required to
+validate the platform-specific repair.

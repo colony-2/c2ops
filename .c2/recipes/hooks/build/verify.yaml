@@ -1,4 +1,6 @@
 # Native Linux arm64 only. Settings/documents are deliberately not artifact-bound.
+# Missing candidate packages/compiler need source preparation as documented in
+# README.md; cache-only checks must retain their failure instead of skipping.
 id: c2ops-native-verify
 inputs:
   target_directory: ${{ inputs.target_directory }}
@@ -34,6 +36,8 @@ sequence:
       VERIFY_BASE: ${{ inputs.base }}
     run: python3 "$VERIFY_ROOT/scripts/verify.py" check manifests
 - id: tooling
+  # Includes real */op.yaml Make entrypoints, independent of OP_DIRS. Direct
+  # source suites below cannot detect missing operation Makefiles on their own.
   op: command_execution
   const: true
   execution_needs:

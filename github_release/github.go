@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -67,9 +68,13 @@ type github struct {
 	evidence    evidence
 }
 
-func newGitHub(token string) *github {
+func newGitHub(token string) (*github, error) {
+	transport, err := githubTransport(runtime.GOOS, os.Getenv("SSL_CERT_FILE"))
+	if err != nil {
+		return nil, err
+	}
 	g := &github{api: "https://api.github.com", upload: "https://uploads.github.com", token: token}
-	g.client = &http.Client{Timeout: 2 * time.Minute, CheckRedirect: func(req *http.Request, via []*http.Request) error {
+	g.client = &http.Client{Transport: transport, Timeout: 2 * time.Minute, CheckRedirect: func(req *http.Request, via []*http.Request) error {
 		if len(via) >= 5 || req.URL.Scheme != "https" || req.URL.User != nil {
 			return errors.New("unsafe download redirect")
 		}
@@ -77,7 +82,7 @@ func newGitHub(token string) *github {
 		req.Header.Del("Cookie")
 		return nil
 	}}
-	return g
+	return g, nil
 }
 func (g *github) request(ctx context.Context, method, raw string, body io.Reader, auth bool, accept string) (*http.Response, error) {
 	u, err := url.Parse(raw)

@@ -215,7 +215,10 @@ func TestProcessHelper(t *testing.T) {
 	if err != nil {
 		os.Exit(98)
 	}
-	g := newGitHub(token)
+	g, err := newGitHub(token)
+	if err != nil {
+		t.Fatal(err)
+	}
 	g.client.Transport = routedTransport{u, http.DefaultTransport}
 	if err = execute(context.Background(), os.Stdin, os.Stdout, token, g); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -267,7 +270,10 @@ func TestRedirectCredentialScope(t *testing.T) {
 	if _, err := f.run(); err != nil {
 		t.Fatal(err)
 	}
-	g := newGitHub(token)
+	g, err := newGitHub(token)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, raw := range []string{"http://api.github.com/x", "https://evil.example/x", "https://user:password@api.github.com/x"} {
 		if _, err := g.request(context.Background(), "GET", raw, nil, true, "application/json"); err == nil {
 			t.Fatal("unsafe credential URL accepted")
@@ -291,9 +297,12 @@ func TestReadRetriesAreBoundedAndAPIRedirectsRejected(t *testing.T) {
 			}))
 			defer s.Close()
 			u, _ := url.Parse(s.URL)
-			g := newGitHub(token)
+			g, err := newGitHub(token)
+			if err != nil {
+				t.Fatal(err)
+			}
 			g.client.Transport = routedTransport{u, http.DefaultTransport}
-			err := g.json(context.Background(), "GET", "/test", nil, nil)
+			err = g.json(context.Background(), "GET", "/test", nil, nil)
 			expected := 1
 			if code == 500 || code == 429 {
 				expected = 3

@@ -102,7 +102,10 @@ func liveInput(t *testing.T, pack bool) (context.Context, Input, *github) {
 	_ = os.RemoveAll(staged)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	t.Cleanup(cancel)
-	g := newGitHub(os.Getenv("GITHUB_TOKEN"))
+	g, err := newGitHub(os.Getenv("GITHUB_TOKEN"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := g.preflight(ctx, in); err != nil {
 		t.Fatal(err)
 	}
@@ -161,8 +164,12 @@ func TestG11LiveDisposablePublication(t *testing.T) {
 	}
 	// Independent anonymous requests verify returned public URLs and every hash,
 	// including checksums.txt, against the supplied confirmed pack artifacts.
+	anonymous, err := newGitHub("")
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, asset := range result.Release.Assets {
-		if err := newGitHub("").verifyDownload(ctx, asset.DownloadURL, asset.File, false); err != nil {
+		if err := anonymous.verifyDownload(ctx, asset.DownloadURL, asset.File, false); err != nil {
 			t.Fatal(err)
 		}
 	}

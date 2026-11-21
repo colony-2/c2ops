@@ -33,7 +33,7 @@ proves that uploads use the validated private copies.
 | --- | --- |
 | C01 | `TestC01C04C06ContractFailuresBeforeEffects` and `TestC01C07AmbiguousAndOversizedJSON`: independent malformed identity/type/schema cases and healthy positive control; case aliases and missing/null sizes are explicitly rejected. |
 | C02 | `TestC02C03SeparateProcessExplicitRootsReadOnlyCWD`: success JSON-only stdout, diagnostic stderr/nonzero failure and no successful failure envelope. Installed binary rejects empty input without network/tool lookup. |
-| C03 | `TestC03InstalledPackageFromImmutableCWD` executes the actual aarch64-linux Nix wrapper from immutable package cwd with empty PATH and controlled TLS/CONNECT fixtures. Complete success and invalid-input failure pass. Other hosts remain unverified. |
+| C03 | `TestC03InstalledPackageFromImmutableCWD` executes the actual aarch64-linux Nix wrapper from immutable package cwd with empty PATH and controlled TLS/CONNECT fixtures. Complete success, unrelated-CA rejection, wrong-hostname rejection, invalid-input failure and Linux certificate-directory fallback pass on the repaired candidate. The macOS invalid-bundle scenario skips here; other native hosts remain unverified. |
 | C04 | Duplicate/basename collision, mixed identities, traversal, normalization, escaping file/directory/root symlinks fail before any requests. |
 | C05 | Outbox retention and staging are tested; **distinct-worker runtime hydration/mode transport unverified**. This consumer uploads archives, so it does not execute or chmod binaries. |
 | C06 | Missing, truncated, tampered and checksum-mismatched hydrated fixture files fail before requests. **Actual cross-worker runtime path unverified**. |
@@ -68,3 +68,31 @@ and FIFO rejection in a subprocess with a five-second deadline
 gates. `TestLiveAuthorizationGate` proves ambient credentials, vague opt-in,
 missing settings and missing upstream confirmation cannot enable live checks.
 Default runs explicitly skip G11/live G12; those skips are not acceptance passes.
+
+The test-entrypoint and macOS trust repair adds these checks:
+
+| Behavior | Coverage |
+| --- | --- |
+| Real operation entrypoints | `scripts/test_makefile.py::OperationEntrypointTests` discovers all immediate `*/op.yaml` directories regardless of inherited `OP_DIRS`. Missing Makefiles/targets fail with operation and target names; scratch probes produce no files or directories; a recording Go substitute checks the real release Make recipes. |
+| Explicit macOS bundle | `TestMacOSBundleTrust` verifies a generated server chain with a single root and a bundle with its root after an unrelated certificate. Separate-authority and wrong-hostname controls fail TLS. This helper branch runs on Linux too. |
+| Bundle errors and compatibility | `TestBundleSelectionAndErrors` rejects missing, directory/unreadable, empty and malformed bundles. Empty macOS settings and all Linux selections retain the default transport. `TestBundleTransportIsolation` checks proxy, connection and TLS settings and unchanged global roots. |
+| Native constructor failure | `TestMacOSBundleFailureBeforeRequests` requires macOS and checks empty output, a fixed credential-free diagnostic and zero requests. It skips on Linux. |
+| Installed trust and rejection | All scenarios remain under `TestC03InstalledPackageFromImmutableCWD` for the existing Nix/hook selector. Each uses independent HTTP state and a separate installed process. Rejected TLS reaches the CONNECT proxy but no HTTP reads/writes; invalid input/bundle must not contact the proxy. Linux directory fallback and native macOS invalid-bundle checks are platform-specific. |
+| Hook regression sensitivity | `scripts/verify_hook_harness.py --case tooling` runs real tooling and aggregation; `--case tooling-missing-makefile` omits the Makefile only from its runtime snapshot. Both read exported receipts/logs, validate digests and expected statuses, and fixture unrelated tasks explicitly. |
+
+The repair's local aarch64-linux race suite and candidate Nix source/installed
+checks pass. Default source runs skip the installed path and native macOS
+assertion; Nix installed runs execute the wrapper scenarios and skip only the
+macOS-specific scenario. Live publication stays gated. Native aarch64-darwin
+and x86_64-linux results and the complete three-platform workflow are still
+required; Linux helper success cannot establish macOS acceptance.
+
+The bounded hook cases require a c2j fixture importer that preserves source
+executable bits. Older importers turn the npm fixture shim into a nonexecutable
+file and fail its projection test. With the owner's delivered
+`unstable-1b22ca4` CLI, H01/H02 pass: real tooling runs 100 tests with 94 passes
+and six opt-in/package skips; omitting the Makefile produces exactly two
+failures and two errors in the new entrypoint checks. Both cases validate
+exported receipts, log digests and aggregate statuses, and retain clean seeded
+repositories with zero new commits. These bounded checks fixture other tasks;
+the configured full native hook and three-platform workflow remain required.

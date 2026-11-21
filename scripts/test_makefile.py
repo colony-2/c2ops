@@ -1,14 +1,97 @@
 """Exercise root Makefile dispatch with the multiline op list used by CI."""
 
 import os
+import json
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
+TARGETS = ('build', 'test', 'install-test-deps')
+
+
+def make_env():
+    env = os.environ.copy()
+    for name in ('MAKEFLAGS', 'MFLAGS', 'MAKEOVERRIDES', 'MAKELEVEL', 'OP_DIRS'):
+        env.pop(name, None)
+    return env
+
+
+def check_entrypoints(root):
+    """Probe the real discovery rule, independently of CI's OP_DIRS filter."""
+    operations = sorted(path.parent for path in root.glob('*/op.yaml'))
+    if not operations:
+        raise AssertionError('no operations discovered')
+    for operation in operations:
+        if not (operation / 'Makefile').is_file():
+            raise AssertionError(f'{operation.name}: missing Makefile')
+        for target in TARGETS:
+            result = subprocess.run(['make', '--no-print-directory', '-n', target],
+                                    cwd=operation, env=make_env(), capture_output=True,
+                                    text=True, timeout=30)
+            if result.returncode:
+                raise AssertionError(f'{operation.name}: {target}: {result.stdout}{result.stderr}')
+
+
+class OperationEntrypointTests(unittest.TestCase):
+    def copy_inventory(self, root):
+        for manifest in ROOT.glob('*/op.yaml'):
+            operation = root / manifest.parent.name
+            operation.mkdir()
+            shutil.copy2(manifest, operation / 'op.yaml')
+            makefile = manifest.parent / 'Makefile'
+            if makefile.exists():
+                shutil.copy2(makefile, operation / 'Makefile')
+
+    def test_real_inventory(self):
+        with patch.dict(os.environ, {'OP_DIRS': 'llm'}):
+            check_entrypoints(ROOT)
+
+    def test_dry_runs_create_no_outputs(self):
+        # Includes recursive Make recipes. Dry-run is not a general sandbox;
+        # compare all scratch files to catch actual build/install side effects.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.copy_inventory(root)
+            before = {str(p.relative_to(root)): p.read_bytes() if p.is_file() else None
+                      for p in root.rglob('*')}
+            check_entrypoints(root)
+            self.assertEqual(before, {str(p.relative_to(root)): p.read_bytes() if p.is_file() else None
+                                     for p in root.rglob('*')})
+
+    def test_missing_makefile_and_target(self):
+        for target in (None, *TARGETS):
+            with self.subTest(target=target), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self.copy_inventory(root)
+                makefile = root / 'github_release/Makefile'
+                if target is None:
+                    makefile.unlink()
+                else:
+                    makefile.write_text('\n'.join(f'{name}:\n\t@true' for name in TARGETS if name != target))
+                with self.assertRaisesRegex(AssertionError, 'github_release: ' + (target or 'missing Makefile')):
+                    check_entrypoints(root)
+
+    def test_github_release_recipes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            shutil.copy2(ROOT / 'github_release/Makefile', root / 'Makefile')
+            go = root / 'go'
+            go.write_text('#!' + sys.executable + '\nimport json,sys\n'
+                          + 'with open("calls", "a") as f: f.write(json.dumps(sys.argv[1:])+"\\n")\n')
+            go.chmod(0o755)
+            env = make_env()
+            env['PATH'] = str(root) + os.pathsep + env['PATH']
+            for target in TARGETS:
+                result = subprocess.run(['make', target], cwd=root, env=env, capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual([json.loads(line) for line in (root / 'calls').read_text().splitlines()], [
+                ['build', '-mod=readonly', '-o', '../bin/github-release', '.'],
+                ['test', '-mod=readonly', '-count=1', './...']])
 
 
 class MakefileTests(unittest.TestCase):
@@ -28,10 +111,7 @@ class MakefileTests(unittest.TestCase):
             )
 
     def run_command(self, *args):
-        env = os.environ.copy()
-        # The outer make test may supply OP_DIRS; fixtures use their own modules.
-        for name in ('MAKEFLAGS', 'MFLAGS', 'MAKEOVERRIDES', 'MAKELEVEL'):
-            env.pop(name, None)
+        env = make_env()
         result = subprocess.run(args, cwd=self.root, env=env,
                                 capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

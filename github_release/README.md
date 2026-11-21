@@ -131,7 +131,14 @@ The op uses only GitHub's fixed HTTPS API/upload origins. API JSON redirects
 fail. Binary downloads permit at most five HTTPS redirects and strip credentials
 and cookies on every redirect. Anonymous browser downloads never receive the
 GitHub credential. Nix supplies trust roots, honoring an explicit
-`SSL_CERT_FILE`. HTTP requests have context cancellation and two-minute
+`SSL_CERT_FILE`. On macOS, a nonempty setting selects this client's entire
+trust pool; keychain roots are not added to that pool. The file must be readable
+and contain at least one valid PEM certificate (multiple certificates are
+supported). Invalid settings fail before network access with a fixed
+configuration diagnostic that omits the filename and certificate contents.
+Without a setting, macOS retains native keychain trust. Linux keeps Go's native
+`SSL_CERT_FILE` and `SSL_CERT_DIR` handling, including directory fallback.
+Certificate chains and hostnames are always verified. HTTP requests have context cancellation and two-minute
 per-request timeouts; read requests retry transient errors at most three times,
 with a bounded Retry-After delay. Large/malformed JSON responses fail. Writes
 are never blindly retried.

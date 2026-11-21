@@ -91,7 +91,11 @@ func newFixture(t *testing.T) *fixture {
 	f.server = httptest.NewServer(http.HandlerFunc(f.serve))
 	t.Cleanup(f.server.Close)
 	u, _ := url.Parse(f.server.URL)
-	f.g = newGitHub(token)
+	g, err := newGitHub(token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.g = g
 	f.g.client.Transport = routedTransport{u, http.DefaultTransport}
 	return f
 }

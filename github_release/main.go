@@ -34,7 +34,10 @@ func execute(ctx context.Context, r io.Reader, w io.Writer, token string, g *git
 		return err
 	}
 	if g == nil {
-		g = newGitHub(token)
+		g, err = newGitHub(token)
+		if err != nil {
+			return err
+		}
 	}
 	output, err := g.run(ctx, in, tmp)
 	if err != nil {
