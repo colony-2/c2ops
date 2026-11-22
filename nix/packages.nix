@@ -66,8 +66,24 @@ let
         ldflags = [ "-s" "-w" ] ++ lib.optionals (builtins.elem name [ "gha" "gha-workflow" ]) [
           "-X ${lib.escapeShellArg "github.com/colony-2/c2ops/gha/internal/workflow.releaseRepository=github:colony-2/c2ops"}"
           "-X ${lib.escapeShellArg "github.com/colony-2/c2ops/gha/internal/workflow.releaseRevision=${releaseRevision}"}"
+        ] ++ lib.optionals (module == "opentofu-up") [
+          "-X main.gitPath=${lib.getExe pkgs.gitMinimal}"
+          "-X main.tofuPath=${lib.getExe pkgs.opentofu}"
+          "-X main.trustPath=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+          "-X main.toolPath=${lib.makeBinPath [ pkgs.gitMinimal ]}"
         ];
         doCheck = false;
+      } // lib.optionalAttrs (module == "opentofu-up") {
+        preBuild = ''
+          export HOME="$TMPDIR/c2ops-tofu-build-home"
+          mkdir -p "$HOME"
+        '';
+        overrideModAttrs = final: previous: {
+          preBuild = (previous.preBuild or "") + ''
+            export HOME="$TMPDIR/c2ops-tofu-mod-home"
+            mkdir -p "$HOME"
+          '';
+        };
       } // lib.optionalAttrs (module == "github_release") {
         preBuild = ''
           export HOME="$TMPDIR/c2ops-github-release-build-home"
@@ -122,7 +138,8 @@ let
         '';
       });
       python = pythonEnvs.${name};
-    in pkgs.stdenvNoCC.mkDerivation {
+    in assert name != "opentofu-up" || pkgs.opentofu.version == "1.13.1";
+    pkgs.stdenvNoCC.mkDerivation {
       pname = "c2ops-${name}";
       version = "0.1.0";
       dontUnpack = true;

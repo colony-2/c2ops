@@ -14,6 +14,7 @@ permissions:
 
 jobs:
   test:
+    name: test (${{ matrix.system }})
     strategy:
       fail-fast: false
       matrix:
@@ -113,6 +114,13 @@ jobs:
       - name: Build packages and check installed process contracts
         run: nix flake check -L
 
+      - name: Qualify OpenTofu with real tools and a native private runtime
+        env:
+          C2OPS_GIT_TOKEN: ${{ secrets.READ_ALL_C2_REPOS }}
+        run: |
+          GOBIN="$RUNNER_TEMP/opentofu-test-bin" go install github.com/colony-2/c2j/cmd/c2j@v0.0.0-20261120233037-b399a9afb40d
+          PATH="$RUNNER_TEMP/opentofu-test-bin:$PATH" python3 scripts/check-opentofu.py
+
       - name: Run tests
         env:
           C2OPS_GIT_TOKEN: ${{ secrets.READ_ALL_C2_REPOS }}
@@ -152,6 +160,7 @@ jobs:
 
   # needs waits for all platforms, including Cachix's post-job uploads.
   verify:
+    name: verify (${{ matrix.system }})
     needs: test
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     strategy:

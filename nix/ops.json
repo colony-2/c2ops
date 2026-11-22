@@ -130,5 +130,14 @@
       "gzip",
       "cacert"
     ]
+  },
+  "opentofu-up": {
+    "path": "opentofu-up",
+    "kind": "go",
+    "runtime": [
+      "gitMinimal",
+      "opentofu",
+      "cacert"
+    ]
   }
 }

@@ -3,6 +3,7 @@ import contextlib
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
 import sys
 import tempfile
@@ -16,6 +17,15 @@ spec.loader.exec_module(verify)
 
 
 class ReleasePackagingTests(unittest.TestCase):
+    def setUp(self):
+        # Synthetic aggregate receipts must not inherit the caller's identity.
+        environment = patch.dict(os.environ)
+        environment.start()
+        self.addCleanup(environment.stop)
+        for name in tuple(os.environ):
+            if name.startswith('VERIFY_'):
+                del os.environ[name]
+
     def test_catalog_and_generated_manifest(self):
         catalog = json.loads((ROOT / 'nix/ops.json').read_text())
         self.assertEqual(catalog['release-pack'], dict(path='release_pack', kind='go', runtime=['gitMinimal']))
@@ -51,8 +61,8 @@ class ReleasePackagingTests(unittest.TestCase):
         self.assertIn('release-pack', verify.TASKS)
         import re
         order = re.findall(r'^- id: ([a-z0-9_]+)$', (ROOT / '.c2/recipes/hooks/build/verify.yaml').read_text(), re.M)
-        self.assertEqual(['npm.publish' if name == 'npm_publish' else name.replace('_','-')
-                          for name in order[:-1]], list(verify.TASKS))
+        self.assertEqual(['npm.publish' if name == 'npm_publish' else name if name == verify.LIVE_TASK else name.replace('_','-')
+                          for name in order[:-1]], list(verify.ALL_TASKS))
         # Actual command failure must remain visible even when other tasks pass.
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -66,11 +76,13 @@ class ReleasePackagingTests(unittest.TestCase):
             # The aggregate checks every configured task, its stdout, evidence
             # and command status. A real failing command drives this fixture.
             import hashlib
-            statuses = {name: 'passed' for name in verify.TASKS}
-            for name in verify.TASKS:
+            statuses = {name: 'pending' if name == verify.LIVE_TASK else 'passed' for name in verify.ALL_TASKS}
+            for name in verify.ALL_TASKS:
                 data = (name + ' log\n').encode()
                 status = 'passed'
                 commands = [{'argv':['fixture'], 'returncode':0}]
+                if name == verify.LIVE_TASK:
+                    status = 'pending'; commands = []
                 if name == 'release-pack':
                     with (root / 'command.log').open('wb') as log:
                         failing = verify.Checks(root, {}, log)
@@ -85,6 +97,7 @@ class ReleasePackagingTests(unittest.TestCase):
             self.assertEqual(result.getvalue(), 'failed')
             report = json.loads((root / 'out/verification.json').read_text())
             self.assertIn(dict(task='release-pack', status='failed'), report['tasks'])
+            self.assertEqual(report['errors'], [])
 
     def test_hook_exports_task_artifacts_and_status(self):
         hook = (ROOT / '.c2/recipes/hooks/build/verify.yaml').read_text()

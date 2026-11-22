@@ -6,6 +6,7 @@ inputs:
   target_directory: ${{ inputs.target_directory }}
   candidate: ${{ inputs.candidate }}
   base: ${{ inputs.base }}
+  settings: ${{ inputs.?settings.orValue(null) }}
 sequence:
 - id: manifests
   op: command_execution
@@ -267,6 +268,19 @@ sequence:
       VERIFY_CANDIDATE: ${{ inputs.candidate }}
       VERIFY_BASE: ${{ inputs.base }}
     run: python3 "$VERIFY_ROOT/scripts/verify.py" check go-build
+- id: opentofu
+  op: command_execution
+  const: true
+  execution_needs:
+    packages: *id001
+  inputs:
+    env:
+      VERIFY_ROOT: ${{ context.environment.op.worktree_path }}
+      VERIFY_OUTBOX: ${{ context.environment.op.outbox }}
+      VERIFY_TARGET: ${{ inputs.target_directory }}
+      VERIFY_CANDIDATE: ${{ inputs.candidate }}
+      VERIFY_BASE: ${{ inputs.base }}
+    run: python3 "$VERIFY_ROOT/scripts/verify.py" check opentofu
 - id: nix_metadata
   op: command_execution
   const: true
@@ -295,6 +309,26 @@ sequence:
       VERIFY_CANDIDATE: ${{ inputs.candidate }}
       VERIFY_BASE: ${{ inputs.base }}
     run: python3 "$VERIFY_ROOT/scripts/verify.py" check nix-process
+- id: opentofu_credentials
+  # Keep the existing Git credential for private workspace preparation.
+  # Operator adds literal Google names AND every enclosing caller/ceiling.
+  op: command_execution
+  const: false
+  perms:
+    jobdb:
+      secrets:
+        resolve: [gitvend_base_token]
+  execution_needs:
+    packages: *id001
+  inputs:
+    env:
+      VERIFY_ROOT: ${{ context.environment.op.worktree_path }}
+      VERIFY_OUTBOX: ${{ context.environment.op.outbox }}
+      VERIFY_TARGET: ${{ inputs.target_directory }}
+      VERIFY_CANDIDATE: ${{ inputs.candidate }}
+      VERIFY_BASE: ${{ inputs.base }}
+      VERIFY_OPENTOFU_PROFILE: ${{ json_stringify(inputs.?settings.value.variables.opentofu_google.orValue(null)) }}
+    run: python3 "$VERIFY_ROOT/scripts/verify.py" check opentofu_credentials
 - id: report
   op: command_execution
   const: true
@@ -338,6 +372,10 @@ sequence:
     kimi.json: ${{ sequence.kimi.artifacts['kimi.json'] }}
     go-build.log: ${{ sequence.go_build.artifacts['go-build.log'] }}
     go-build.json: ${{ sequence.go_build.artifacts['go-build.json'] }}
+    opentofu.log: ${{ sequence.opentofu.artifacts['opentofu.log'] }}
+    opentofu.json: ${{ sequence.opentofu.artifacts['opentofu.json'] }}
+    opentofu_credentials.log: ${{ sequence.opentofu_credentials.artifacts['opentofu_credentials.log'] }}
+    opentofu_credentials.json: ${{ sequence.opentofu_credentials.artifacts['opentofu_credentials.json'] }}
     nix-metadata.log: ${{ sequence.nix_metadata.artifacts['nix-metadata.log'] }}
     nix-metadata.json: ${{ sequence.nix_metadata.artifacts['nix-metadata.json'] }}
     nix-process.log: ${{ sequence.nix_process.artifacts['nix-process.log'] }}
@@ -365,6 +403,11 @@ sequence:
       VERIFY_STATUS_JEV: ${{ sequence.jev.outputs.stdout }}
       VERIFY_STATUS_KIMI: ${{ sequence.kimi.outputs.stdout }}
       VERIFY_STATUS_GO_BUILD: ${{ sequence.go_build.outputs.stdout }}
+      VERIFY_STATUS_OPENTOFU: ${{ sequence.opentofu.outputs.stdout }}
+      VERIFY_STATUS_OPENTOFU_CREDENTIALS: ${{ sequence.opentofu_credentials.outputs.stdout }}
+      VERIFY_CANDIDATE: ${{ inputs.candidate }}
+      VERIFY_BASE: ${{ inputs.base }}
+      VERIFY_OPENTOFU_PROFILE: ${{ json_stringify(inputs.?settings.value.variables.opentofu_google.orValue(null)) }}
       VERIFY_STATUS_NIX_METADATA: ${{ sequence.nix_metadata.outputs.stdout }}
       VERIFY_STATUS_NIX_PROCESS: ${{ sequence.nix_process.outputs.stdout }}
     run: python3 "$VERIFY_ROOT/scripts/verify.py" aggregate
@@ -390,6 +433,8 @@ outputs:
     ''pydantic.json'': sequence.pydantic.artifacts[''pydantic.json''], ''jev.log'': sequence.jev.artifacts[''jev.log''], ''jev.json'':
     sequence.jev.artifacts[''jev.json''], ''kimi.log'': sequence.kimi.artifacts[''kimi.log''], ''kimi.json'': sequence.kimi.artifacts[''kimi.json''],
     ''go-build.log'': sequence.go_build.artifacts[''go-build.log''], ''go-build.json'': sequence.go_build.artifacts[''go-build.json''],
+    ''opentofu.log'': sequence.opentofu.artifacts[''opentofu.log''], ''opentofu.json'': sequence.opentofu.artifacts[''opentofu.json''],
+    ''opentofu_credentials.log'': sequence.opentofu_credentials.artifacts[''opentofu_credentials.log''], ''opentofu_credentials.json'': sequence.opentofu_credentials.artifacts[''opentofu_credentials.json''],
     ''nix-metadata.log'': sequence.nix_metadata.artifacts[''nix-metadata.log''], ''nix-metadata.json'': sequence.nix_metadata.artifacts[''nix-metadata.json''],
     ''nix-process.log'': sequence.nix_process.artifacts[''nix-process.log''], ''nix-process.json'': sequence.nix_process.artifacts[''nix-process.json''],
     ''release-pack.log'': sequence.release_pack.artifacts[''release-pack.log''], ''release-pack.json'': sequence.release_pack.artifacts[''release-pack.json''],

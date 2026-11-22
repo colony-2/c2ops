@@ -21,6 +21,15 @@ spec.loader.exec_module(verify)
 
 
 class VerificationTests(unittest.TestCase):
+    def setUp(self):
+        # These receipts belong to each test, not an enclosing managed hook.
+        environment = patch.dict(os.environ)
+        environment.start()
+        self.addCleanup(environment.stop)
+        for name in tuple(os.environ):
+            if name.startswith('VERIFY_'):
+                del os.environ[name]
+
     @unittest.skipUnless(sys.platform == 'linux', 'inspects Linux process state')
     def test_completed_command_stops_leftover_descendants(self):
         for returncode in (0, 7):
@@ -216,8 +225,8 @@ class VerificationTests(unittest.TestCase):
                 log = (out / 'npm.publish.log').read_bytes()
                 self.assertIn(b'local fixture suite reached', log)
                 self.assertEqual(receipt['log_sha256'], hashlib.sha256(log).hexdigest())
-                statuses = {'VERIFY_STATUS_' + name.upper().replace('-', '_').replace('.', '_'): 'passed'
-                            for name in verify.TASKS}
+                statuses = {'VERIFY_STATUS_' + name.upper().replace('-', '_').replace('.', '_'): ('pending' if name == verify.LIVE_TASK else 'passed')
+                            for name in verify.ALL_TASKS}
                 statuses['VERIFY_STATUS_NPM_PUBLISH'] = stdout.getvalue()
                 with patch.dict(os.environ, statuses), contextlib.redirect_stdout(io.StringIO()) as aggregate_stdout:
                     verify.aggregate(out, out / 'aggregate')
@@ -250,7 +259,7 @@ class VerificationTests(unittest.TestCase):
                 self.assertIn('requires --race', receipt['error'])
                 self.assertFalse(receipt['race'])
                 self.assertEqual(receipt['commands'], [], 'omitted race mode must fail before running tools')
-                statuses = {name: 'passed' for name in verify.TASKS}
+                statuses = {name: ('pending' if name == verify.LIVE_TASK else 'passed') for name in verify.ALL_TASKS}
                 statuses[task] = result.stdout
                 with contextlib.redirect_stdout(io.StringIO()) as stdout:
                     verify.aggregate(root, root / 'aggregate', statuses)
@@ -454,18 +463,39 @@ class VerificationTests(unittest.TestCase):
             self.assertFalse(all(c['returncode'] == 0 for c in checks.commands))
 
     def fixtures(self, root):
-        for name in verify.TASKS:
+        for name in verify.ALL_TASKS:
             log = (name + ' evidence\n').encode()
             (root / (name + '.log')).write_bytes(log)
             (root / (name + '.json')).write_text(json.dumps({
-                'task': name, 'status': 'passed', 'commands': [{'argv': ['fixture'], 'returncode': 0}],
+                'task': name, 'status': 'pending' if name == verify.LIVE_TASK else 'passed', 'commands': [] if name == verify.LIVE_TASK else [{'argv': ['fixture'], 'returncode': 0}],
                 'log_sha256': hashlib.sha256(log).hexdigest()}))
 
     def aggregate(self, root):
         stdout = io.StringIO()
         with contextlib.redirect_stdout(stdout):
-            verify.aggregate(root, root / 'out', {name: 'passed' for name in verify.TASKS})
+            verify.aggregate(root, root / 'out', {name: ('pending' if name == verify.LIVE_TASK else 'passed') for name in verify.ALL_TASKS})
         return stdout.getvalue()
+
+    def test_candidate_and_base_mismatch_reject_ordinary_receipts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.fixtures(root)
+            for name in verify.ALL_TASKS:
+                path = root / (name + '.json')
+                row = json.loads(path.read_text())
+                row.update(candidate='fixture-candidate', base='fixture-base')
+                path.write_text(json.dumps(row))
+            with patch.dict(os.environ, {'VERIFY_CANDIDATE': 'fixture-candidate',
+                                        'VERIFY_BASE': 'fixture-base'}):
+                self.assertEqual(self.aggregate(root), 'passed')
+                path = root / 'manifests.json'
+                original = json.loads(path.read_text())
+                for field in ('candidate', 'base'):
+                    with self.subTest(field=field):
+                        path.write_text(json.dumps({**original, field: 'other'}))
+                        self.assertEqual(self.aggregate(root), 'failed')
+                        report = json.loads((root / 'out/verification.json').read_text())
+                        self.assertEqual(report['errors'], ['manifests: candidate identity mismatch'])
 
     def test_baseline_failure_and_evidence_gate(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -473,7 +503,7 @@ class VerificationTests(unittest.TestCase):
             self.fixtures(root)
             self.assertEqual(self.aggregate(root), 'passed')
             with contextlib.redirect_stdout(io.StringIO()) as bad_stdout:
-                verify.aggregate(root, root / 'out', {name: 'malformed' for name in verify.TASKS})
+                verify.aggregate(root, root / 'out', {name: 'malformed' for name in verify.ALL_TASKS})
             self.assertEqual(bad_stdout.getvalue(), 'failed')
             manifest = root / 'manifests.json'
             data = json.loads(manifest.read_text())
@@ -572,7 +602,7 @@ class VerificationTests(unittest.TestCase):
                 self.assertIn('injected suite python', log)
                 self.assertIn('"go", "test"', log)
                 self.assertIn('pydantic/test_binding.py', log)
-                statuses = {name:'passed' for name in verify.TASKS}; statuses['pydantic'] = expected
+                statuses = {name:('pending' if name == verify.LIVE_TASK else 'passed') for name in verify.ALL_TASKS}; statuses['pydantic'] = expected
                 with contextlib.redirect_stdout(io.StringIO()) as aggregate_stdout:
                     verify.aggregate(out, out / 'aggregate', statuses)
                 self.assertEqual(aggregate_stdout.getvalue(), expected)
@@ -610,7 +640,7 @@ class VerificationTests(unittest.TestCase):
                     verify.check('go-build', root, out)
                 expected = 'passed' if failing == 'none' else 'failed'
                 self.assertEqual(stdout.getvalue(), expected)
-                statuses = {name: 'passed' for name in verify.TASKS}
+                statuses = {name: ('pending' if name == verify.LIVE_TASK else 'passed') for name in verify.ALL_TASKS}
                 statuses['go-build'] = expected
                 with contextlib.redirect_stdout(io.StringIO()) as result:
                     verify.aggregate(out, out / 'aggregate', statuses)
@@ -648,6 +678,130 @@ with open(sys.argv[2]+'.log','wb') as log:
                 if proc.poll() is None:
                     proc.kill()
                     proc.wait()
+
+    def test_opentofu_qualifier_and_preparation_failures_gate_aggregate(self):
+        # Regression-only preparation fixtures. The dispatch/failure process and
+        # aggregate run for real; native acceptance is a separate hook run.
+        self.assertIn('opentofu', verify.TASKS)
+        for failing in ('none', 'helper', 'version', 'package', 'qualifier'):
+            with self.subTest(failing=failing), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory) / 'candidate'
+                (root / 'nix').mkdir(parents=True)
+                (root / 'scripts').mkdir()
+                (root / 'nix/pnpm-build-policy.json').write_text('{}')
+                (root / 'scripts/check-opentofu.py').write_text(
+                    'import os,sys\nprint("real qualifier dispatch", os.environ["GOBIN"])\n'
+                    + 'raise SystemExit(' + ('9' if failing == 'qualifier' else '0') + ')\n')
+                out = Path(directory) / 'evidence'; out.mkdir()
+                self.fixtures(out)
+                original = verify.Checks.run
+                def run(checks, argv, directory='.', input_text=None):
+                    if argv == ['python3', 'scripts/check-opentofu.py']:
+                        return original(checks, argv, directory, input_text)
+                    code = 9 if ((failing == 'helper' and argv[:2] == ['go', 'install'])
+                                 or (failing == 'version' and argv[-1] == 'version')
+                                 or (failing == 'package' and 'path:.#opentofu-up' in argv)) else 0
+                    checks.commands.append({'argv':argv, 'returncode':code})
+                    return code == 0
+                with patch.object(verify, 'supported_platform', return_value=True), \
+                     patch.object(verify.Checks, 'run', run), \
+                     contextlib.redirect_stdout(io.StringIO()) as stdout:
+                    verify.check('opentofu', root, out)
+                expected = 'passed' if failing == 'none' else 'failed'
+                self.assertEqual(stdout.getvalue(), expected)
+                report = json.loads((out / 'opentofu.json').read_text())
+                installs = [c for c in report['commands'] if c['argv'][:2] == ['go','install']]
+                self.assertEqual(len(installs), 1)
+                self.assertEqual(installs[0]['argv'][2], 'github.com/colony-2/c2j/cmd/c2j@' + verify.OPENTOFU_C2J)
+                versions = [c for c in report['commands'] if c['argv'][0].endswith('/c2j')]
+                self.assertEqual(len(versions), int(failing != 'helper'))
+                if versions:
+                    self.assertEqual(versions[0]['argv'][1:], ['version'])
+                suites = [c for c in report['commands'] if c['argv'] == ['python3','scripts/check-opentofu.py']]
+                self.assertEqual(len(suites), int(failing not in ('helper','version','package')))
+                if suites:
+                    self.assertEqual(suites[0]['returncode'], 9 if failing == 'qualifier' else 0)
+                    self.assertIn('real qualifier dispatch', (out / 'opentofu.log').read_text())
+                statuses = {name:('pending' if name == verify.LIVE_TASK else 'passed') for name in verify.ALL_TASKS}; statuses['opentofu'] = expected
+                with contextlib.redirect_stdout(io.StringIO()) as aggregate_stdout:
+                    verify.aggregate(out, out / 'aggregate', statuses)
+                self.assertEqual(aggregate_stdout.getvalue(), expected)
+                # The new required receipt cannot disappear while the caller
+                # still reports success from all its other tasks.
+                (out / 'opentofu.json').unlink()
+                self.assertEqual(self.aggregate(out), 'failed')
+
+
+class LiveVerificationTests(unittest.TestCase):
+    setUp = VerificationTests.setUp
+    fixtures = VerificationTests.fixtures
+    def check_live(self, root, value, driver_stdout=None, returncode=0):
+        env = {'VERIFY_OPENTOFU_PROFILE': value, 'VERIFY_CANDIDATE': 'candidate', 'VERIFY_BASE': 'base'}
+        with patch.dict(os.environ, env), patch.object(verify.platform, 'platform', return_value='fixture'), patch.object(verify.subprocess, 'Popen') as popen, contextlib.redirect_stdout(io.StringIO()) as stdout:
+            process = popen.return_value
+            process.communicate.return_value = (driver_stdout or b'', b'never-export-private-credential')
+            process.returncode = returncode
+            process.pid = 123456789
+            verify.check_credentials(root, root)
+        return stdout.getvalue(), json.loads((root / 'opentofu_credentials.json').read_text()), popen
+
+    def test_v02_unconfigured_is_pending_without_processes(self):
+        for value in ('', 'null'):
+            with tempfile.TemporaryDirectory() as tmp:
+                status, report, popen = self.check_live(Path(tmp), value)
+                self.assertEqual(status, 'pending'); popen.assert_not_called()
+                self.assertEqual(report['commands'], [])
+                self.assertIsNone(report['profile_sha256'])
+
+    def valid_live(self):
+        from test_check_opentofu_google import public_profile
+        value = json.dumps(public_profile())
+        _, digest = verify.profile_binding(value)
+        data = dict(component=verify.LIVE_TASK, status='passed', candidate='candidate', base='base', profile_sha256=digest,
+                    package='/nix/store/' + 'a' * 32 + '-c2ops-opentofu-up-0.1.0', cases=[
+                        dict(case=c, status='passed', mode='oauth_access_token' if c == 'token' else 'service_account_json',
+                             principal_verified=True, native_invocations=2, operation_resolutions=2, inspector_resolutions=1)
+                        for c in ('token', 'direct_key', 'impersonated_key')])
+        return value, data
+
+    def test_v03_configured_errors_fail_and_do_not_publish_private_output(self):
+        value, data = self.valid_live()
+        for payload, code in [(b'invalid never-export-private-credential', 0), (json.dumps(data).encode(), 9),
+                              (json.dumps({**data, 'status': 'pending'}).encode(), 0),
+                              (json.dumps({**data, 'status': 'failed', 'category': 'never-export-private-credential'}).encode(), 0)]:
+            with tempfile.TemporaryDirectory() as tmp:
+                status, report, _ = self.check_live(Path(tmp), value, payload, code)
+                self.assertEqual(status, 'failed')
+                self.assertNotIn('never-export-private-credential', json.dumps(report))
+                self.assertNotIn('never-export-private-credential', (Path(tmp) / 'opentofu_credentials.log').read_text())
+        with tempfile.TemporaryDirectory() as tmp:
+            status, _, popen = self.check_live(Path(tmp), '{}')
+            self.assertEqual(status, 'failed'); popen.assert_not_called()
+
+    def test_v04_v05_live_binding_and_aggregate_tampering(self):
+        import copy
+        value, data = self.valid_live()
+        mutations = [('candidate', 'other'), ('base', 'other'), ('profile_sha256', 'wrong'), ('package', '/mutable'),
+                     ('component', 'opentofu'), ('status', 'skipped'), ('cases', [])]
+        for field, replacement in [(None, None), *mutations, ('log', 'tampered'), ('principal', False), ('pending', True), ('missing', True)]:
+            with self.subTest(field=field), tempfile.TemporaryDirectory() as tmp:
+                root=Path(tmp); self.fixtures(root)
+                for name in verify.TASKS:
+                    path=root/(name+'.json'); row=json.loads(path.read_text()); row.update(candidate='candidate',base='base');path.write_text(json.dumps(row))
+                status, receipt, _ = self.check_live(root, value, json.dumps(data).encode())
+                self.assertEqual(status, 'passed')
+                if field in dict(mutations): receipt[field]=replacement
+                if field == 'principal': receipt['cases'][0]['principal_verified']=False
+                if field == 'pending': receipt.update(status='pending',commands=[],profile_sha256=None,package=None,cases=[])
+                path=root/'opentofu_credentials.json';path.write_text(json.dumps(receipt))
+                if field == 'log': (root/'opentofu_credentials.log').write_text('tampered')
+                if field == 'missing': path.unlink()
+                statuses={name:'passed' for name in verify.ALL_TASKS}
+                if field in ('status','pending'): statuses[verify.LIVE_TASK]=receipt['status']
+                with patch.dict(os.environ, {'VERIFY_OPENTOFU_PROFILE':value,'VERIFY_CANDIDATE':'candidate','VERIFY_BASE':'base'}), contextlib.redirect_stdout(io.StringIO()) as out:
+                    verify.aggregate(root,root/'out',statuses)
+                self.assertEqual(out.getvalue(), 'passed' if field is None else 'failed')
+
 
 
 if __name__ == '__main__':

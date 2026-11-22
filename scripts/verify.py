@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import re
 import shutil
 import signal
 import subprocess
@@ -15,15 +16,19 @@ import time
 
 TASKS = ('manifests', 'tooling', 'npm.publish', 'llm', 'llm2', 'gha', 'gha-many',
          'gha-runtime', 'codex', 'rule-gate', 'release-pack', 'github-release', 'aider', 'litellm', 'pydantic',
-         'jev', 'kimi', 'go-build', 'nix-metadata', 'nix-process')
+         'jev', 'kimi', 'go-build', 'opentofu', 'nix-metadata', 'nix-process')
+LIVE_TASK = 'opentofu_credentials'
+ALL_TASKS = (*TASKS, LIVE_TASK)
+OPENTOFU_C2J = 'v0.0.0-20261120233037-b399a9afb40d'
 NIX = ['nix', '--extra-experimental-features', 'nix-command flakes']
 HELD = {
+    'google-live': 'Basic named-secret, principal, storage and explicit-denial checks require the operator test setup and exact credential delegation; local fixtures cannot establish live qualification.',
     'npm-live': 'Fixture checks run in the dedicated npm.publish task; live N08 requires confirmed package revisions and authorized disposable destinations.',
     'platforms': 'Only native Linux arm64; x86_64-linux and aarch64-darwin matrix held.',
     'worker-image': 'scripts/check-codex-worker.py requires Docker daemon/image execution.',
     'public-actions': 'C2OPS_TEST_GHA_ACTIONS remains unset; real public Actions/service actions and remote CI held.',
     'publication': 'C2OPS_TEST_NIX_PUBLICATION remains unset; four real cache tests, Cachix record/verify/push/pin and promote-published held.',
-    'nix-build-checks': 'Codex, pydantic and go-build packages build locally; other operation checks retain cached realization.',
+    'nix-build-checks': 'Codex, pydantic, go-build and OpenTofu qualification packages build locally; other operation checks retain cached realization.',
     'release': 'Signing, publication and deployment require external infrastructure/credentials and are held even if available.',
 }
 _ACTIVE = None
@@ -231,6 +236,22 @@ def execute(name, checks, race):
                            str(checks.root.parent / 'with-tools'), '../scripts/with-tools.go'], 'codex'):
             return
         checks.run(['uv', 'run', '--with', 'jsonschema==4.26.0', 'python', '-m', 'unittest', '-v', 'test_main.py'], 'kimi')
+    elif name == 'opentofu':
+        # This is the build verifier, not infra's deployment hook. Only local
+        # synthetic credentials/Google fixtures run here; release stays held.
+        checks.env['GOBIN'] = str(checks.root.parent / 'opentofu-test-bin')
+        if not checks.run(['go', 'install', 'github.com/colony-2/c2j/cmd/c2j@' + OPENTOFU_C2J]):
+            return
+        checks.env['PATH'] = checks.env['GOBIN'] + os.pathsep + checks.env.get('PATH', '')
+        if not checks.run([checks.env['GOBIN'] + '/c2j', 'version']):
+            return
+        # Record unchanged production process acceptance separately from the
+        # qualifier's dependency-overridden installed/native fixture package.
+        if not checks.run([*NIX, 'build', '--no-link', '--no-write-lock-file',
+                           '--max-jobs', '2', '--print-out-paths',
+                           'path:.#opentofu-up', 'path:.#checks.aarch64-linux.opentofu-up']):
+            return
+        checks.run(['python3', 'scripts/check-opentofu.py'])
     elif name == 'nix-metadata':
         checks.run([*NIX, 'flake', 'check', '--no-build', '--no-write-lock-file', '--system', 'aarch64-linux'])
     elif name == 'nix-process':
@@ -333,28 +354,121 @@ def check(name, root, outbox, *, race=False):
     print(report['status'], end='')
 
 
+def profile_binding(value):
+    # Hook settings contain public identifiers only; this function resolves nothing.
+    from opentofu_google import profile
+    try:
+        data = profile(json.loads(value))
+    except Exception:
+        raise ValueError('invalid public credential profile') from None
+    return data, hashlib.sha256(json.dumps(data, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+
+
+def live_receipt(data, *, candidate, base, digest):
+    from opentofu_google import CASES
+    if (not isinstance(data, dict) or set(data) - {'component', 'status', 'candidate', 'base', 'cases', 'profile_sha256', 'package', 'category'}
+            or data.get('component') != 'opentofu_credentials' or data.get('status') not in ('passed', 'failed')
+            or data.get('candidate') != candidate or data.get('base') != base or data.get('profile_sha256') != digest):
+        raise ValueError('invalid live receipt binding')
+    if data['status'] == 'passed':
+        if not isinstance(data.get('package'), str) or not re.fullmatch(r'/nix/store/[a-z0-9]{32}-[A-Za-z0-9.+_-]+', data['package']):
+            raise ValueError('invalid package identity')
+        rows = data.get('cases')
+        if not isinstance(rows, list) or len(rows) != 3 or [r.get('case') for r in rows] != list(CASES):
+            raise ValueError('invalid authentication cases')
+        for row in rows:
+            mode = 'oauth_access_token' if row['case'] == 'token' else 'service_account_json'
+            if row != dict(case=row['case'], status='passed', mode=mode, principal_verified=True,
+                           native_invocations=2, operation_resolutions=2, inspector_resolutions=1):
+                raise ValueError('invalid successful credential evidence')
+    return data
+
+
+def check_credentials(root, outbox):
+    global _ACTIVE
+    outbox.mkdir(parents=True, exist_ok=True)
+    report = {'task': 'opentofu_credentials', 'component': 'opentofu_credentials', 'status': 'failed',
+              'candidate': os.environ.get('VERIFY_CANDIDATE'), 'base': os.environ.get('VERIFY_BASE'),
+              'platform': platform.platform(), 'machine': platform.machine(), 'commands': [],
+              'profile_sha256': None, 'package': None, 'cases': []}
+    log = 'credential component failed\n'
+    value = os.environ.get('VERIFY_OPENTOFU_PROFILE', 'null')
+    try:
+        if value in ('', 'null'):
+            report['status'] = 'pending'
+            log = 'credential component pending: no public profile configured; no secret resolution or Google traffic\n'
+        else:
+            public, digest = profile_binding(value)
+            report['profile_sha256'] = digest
+            with tempfile.TemporaryDirectory(prefix='opentofu-live-profile-') as temp:
+                public_path = Path(temp) / 'profile.json'
+                public_path.write_text(json.dumps(public))
+                argv = ['uv', 'run', str(root / 'scripts/check-opentofu-google.py'), '--profile', str(public_path), '--out', str(outbox)]
+                # Never use Checks.run: it records combined private subprocess output.
+                _ACTIVE = subprocess.Popen(argv, env=dict(os.environ), stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
+                stdout, _ = _ACTIVE.communicate(timeout=900)
+                if _ACTIVE.returncode != 0 or len(stdout) > 1 << 20:
+                    raise ValueError('credential driver failed')
+                data = live_receipt(json.loads(stdout), candidate=report['candidate'], base=report['base'], digest=digest)
+                report['status'] = data['status']
+                # Failed driver details are deliberately not copied into public evidence.
+                if data['status'] == 'passed':
+                    report['package'], report['cases'] = data['package'], data['cases']
+                report['commands'] = [{'argv': ['credential-driver'], 'returncode': 0 if data['status'] == 'passed' else 1}]
+                log = 'fresh credential component ' + data['status'] + '\n'
+    except Exception:
+        # Provider, helper, SDK, parsing and child errors may contain credentials.
+        report['status'] = 'failed'
+    finally:
+        if _ACTIVE is not None:
+            try:
+                os.killpg(_ACTIVE.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            _ACTIVE.communicate()
+            _ACTIVE = None
+    b = log.encode()
+    (outbox / 'opentofu_credentials.log').write_bytes(b)
+    report['log_sha256'] = hashlib.sha256(b).hexdigest()
+    (outbox / 'opentofu_credentials.json').write_text(json.dumps(report, indent=2) + '\n')
+    print(report['status'], end='')
+
+
 def aggregate(inbox, outbox, statuses=None):
     outbox.mkdir(parents=True, exist_ok=True)
     if statuses is None:
-        statuses = {name: os.environ.get('VERIFY_STATUS_' + name.upper().replace('-', '_').replace('.', '_')) for name in TASKS}
+        statuses = {name: os.environ.get('VERIFY_STATUS_' + name.upper().replace('-', '_').replace('.', '_')) for name in ALL_TASKS}
     rows, errors = [], []
-    for name in TASKS:
+    for name in ALL_TASKS:
         try:
             data = json.loads((inbox / (name + '.json')).read_text())
             log = (inbox / (name + '.log')).read_bytes()
-            if statuses.get(name) not in ('passed', 'failed') or statuses[name] != data['status']:
+            if statuses.get(name) not in (('passed', 'failed', 'pending') if name == LIVE_TASK else ('passed', 'failed')) or statuses[name] != data['status']:
                 raise ValueError('missing, malformed or inconsistent command stdout')
-            if data['task'] != name or data['status'] not in ('passed', 'failed'):
+            if data['task'] != name or data['status'] not in (('passed', 'failed', 'pending') if name == LIVE_TASK else ('passed', 'failed')):
                 raise ValueError('invalid task/status')
             if not log or hashlib.sha256(log).hexdigest() != data['log_sha256']:
                 raise ValueError('missing or changed log')
             if data['status'] == 'passed' and (not data['commands'] or any(c.get('returncode') != 0 for c in data['commands'])):
                 raise ValueError('invalid successful command evidence')
+            if os.environ.get('VERIFY_CANDIDATE') is not None and (data.get('candidate') != os.environ['VERIFY_CANDIDATE'] or data.get('base') != os.environ.get('VERIFY_BASE')):
+                raise ValueError('candidate identity mismatch')
+            if name == LIVE_TASK:
+                configured = os.environ.get('VERIFY_OPENTOFU_PROFILE', 'null') not in ('', 'null')
+                if data['status'] == 'pending':
+                    if configured or data.get('commands') or data.get('profile_sha256') is not None or data.get('package') is not None:
+                        raise ValueError('invalid pending live evidence')
+                elif data['status'] == 'passed':
+                    if not configured:
+                        raise ValueError('unconfigured live success')
+                    _, digest = profile_binding(os.environ['VERIFY_OPENTOFU_PROFILE'])
+                    live_receipt({k: data[k] for k in ('component', 'status', 'candidate', 'base', 'profile_sha256', 'package', 'cases')},
+                                 candidate=os.environ.get('VERIFY_CANDIDATE'), base=os.environ.get('VERIFY_BASE'), digest=digest)
             rows.append({'task': name, 'status': data['status']})
         except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
             errors.append(name + ': ' + str(error))
             rows.append({'task': name, 'status': 'failed'})
-    status = 'passed' if not errors and all(row['status'] == 'passed' for row in rows) else 'failed'
+    status = 'passed' if not errors and all(row['status'] == 'passed' or (row['task'] == LIVE_TASK and row['status'] == 'pending') for row in rows) else 'failed'
     (outbox / 'verification.json').write_text(json.dumps({'status': status, 'tasks': rows, 'errors': errors, 'held': HELD}, indent=2) + '\n')
     lines = ['# Native verification', '', 'Status: ' + status, '', '| Task | Status |', '| --- | --- |']
     lines += ['| ' + row['task'] + ' | ' + row['status'] + ' |' for row in rows]
@@ -369,7 +483,7 @@ def main():
     signal.signal(signal.SIGINT, stop)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('mode', choices=('check', 'aggregate'))
-    parser.add_argument('name', nargs='?', choices=TASKS)
+    parser.add_argument('name', nargs='?', choices=ALL_TASKS)
     parser.add_argument('--race', action='store_true', help='Required for GHA source and embedded helper race checks')
     args = parser.parse_args()
     if args.race and (args.mode != 'check' or args.name not in ('gha', 'gha-runtime')):
@@ -377,7 +491,10 @@ def main():
     if args.mode == 'check':
         if args.name is None:
             parser.error('check requires a task')
-        check(args.name, Path(os.environ['VERIFY_ROOT']).resolve(), Path(os.environ['VERIFY_OUTBOX']), race=args.race)
+        if args.name == LIVE_TASK:
+            check_credentials(Path(os.environ['VERIFY_ROOT']).resolve(), Path(os.environ['VERIFY_OUTBOX']))
+        else:
+            check(args.name, Path(os.environ['VERIFY_ROOT']).resolve(), Path(os.environ['VERIFY_OUTBOX']), race=args.race)
     else:
         aggregate(Path(os.environ['VERIFY_INBOX']), Path(os.environ['VERIFY_OUTBOX']))
 

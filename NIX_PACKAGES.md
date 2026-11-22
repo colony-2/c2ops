@@ -503,3 +503,65 @@ an empty ambient PATH against committed-doc and copied-byte fixtures. Build
 telemetry stays in a temporary build configuration directory, including on
 unsandboxed builders. See [the archive contract and checks](release_pack/README.md)
 for explicit artifact hydration, package selectors and live integration gates.
+
+## OpenTofu qualification
+
+`opentofu-up` binds OpenTofu 1.13.1, Git and packaged trust roots at build time.
+Its installed/native preview, changed apply, no-change and recovery tests use an explicitly isolated candidate package
+with a private Google API transport and a checksummed Google 7.10.0 provider mirror.
+The test helper c2j is pinned to `b399a9afb40d` and stays outside the runtime closure.
+The separate `opentofu-runtime-fixture` module uses that clean c2j source and its
+JobDB pin to test completed replay, real renewable-lease revocation during plan,
+descendant cleanup and complete committed-history/artifact scans. Its scanner
+negative controls and the operation suite run through `scripts/check-opentofu.py`.
+The native build hook's fixed `opentofu` task prepares that pinned helper in scratch,
+checks the unchanged production package/process contract, and runs the qualifier.
+Failure in any preparation or suite fails required aggregate evidence. The bounded
+`scripts/verify_hook_harness.py --case opentofu --out /tmp/c2ops-tofu-hook-tests`
+case exercises qualification and real aggregation; other tasks are fixtures.
+The hook also has a non-constant `opentofu_credentials` task. Without a public
+profile it records pending; configured failures fail aggregation. The
+[operator guide](scripts/opentofu-google-testing.md) describes exact grants,
+administrative hook source trust and the separate basic live checks.
+The dependency-overridden package's successful Google fixture paths do not establish
+successful live execution of the unchanged production package.
+All three native CI jobs run these checks before upload; the catalog automatically
+includes the new output in signed substitution, per-revision retention and promotion.
+No local build or fixture result substitutes for live Google acceptance or publication.
+
+The qualifier runs `TestNativePackagedRecovery` and its complement in separate
+processes, each retaining the eight-minute Go test limit. The isolated native
+fixture measured 370 seconds; combining it with authentication renewal and lock
+checks exceeded the shared alarm. The complement includes future tests, and
+partition/failure regressions require every current test exactly once and failure
+from either process (or the scanner suite) to fail qualification.
+
+### OpenTofu publication confirmation
+
+Confirm publication with the operator after the job containing the managed merge
+completes. Candidate acceptance precedes merge; release evidence belongs to the
+subsequent native Actions run. There is no automatic publish hook or new
+observation credential to provision for this recovery.
+
+Use the job's actual merged commit and inspect its existing `main` run of
+`.github/workflows/test.yml`. Do not substitute a candidate parent revision or
+a temporary-branch run, and inspect the automatic run before any redispatch.
+Ask the operator to provide the matching run and package records and confirm:
+
+1. Native test and verification jobs succeeded on `x86_64-linux`,
+   `aarch64-linux` and `aarch64-darwin`, including OpenTofu qualification.
+2. Each platform passed signed empty-store substitution with builds, builders
+   and fallback disabled, recursive verification and closure retention.
+3. The promotion step succeeded; retain its actual disposition if `published`
+   already contains this commit or a newer descendant won promotion.
+4. Normal c2j preparation and invocation used
+   `nix:github:colony-2/c2ops/MERGED_COMMIT#opentofu-up`, with the full verified
+   commit substituted for `MERGED_COMMIT`. Retain its invocation result. A
+   source-preflight refusal before Google credential resolution proves installed
+   invocation only; live cloud success needs the separate acceptance below.
+
+Until those results and the human confirmation are available, report publication
+as unverified and do not describe the selector as verified. A completed merge or
+skipped publish report alone is insufficient. Live Google qualification still
+requires an authorized disposable project and GCS prefix, exact named-secret
+delegation, public recovery recipients and operator-held decryption custody.

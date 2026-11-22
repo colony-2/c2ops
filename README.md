@@ -61,6 +61,7 @@ sequence:
 | `github.release` | Create source tags and publish byte-verified GitHub assets. | `./github_release` | `nix:github:colony-2/c2ops/published#github-release` |
 | `go.build` | [Go release binaries](go_build/README.md) with automatic/manual pinned Nix SDK selection and verified Git source. | `./go_build` | `nix:github:colony-2/c2ops/published#go-build` |
 | `release.pack` | [Portable release archives and final-byte checksums](release_pack/README.md). | `./release_pack` | `nix:github:colony-2/c2ops/published#release-pack` |
+| `opentofu-up` | [Exact Google/GCS plan or apply with encrypted emergency state](opentofu-up/README.md). | `./opentofu-up` | `nix:github:colony-2/c2ops/published#opentofu-up` |
 | `rule_gate` | Deterministic recipe policy checks. | `./rule_gate` | `nix:github:colony-2/c2ops/published#rule_gate` |
 | `npm.publish` | [Install-check a committed npm wrapper and publish the retained tested tarball](npm_publish/README.md). | `./npm_publish` | `nix:github:colony-2/c2ops/<confirmed-revision>#npm-publish` |
 

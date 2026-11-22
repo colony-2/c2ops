@@ -158,3 +158,49 @@ A native hook pass still covers Linux arm64 only. Go on macOS ignores
 bundle there. The helper's Linux tests exercise that branch, but native macOS
 installed tests and the existing three-platform CI matrix remain required to
 validate the platform-specific repair.
+
+The `opentofu` task builds the unchanged production package/process contract,
+prepares the test helper pinned to c2j `b399a9afb40d`, and runs the real OpenTofu
+and Google SDK fixtures plus installed/native recovery, replay, secret ceilings
+and cancellation. It retains its own log/receipt and is required by aggregation.
+`python3 scripts/verify_hook_harness.py --case opentofu --out /tmp/c2ops-tofu-hook-tests`
+executes this task with the candidate's declared tools and real aggregation;
+other tasks are fixtures. GHA's current partitions and eight-minute limits stay
+unchanged. Live Google qualification remains separately gated.
+
+Publication is confirmed by a person after the job containing the managed merge
+has completed. There is no automatic publish hook or additional observation
+credential requirement. Pre-merge review assesses the candidate and its local
+checks; it cannot require evidence from the release that merge will trigger.
+The existing main-branch Actions workflow remains the release path.
+
+After job completion, ask the operator to confirm the actual merged revision's
+three native test and verification jobs, signed empty-store substitution,
+retained closures and promotion disposition. Then prepare and invoke the
+full-commit `opentofu-up` selector. See the
+[publication confirmation steps](../../../../NIX_PACKAGES.md#opentofu-publication-confirmation).
+A merge or skipped publish report does not establish publication. Live Google
+qualification remains separate and requires its own disposable target and
+credential delegation.
+
+The qualifier runs `TestNativePackagedRecovery` and its complement in separate
+processes, each retaining the eight-minute Go test limit. The isolated native
+fixture measured 370 seconds; combining it with authentication renewal and lock
+checks exceeded the shared alarm. The complement includes future tests, and
+partition/failure regressions require every current test exactly once and failure
+from either process (or the scanner suite) to fail qualification.
+
+The non-constant `opentofu_credentials` task is separate. An absent/null public
+`settings.variables.opentofu_google` records pending without Google credential
+resolution or traffic; pending local candidate verification is not live acceptance.
+Its baseline literal grant retains `gitvend_base_token`: workspace preparation
+clones the private repository before running even an unconfigured command. An
+empty grant blocked that clone in the managed route; local seeded-repository
+fixtures did not exercise this prerequisite. Permission harness cases now probe
+the Git grant separately from Google grants and run the actual pending command.
+Configured malformed, denied or unsuccessful checks fail aggregation. The
+[operator script guide](../../../../scripts/opentofu-google-testing.md) covers
+private setup, exact leaf/caller ceilings, administrative hook grants with source
+trust, registration, refresh and cleanup. Successful receipts bind candidate/base,
+production package, public profile and fixed public-log digests. Fresh invocation
+is required; completed replay cannot qualify credentials.

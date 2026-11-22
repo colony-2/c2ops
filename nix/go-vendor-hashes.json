@@ -7,5 +7,6 @@
   "rule_gate": "sha256-Pw0nUpZRG0QMDOvXvWfihcnQQtSC0pogIdBnFM41098=",
   "github_release": null,
   "go_build": "sha256-nolS8JY7nEam4QVaR3QOOmhX9u5KW3RVGO9yrLN+B+M=",
-  "release_pack": null
+  "release_pack": null,
+  "opentofu-up": "sha256-x2LCuZFbazvH0Xl+OkiJqFxi7J+Lhz4/eSSNNN5caAA="
 }

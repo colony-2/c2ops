@@ -11,6 +11,7 @@ capture for parsing, artifacts, or concise errors.
 | LLM, LLM2 | Git stdout is a filename protocol. Failed commands retain stderr in the returned error; failures in optional staged/untracked queries are logged even when collection continues. Successful discovery probes stay quiet. |
 | GHA, GHA-many | Git and Docker probes include captured output in failures. Workflow logs are deliberately captured through the existing structured hooks and published as log artifacts. |
 | Pydantic, LiteLLM, Jev | Provider libraries run in-process; these ops do not capture child stderr. Existing exception diagnostics remain. Jev deliberately reports the exception type to avoid echoing request data from SDK validation errors. |
+| OpenTofu up | Child output stays private and bounded; stderr is drained without forwarding. Only fixed invocation diagnostics and safe stage/error categories are public. |
 | Rule gate | Runs in-process and already reports failures on stderr. |
 
 The parent worker controls when collected stderr appears in its UI or job logs.
