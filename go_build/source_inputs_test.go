@@ -10,10 +10,10 @@ import (
 )
 
 func TestB24AssemblyIncludes(t *testing.T) {
-	root := t.TempDir()
-	sdk := t.TempDir()
+	root := physicalTempDir(t)
+	sdk := physicalTempDir(t)
 	write(t, sdk, "share/go/pkg/include/textflag.h", "#define NOSPLIT 4\n")
-	outside := filepath.Join(t.TempDir(), "ambient.inc")
+	outside := filepath.Join(physicalTempDir(t), "ambient.inc")
 	write(t, filepath.Dir(outside), filepath.Base(outside), "external")
 	cases := []struct {
 		name, assembly string
@@ -49,7 +49,7 @@ func TestB24AssemblyIncludes(t *testing.T) {
 		})
 	}
 	t.Run("header symlink", func(t *testing.T) {
-		dir := t.TempDir()
+		dir := physicalTempDir(t)
 		write(t, dir, "main.s", "#include \"link.h\"\n")
 		if err := os.Symlink(outside, filepath.Join(dir, "link.h")); err != nil {
 			t.Fatal(err)
@@ -62,7 +62,7 @@ func TestB24AssemblyIncludes(t *testing.T) {
 }
 
 func TestB24DependencyAssemblyGraph(t *testing.T) {
-	src, sdk, cache := t.TempDir(), t.TempDir(), t.TempDir()
+	src, sdk, cache := physicalTempDir(t), physicalTempDir(t), physicalTempDir(t)
 	dep := filepath.Join(cache, "example.com/dep@v1.0.0")
 	write(t, dep, "value.s", "#include \"value.inc\"\n")
 	write(t, dep, "value.inc", "#define VALUE 42\n")
@@ -87,7 +87,7 @@ func TestB24DependencyAssemblyGraph(t *testing.T) {
 	if err := checkPackageInputs(stream(), src, sdk, cache); err == nil {
 		t.Fatal("dependency assembly escaped its module into cache metadata")
 	}
-	packages[0].Dir = t.TempDir()
+	packages[0].Dir = physicalTempDir(t)
 	if err := checkPackageInputs(stream(), src, sdk, cache); err == nil {
 		t.Fatal("ambient package directory accepted")
 	}

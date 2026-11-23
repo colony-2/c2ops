@@ -32,6 +32,29 @@ func roots(r Request) (Request, error) {
 	}
 	return r, nil
 }
+
+// The system temp directory may itself be reached through a symlink on macOS.
+func buildScratch(r Request) (string, error) {
+	parent, err := filepath.EvalSymlinks(os.TempDir())
+	if err != nil {
+		return "", fmt.Errorf("cannot resolve temporary directory")
+	}
+	parent, err = filepath.Abs(parent)
+	if err != nil {
+		return "", fmt.Errorf("cannot resolve temporary directory")
+	}
+	for _, root := range []string{r.Worktree, r.Inbox, r.Outbox} {
+		if inside(root, parent) {
+			return "", fmt.Errorf("temporary directory must be outside bound roots")
+		}
+	}
+	scratch, err := os.MkdirTemp(parent, "c2ops-go-build-")
+	if err != nil {
+		return "", fmt.Errorf("cannot create private build directory")
+	}
+	return scratch, nil
+}
+
 func build(ctx context.Context, r Request) (Output, error) { return buildWith(ctx, r, command) }
 
 // run is injectable only within Go tests; the executable has no compiler/path or
@@ -45,16 +68,11 @@ func buildWith(ctx context.Context, r Request, run runner) (result Output, err e
 	if _, e := os.Lstat(final); !os.IsNotExist(e) {
 		return result, fmt.Errorf("go-build output already exists; use a fresh bound outbox")
 	}
-	scratch, err := os.MkdirTemp("", "c2ops-go-build-")
+	scratch, err := buildScratch(r)
 	if err != nil {
-		return result, fmt.Errorf("cannot create private build directory")
+		return result, err
 	}
 	defer removeScratch(scratch)
-	for _, root := range []string{r.Worktree, r.Inbox, r.Outbox} {
-		if inside(root, scratch) {
-			return result, fmt.Errorf("temporary directory must be outside bound roots")
-		}
-	}
 	src := filepath.Join(scratch, "source")
 	if err = os.Mkdir(src, 0700); err != nil {
 		return result, fmt.Errorf("cannot create source projection")

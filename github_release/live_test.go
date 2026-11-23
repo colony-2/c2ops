@@ -122,7 +122,7 @@ func liveInput(t *testing.T, pack bool) (context.Context, Input, *github) {
 }
 func liveInvoke(t *testing.T, ctx context.Context, in Input, g *github) (Output, error) {
 	t.Helper()
-	in.OutboxRoot = t.TempDir() // Fresh evidence for every invocation.
+	in.OutboxRoot = physicalTempDir(t) // Fresh evidence for every invocation.
 	wire, err := json.Marshal(in)
 	if err != nil {
 		t.Fatal(err)

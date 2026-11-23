@@ -13,6 +13,15 @@ import (
 	"time"
 )
 
+func physicalTempDir(t *testing.T) string {
+	t.Helper()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
 func gitTest(t *testing.T, dir string, args ...string) string {
 	t.Helper()
 	argv := append([]string{"-C", dir, "-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid"}, args...)
@@ -44,7 +53,7 @@ func main(){fmt.Print(state+"|"+version+"|"+runtime.Version())}
 
 func fixture(t *testing.T, files map[string]string) Request {
 	t.Helper()
-	base := t.TempDir()
+	base := physicalTempDir(t)
 	root := filepath.Join(base, "repo")
 	in := filepath.Join(base, "in")
 	out := filepath.Join(base, "out")
@@ -70,7 +79,7 @@ func fixture(t *testing.T, files map[string]string) Request {
 }
 func projectionFor(t *testing.T, r Request) *projection {
 	t.Helper()
-	root := filepath.Join(t.TempDir(), "projection")
+	root := filepath.Join(physicalTempDir(t), "projection")
 	if e := os.Mkdir(root, 0700); e != nil {
 		t.Fatal(e)
 	}
@@ -83,12 +92,38 @@ func projectionFor(t *testing.T, r Request) *projection {
 }
 func selectionFiles(t *testing.T, files map[string]string) string {
 	t.Helper()
-	root := t.TempDir()
+	root := physicalTempDir(t)
 	for p, v := range files {
 		write(t, root, p, v)
 	}
 	return root
 }
+
+func TestBuildScratchResolvesTemporaryDirectory(t *testing.T) {
+	r := fixture(t, nil)
+	outside := physicalTempDir(t)
+	for _, target := range []string{outside, r.Worktree, r.Inbox, r.Outbox} {
+		t.Run(filepath.Base(target), func(t *testing.T) {
+			alias := filepath.Join(t.TempDir(), "alias")
+			if err := os.Symlink(target, alias); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("TMPDIR", alias)
+			scratch, err := buildScratch(r)
+			if err == nil {
+				t.Cleanup(func() { removeScratch(scratch) })
+			}
+			if target == outside {
+				if err != nil || filepath.Dir(scratch) != outside {
+					t.Fatalf("expected scratch in %s, got %q (%v)", outside, scratch, err)
+				}
+			} else if err == nil || err.Error() != "temporary directory must be outside bound roots" {
+				t.Fatalf("expected bound-root rejection, got %q (%v)", scratch, err)
+			}
+		})
+	}
+}
+
 func TestB01_B06Selection(t *testing.T) {
 	cases := []struct {
 		name, mod, work, override, want string
@@ -131,7 +166,7 @@ func TestB01_B06Selection(t *testing.T) {
 		})
 	}
 	t.Run("B06 missing selection file", func(t *testing.T) {
-		_, e := selectVersion(t.TempDir(), Request{ModuleDir: "."})
+		_, e := selectVersion(physicalTempDir(t), Request{ModuleDir: "."})
 		if e == nil {
 			t.Fatal("accepted missing file")
 		}
@@ -197,7 +232,7 @@ func TestB20_B25Projection(t *testing.T) {
 				}
 				write(t, r.Worktree, "main.go", "bad")
 			}
-			root := t.TempDir()
+			root := physicalTempDir(t)
 			if _, e := prepareSource(context.Background(), r, root); e == nil {
 				t.Fatal("accepted changed source")
 			}
@@ -224,7 +259,7 @@ func TestB24EscapingAndContainedPaths(t *testing.T) {
 			gitTest(t, r.Worktree, "add", ".")
 			gitTest(t, r.Worktree, "commit", "-qm", "unsafe")
 			r.Intent.SourceCommit = gitTest(t, r.Worktree, "rev-parse", "HEAD")
-			root := t.TempDir()
+			root := physicalTempDir(t)
 			p, e := prepareSource(context.Background(), r, root)
 			defer removeScratch(root)
 			if e == nil {
