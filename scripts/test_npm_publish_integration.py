@@ -96,36 +96,46 @@ class NpmIntegrationTests(unittest.TestCase):
                 self.assertEqual(f.events[put+1], 'GET')
 
     def test_cancelled_publish_retains_prepared_artifact_and_checkout(self):
-        import signal
         import time
         from npm_publish_fixture import prepare_artifact, snapshot
         with fixture() as f:
             prepared = prepare_artifact(f); f.resume(prepared)
             f.request.update(phase='publish', registry_token_file=str(f.token))
             marker = f.root / 'child.pid'
-            driver = ('import json,os,sys\n'
+            child_script = f.root / 'child.py'
+            child_script.write_text(
+                'import os, time\n'
                 'from pathlib import Path\n'
+                'marker = Path(__file__).with_suffix(".pid")\n'
+                'pending = marker.with_suffix(".tmp")\n'
+                'pending.write_text(str(os.getpid()))\n'
+                'pending.replace(marker)\n'
+                'time.sleep(60)\n'
+            )
+            driver = ('import json,os,sys\n'
                 'from npm_publish_fixture import op,routing_ports\n'
                 'real=op.run\n'
                 'def run(argv,cwd,env=None,timeout=120):\n'
                 ' if argv[:2]==["npm","publish"]:\n'
-                '  return real([sys.executable,"-c",'
-                '"import os,time;from pathlib import Path;Path("+repr(os.environ["PIDFILE"])+").write_text(str(os.getpid()));time.sleep(60)"],cwd,env,timeout)\n'
+                '  return real([sys.executable,os.environ["PUBLISH_CHILD"]],cwd,env,timeout)\n'
                 ' return real(argv,cwd,env,timeout)\n'
                 'op.run=run\n'
                 'with routing_ports(json.loads(os.environ["FIXTURE_PORTS"])):\n'
                 ' sys.exit(op.main())\n')
-            env = {**os.environ, 'PYTHONPATH': str(Path(__file__).parent), 'PIDFILE': str(marker),
+            env = {**os.environ, 'PYTHONPATH': str(Path(__file__).parent), 'PUBLISH_CHILD': str(child_script),
                 'FIXTURE_PORTS': json.dumps(f.ports()), 'C2OPS_NPM_TEST_MODULE': str(MODULE)}
             before = snapshot(f.workspace)
             process = subprocess.Popen([sys.executable, '-c', driver], stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, cwd='/')
             try:
                 process.stdin.write(json.dumps(f.request).encode()); process.stdin.close(); process.stdin = None
-                deadline = time.monotonic() + 15
+                # Readiness includes tarball verification and the registry lookup.
+                # The cancellation deadline starts after the publish child is ready.
+                deadline = time.monotonic() + 40
                 while not marker.exists() and time.monotonic() < deadline and process.poll() is None:
                     time.sleep(0.02)
-                self.assertTrue(marker.exists())
+                self.assertTrue(marker.exists(),
+                    f'publish child never became ready (driver return code {process.poll()})')
                 child = int(marker.read_text())
                 process.terminate()
                 stdout, stderr = process.communicate(timeout=5)
