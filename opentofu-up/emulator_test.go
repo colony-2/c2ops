@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -173,14 +174,19 @@ resource "google_storage_bucket_object" "marker" {
 	i.Revision = gitTest(t, i.Worktree, "rev-parse", "HEAD")
 	return i, tofu, cli
 }
+
+var fixtureGoogleHosts = []string{
+	"storage.googleapis.com", "oauth2.googleapis.com", "iamcredentials.googleapis.com",
+	"openidconnect.googleapis.com", "cloudbilling.googleapis.com", "cloudresourcemanager.googleapis.com",
+}
+
 func localGoogleHandler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.Host {
-		case "storage.googleapis.com", "oauth2.googleapis.com", "iamcredentials.googleapis.com", "openidconnect.googleapis.com", "cloudbilling.googleapis.com", "cloudresourcemanager.googleapis.com":
-			next.ServeHTTP(w, r)
-		default:
+		if !slices.Contains(fixtureGoogleHosts, r.Host) {
 			http.Error(w, "unexpected local test destination", 502)
+			return
 		}
+		next.ServeHTTP(w, r)
 	})
 }
 func TestEmulatorNetworkBoundary(t *testing.T) {

@@ -76,7 +76,7 @@ class VerificationTests(unittest.TestCase):
                 go = tools / 'go'
                 go.write_text('#!' + sys.executable + '\nimport os,sys\n'
                               'assert os.environ["GOWORK"] == "off"\n'
-                              'assert "PNPM_CONFIG_ALLOW_BUILDS" not in os.environ\n'
+                              'assert "PNPM_CONFIG_ALLOW_BUILDS" in os.environ\n'
                               'assert sys.argv[1:3] == ["build", "-mod=readonly"]\n'
                               'raise SystemExit(' + ('9' if build_fails else '0') + ')\n')
                 go.chmod(0o755)
@@ -161,8 +161,7 @@ class VerificationTests(unittest.TestCase):
     def test_verification_does_not_inherit_live_npm_request(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / 'candidate'
-            (root / 'nix').mkdir(parents=True)
-            (root / 'nix/pnpm-build-policy.json').write_text('{}')
+            root.mkdir()
             def execute(name, checks, race):
                 self.assertEqual(name, 'tooling')
                 self.assertNotIn('C2OPS_NPM_LIVE_REQUEST', checks.env)
@@ -182,9 +181,8 @@ class VerificationTests(unittest.TestCase):
         for failure in (None, 'source', 'nix'):
             with self.subTest(failure=failure), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory) / 'candidate'
-                for name in ('scripts', 'npm_publish', 'nix'):
+                for name in ('scripts', 'npm_publish'):
                     (root / name).mkdir(parents=True)
-                (root / 'nix/pnpm-build-policy.json').write_text('{}')
                 (root / 'npm_publish/main.py').write_text('# candidate operation\n')
                 (root / 'scripts/test_npm_publish.py').write_text(
                     'import os,unittest\nfrom pathlib import Path\n'
@@ -273,9 +271,7 @@ class VerificationTests(unittest.TestCase):
             for available in (True, False):
                 with self.subTest(task=task, available=available), tempfile.TemporaryDirectory() as directory:
                     root = Path(directory) / 'candidate'
-                    (root / 'nix').mkdir(parents=True)
                     (root / 'gha/integration').mkdir(parents=True)
-                    (root / 'nix/pnpm-build-policy.json').write_text('{}')
                     tools = Path(directory) / 'tools'; tools.mkdir()
                     compiler = Path(directory) / 'compiler'
                     (compiler / 'bin').mkdir(parents=True)
@@ -534,8 +530,6 @@ class VerificationTests(unittest.TestCase):
             root = Path(directory) / 'candidate $(touch injected)'
             root.mkdir()
             (root / 'Makefile').write_text('check-manifests:\n\t@echo forced mandatory failure >&2\n\t@printf mutation > linked-input\n\t@exit 9\n')
-            (root / 'nix').mkdir()
-            (root / 'nix/pnpm-build-policy.json').write_text('{}')
             sentinel = root / 'untracked.txt'
             sentinel.write_text('preserve me')
             external = Path(directory) / 'external.txt'
@@ -565,9 +559,9 @@ class VerificationTests(unittest.TestCase):
         for failing in ('none', 'go', 'python'):
             with self.subTest(failing=failing), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory) / 'candidate'
-                for name in ('pydantic', 'scripts', 'nix'):
+                for name in ('pydantic', 'scripts'):
                     (root / name).mkdir(parents=True)
-                for name in ('pydantic/Makefile', 'scripts/pydantic_test.py', 'flake.lock', 'nix/pnpm-build-policy.json'):
+                for name in ('pydantic/Makefile', 'scripts/pydantic_test.py', 'flake.lock'):
                     (root / name).write_bytes((source / name).read_bytes())
                 tools = Path(directory) / 'tools'; tools.mkdir()
                 for name in ('go', 'python'):
@@ -618,9 +612,7 @@ class VerificationTests(unittest.TestCase):
         for failing in ('none', 'unit', 'real'):
             with self.subTest(failing=failing), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory) / 'candidate'
-                (root / 'nix').mkdir(parents=True)
-                (root / 'go_build').mkdir()
-                (root / 'nix/pnpm-build-policy.json').write_text('{}')
+                (root / 'go_build').mkdir(parents=True)
                 out = Path(directory) / 'evidence'
                 out.mkdir()
                 self.fixtures(out)
@@ -689,9 +681,7 @@ with open(sys.argv[2]+'.log','wb') as log:
         for failing in ('none', 'helper', 'version', 'package', 'qualifier'):
             with self.subTest(failing=failing), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory) / 'candidate'
-                (root / 'nix').mkdir(parents=True)
-                (root / 'scripts').mkdir()
-                (root / 'nix/pnpm-build-policy.json').write_text('{}')
+                (root / 'scripts').mkdir(parents=True)
                 (root / 'scripts/check-opentofu.py').write_text(
                     'import os,sys\nprint("real qualifier dispatch", os.environ["GOBIN"])\n'
                     + 'raise SystemExit(' + ('9' if failing == 'qualifier' else '0') + ')\n')

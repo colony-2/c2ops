@@ -233,9 +233,6 @@ def execute(name, checks, race):
         # The CLI fixture has a 90s invocation deadline. Cold compilation of
         # its real c2j tool preparer belongs to setup, under this runner's limit.
         checks.env['GOWORK'] = 'off'
-        # The runtime now owns pnpm's private install policy. The verifier's
-        # legacy override conflicts with that policy and is unnecessary here.
-        checks.env.pop('PNPM_CONFIG_ALLOW_BUILDS', None)
         if not checks.run(['go', 'build', '-mod=readonly', '-o',
                            str(checks.root.parent / 'with-tools'), '../scripts/with-tools.go'], 'codex'):
             return
@@ -332,8 +329,7 @@ def check(name, root, outbox, *, race=False):
                     env[key] = str(path)
                 env.update(PYTHONDONTWRITEBYTECODE='1', UV_NO_MANAGED_PYTHON='1',
                            GOTOOLCHAIN='local', GOMAXPROCS='2', GOFLAGS='-mod=readonly -p=2', GOPRIVATE='github.com/colony-2/*',
-                           C2OPS_TEST_FLAKE='path:' + str(copy),
-                           PNPM_CONFIG_ALLOW_BUILDS=(copy / 'nix/pnpm-build-policy.json').read_text())
+                           C2OPS_TEST_FLAKE='path:' + str(copy))
                 checks = Checks(copy, env, log)
                 if name == 'gha-runtime':
                     env['C2OPS_GHA_EVIDENCE_DIR'] = str(temp / 'gha-evidence')

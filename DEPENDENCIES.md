@@ -192,12 +192,8 @@ closure. `uv run --script` remains only for source development. No production
 op currently needs an external Python CLI; when one is added, declare
 `uv:<package>==<version>` and invoke `uvx --from <package>==<version> <command>`.
 
-The pnpm 12 cold-install test exposed `ERR_PNPM_IGNORED_BUILDS` for Kimi and
-node-pty. `nix/pnpm-build-policy.json` explicitly skips those two packages'
-install scripts; the noninteractive CLI's shell/session/artifact tests pass
-using its published assets. CI and the dev shell set `PNPM_CONFIG_ALLOW_BUILDS`
-from that file. Workers need the same policy before c2j setup, as documented in
-[Nix packages](./NIX_PACKAGES.md). This does not enable scripts globally.
+The pinned c2j preparer owns the install-script policy for declared pnpm
+dependencies, including Kimi. See [Nix packages](./NIX_PACKAGES.md) for worker setup.
 
 ## Shared nixpkgs Python dependencies — 2026-10-10
 

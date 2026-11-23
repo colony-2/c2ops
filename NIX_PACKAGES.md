@@ -32,20 +32,9 @@ Packages with pnpm dependencies also bind GNU sed and coreutils on PATH:
 pnpm's generated launchers need these before they can start Node. Having the
 utilities somewhere in the Nix store does not make them available to a launcher.
 
-pnpm 12 requires explicit decisions for dependency install scripts. Set this
-in the worker environment **before** c2j tool setup (not in op `inputs.env`):
-
-```sh
-export PNPM_CONFIG_ALLOW_BUILDS='{"@moonshot-ai/kimi-code@2.1.1":false,"node-pty@1.1.0":false}'
-```
-
-This acknowledges and skips Kimi's global-install migration hook and the
-optional node-pty build scripts. The noninteractive op uses the published CLI
-assets; its real shell execution, session resume, and artifact tests pass with
-these scripts disabled. Other packages keep pnpm's default policy. If the worker
-already has an `allowBuilds` policy, merge these entries into it. CI and the dev
-shell read the same [configuration](./nix/pnpm-build-policy.json). See
-[pnpm's build settings](https://pnpm.io/settings#allowbuilds).
+The pinned c2j runtime prepares declared pnpm packages with its own install-script
+policy. Remove any legacy `PNPM_CONFIG_ALLOW_BUILDS` setting from the worker
+environment before tool setup. c2j rejects a conflicting policy.
 
 Use the named **`published`** ref in package selectors. CI advances this branch
 only after all three platforms finish testing, uploading, and verifying downloads:

@@ -21,12 +21,12 @@ import (
 	"fmt"
 
 	"io"
-	"math/big"
 	"mime"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -345,13 +345,54 @@ func (f *gcsFixture) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	fmt.Fprintf(w, `{"kind":"storage#object","name":%q,"bucket":"fixture-bucket","generation":%q,"size":%q}`, name, strconv.Itoa(f.generation), strconv.Itoa(len(data)))
 }
+
+// The released macOS provider uses Keychain trust. Install only this short-lived
+// server certificate; its private key stays in the test process.
+func trustFixtureLeaf(t *testing.T, path string, der []byte) {
+	t.Helper()
+	const keychain = "/Library/Keychains/System.keychain"
+	security := func(args ...string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, "/usr/bin/sudo", append([]string{"-n", "/usr/bin/security"}, args...)...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("security %s: %w: %s", args[0], err, out)
+		}
+		return nil
+	}
+	t.Cleanup(func() {
+		if err := security("remove-trusted-cert", "-d", path); err != nil {
+			t.Error(err)
+		}
+		if err := security("delete-certificate", "-Z", fmt.Sprintf("%X", sha256.Sum256(der)), keychain); err != nil {
+			t.Error(err)
+		}
+	})
+	if err := security("add-trusted-cert", "-d", "-r", "trustRoot", "-p", "ssl", "-k", keychain, path); err != nil {
+		t.Fatal(err)
+	}
+	cert, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cert.Verify(x509.VerifyOptions{DNSName: "storage.googleapis.com"}); err != nil {
+		t.Fatalf("fixture certificate rejected by the system verifier: %v", err)
+	}
+}
+
 func googleProxy(t *testing.T, h http.Handler) (string, string) {
 	t.Helper()
 	key, e := rsa.GenerateKey(rand.Reader, 2048)
 	if e != nil {
 		t.Fatal(e)
 	}
-	template := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "Private Google fixture"}, DNSNames: []string{"*.googleapis.com", "*.google.com"}, NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour), IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}
+	template := &x509.Certificate{
+		Subject:   pkix.Name{CommonName: "Private Google fixture"},
+		DNSNames:  fixtureGoogleHosts,
+		NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour),
+		BasicConstraintsValid: true, KeyUsage: x509.KeyUsageDigitalSignature,
+		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+	}
 	der, e := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
 	if e != nil {
 		t.Fatal(e)
@@ -360,6 +401,9 @@ func googleProxy(t *testing.T, h http.Handler) (string, string) {
 	ca := filepath.Join(t.TempDir(), "ca.pem")
 	if e = os.WriteFile(ca, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0600); e != nil {
 		t.Fatal(e)
+	}
+	if runtime.GOOS == "darwin" && os.Getenv("C2OPS_TEST_MACOS_FIXTURE_TRUST") == "1" {
+		trustFixtureLeaf(t, ca, der)
 	}
 	var handlers sync.WaitGroup
 	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

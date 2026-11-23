@@ -57,9 +57,6 @@ jobs:
         with:
           version: "12.10.1"
 
-      - name: Configure declared CLI installs
-        run: echo "PNPM_CONFIG_ALLOW_BUILDS=$(jq -c . nix/pnpm-build-policy.json)" >> "$GITHUB_ENV"
-
       - name: Install uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
@@ -116,6 +113,7 @@ jobs:
 
       - name: Qualify OpenTofu with real tools and a native private runtime
         env:
+          C2OPS_TEST_MACOS_FIXTURE_TRUST: "${{ runner.os == 'macOS' && '1' || '' }}"
           C2OPS_GIT_TOKEN: ${{ secrets.READ_ALL_C2_REPOS }}
         run: |
           GOBIN="$RUNNER_TEMP/opentofu-test-bin" go install github.com/colony-2/c2j/cmd/c2j@v0.0.0-20261120233037-b399a9afb40d

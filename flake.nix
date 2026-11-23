@@ -26,7 +26,6 @@
         in {
           default = pkgs.mkShell {
             packages = with pkgs; [ go gitMinimal gnumake python3 uv nodejs_24 pnpm ];
-            PNPM_CONFIG_ALLOW_BUILDS = builtins.readFile ./nix/pnpm-build-policy.json;
           };
         });
     };

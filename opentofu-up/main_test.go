@@ -550,6 +550,17 @@ func TestDynamicAuthenticationBeforeSecrets(t *testing.T) {
 	})
 }
 
+// execute creates its snapshot under a physical scratch path. Match that
+// boundary when calling buildSnapshot directly, including with an aliased TMPDIR.
+func snapshotTempDir(t *testing.T) string {
+	t.Helper()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
 func TestNonAuthDynamicAndOrdinaryLabels(t *testing.T) {
 	for name, config := range map[string]string{
 		"dynamic": "resource \"fixture\" \"safe\" {\n dynamic \"settings\" {\n for_each = [1]\n content { size = 1 }\n }\n}\n",
@@ -561,7 +572,7 @@ func TestNonAuthDynamicAndOrdinaryLabels(t *testing.T) {
 			gitTest(t, i.Worktree, "add", ".")
 			gitTest(t, i.Worktree, "commit", "-qm", "permitted syntax")
 			i.Revision = gitTest(t, i.Worktree, "rev-parse", "HEAD")
-			if _, e := buildSnapshot(context.Background(), i, filepath.Join(t.TempDir(), "snapshot")); e != nil {
+			if _, e := buildSnapshot(context.Background(), i, filepath.Join(snapshotTempDir(t), "snapshot")); e != nil {
 				t.Fatal("permitted source syntax refused", e)
 			}
 		})
@@ -630,7 +641,7 @@ func TestRemoteModuleSources(t *testing.T) {
 			gitTest(t, i.Worktree, "commit", "-qm", "remote source")
 			i.Revision = gitTest(t, i.Worktree, "rev-parse", "HEAD")
 			if tc.accept {
-				_, e = buildSnapshot(context.Background(), i, t.TempDir())
+				_, e = buildSnapshot(context.Background(), i, snapshotTempDir(t))
 				if e != nil {
 					t.Fatal("supported immutable source refused", e)
 				}
