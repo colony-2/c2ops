@@ -514,8 +514,10 @@ profile it records pending; configured failures fail aggregation. The
 administrative hook source trust and the separate basic live checks.
 The dependency-overridden package's successful Google fixture paths do not establish
 successful live execution of the unchanged production package.
-All three native CI jobs run these checks before upload; the catalog automatically
-includes the new output in signed substitution, per-revision retention and promotion.
+Both Linux CI jobs run the real OpenTofu and Google provider fixtures before upload.
+All three platforms run the op, emulator, runtime scanner and installed package
+checks. The catalog includes the output in signed substitution, per-revision
+retention and promotion.
 No local build or fixture result substitutes for live Google acceptance or publication.
 
 The qualifier runs `TestNativePackagedRecovery` and its complement in separate
@@ -538,7 +540,7 @@ a temporary-branch run, and inspect the automatic run before any redispatch.
 Ask the operator to provide the matching run and package records and confirm:
 
 1. Native test and verification jobs succeeded on `x86_64-linux`,
-   `aarch64-linux` and `aarch64-darwin`, including OpenTofu qualification.
+   `aarch64-linux` and `aarch64-darwin`, with real-provider qualification on both Linux runners.
 2. Each platform passed signed empty-store substitution with builds, builders
    and fallback disabled, recursive verification and closure retention.
 3. The promotion step succeeded; retain its actual disposition if `published`

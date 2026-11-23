@@ -11,6 +11,19 @@ spec.loader.exec_module(qualifier)
 
 
 class OpenTofuPartitionTests(unittest.TestCase):
+    def test_macos_runs_integration_suites_without_fetching_the_provider(self):
+        with (patch.object(qualifier.sys, 'platform', 'darwin'),
+              patch.object(qualifier, 'realize') as realize,
+              patch.object(qualifier.subprocess, 'run', return_value=Mock(returncode=0)) as run):
+            self.assertEqual(qualifier.main(), 0)
+        realize.assert_not_called()
+        suites = [call for call in run.call_args_list if call.args[0][:2] == ['go', 'test']]
+        self.assertEqual({call.kwargs['cwd'].name for call in suites},
+                         {'opentofu-up', 'opentofu-runtime-fixture'})
+        for call in suites:
+            self.assertEqual(call.kwargs['env']['C2OPS_TEST_NATIVE'], '1')
+            self.assertTrue(call.kwargs['env']['C2OPS_TEST_GCS_EMULATOR'])
+
     def test_current_and_future_tests_run_once(self):
         tests = []
         for source in (qualifier.ROOT / 'opentofu-up').glob('*_test.go'):

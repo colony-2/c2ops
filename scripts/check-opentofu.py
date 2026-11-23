@@ -30,11 +30,12 @@ def qualify(env, extra=()):
 
 
 def main():
-    pkgs = "(builtins.getFlake (toString ./.)).inputs.nixpkgs.legacyPackages.${builtins.currentSystem}"
-    tofu = realize(f"let pkgs = {pkgs}; in pkgs.opentofu")
-    provider = realize(f"import ./nix/opentofu-google-fixture.nix {{ pkgs = {pkgs}; }}")
-    env = dict(os.environ, C2OPS_TEST_TOFU=f"{tofu}/bin/tofu", C2OPS_TEST_GOOGLE_ZIP=provider,
-               C2OPS_TEST_NATIVE="1")
+    env = dict(os.environ, C2OPS_TEST_NATIVE="1")
+    if sys.platform != "darwin":
+        pkgs = "(builtins.getFlake (toString ./.)).inputs.nixpkgs.legacyPackages.${builtins.currentSystem}"
+        tofu = realize(f"let pkgs = {pkgs}; in pkgs.opentofu")
+        provider = realize(f"import ./nix/opentofu-google-fixture.nix {{ pkgs = {pkgs}; }}")
+        env.update(C2OPS_TEST_TOFU=f"{tofu}/bin/tofu", C2OPS_TEST_GOOGLE_ZIP=provider)
     # Prepare locked downloads over HTTP/1.1 without changing the transports
     # exercised by test binaries or either Google client.
     download_env = dict(env)

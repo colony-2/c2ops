@@ -199,7 +199,8 @@ escrow, health/enrollment acceptance or a promise to undo resource effects.
 ## Qualification
 
 `make test` runs unit/control-flow tests. `python3 scripts/check-opentofu.py` from the
-repository root runs real OpenTofu/Google fixtures and native c2j recovery, requiring
+repository root runs the integration suite. On Linux it also runs real OpenTofu/Google
+fixtures and native c2j recovery, requiring
 Nix and c2j `b399a9afb40d`. CI builds that pinned test helper separately; it is never
 bundled in the production package. The private test proxy/mirror is bound only to
 an isolated candidate's fixed OpenTofu dependency. Production has no fixture input,
@@ -210,13 +211,9 @@ inconsistent success status, and a ciphertext path replaced with a symlink. Thes
 checks require the real local effect and encryption to complete, then verify no
 later consumer, deployment retry or private producer directory survives. The path
 refusal demonstrates c2j sealing rejection, not every object-storage failure.
-CI runs the qualification on Linux
-AMD64/ARM64 and Apple Silicon macOS before the existing publication stages.
-The released macOS Google provider uses Keychain trust. On the disposable runner,
-CI sets `C2OPS_TEST_MACOS_FIXTURE_TRUST=1` and checks certificate setup and
-cleanup before the Nix build. During qualification, each proxy used by the real
-tools temporarily trusts its own TLS certificate for the fixture hostnames using
-passwordless sudo, then removes its trust setting and Keychain entry.
+CI runs the real OpenTofu and Google provider fixtures on Linux AMD64 and ARM64.
+Apple Silicon macOS runs the op tests, local emulator and runtime scanner checks,
+and installed package contract.
 
 Qualification has two independent components. The local command component uses
 pinned `fsouza/fake-gcs-server` in a separate test module, actual OpenTofu and the

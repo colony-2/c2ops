@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"context"
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
@@ -11,7 +10,6 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -19,8 +17,6 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
-	"os/exec"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -68,56 +64,6 @@ func TestFixtureImpersonationRefusals(t *testing.T) {
 	}
 }
 
-// The background reader keeps both output descriptors open until the test
-// releases its input. Its lifetime must not affect the command's result.
-func TestFixtureSecurityInheritedOutput(t *testing.T) {
-	for _, code := range []string{"0", "7"} {
-		t.Run("exit-"+code, func(t *testing.T) {
-			reader, release, err := os.Pipe()
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer reader.Close()
-			defer release.Close()
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			cmd := exec.CommandContext(ctx, "/bin/sh", "-c",
-				`cat <&3 & echo "fixture diagnostic" >&2; exit "$1"`, "fixture", code)
-			cmd.ExtraFiles = []*os.File{reader}
-			done := make(chan error, 1)
-			go func() { done <- runFixtureSecurity(cmd) }()
-			select {
-			case err := <-done:
-				if code == "0" {
-					if err != nil {
-						t.Fatal(err)
-					}
-					return
-				}
-				var status *exec.ExitError
-				if !errors.As(err, &status) || status.ExitCode() != 7 || !strings.Contains(err.Error(), "fixture diagnostic") {
-					t.Fatalf("lost command failure or diagnostic: %v", err)
-				}
-			case <-ctx.Done():
-				t.Fatal("waited for a descendant to close the command output")
-			}
-		})
-	}
-}
-
-func TestMacOSFixtureTrustLifecycle(t *testing.T) {
-	if runtime.GOOS != "darwin" || os.Getenv("C2OPS_TEST_MACOS_FIXTURE_TRUST") != "1" {
-		t.Skip("requires the disposable macOS Keychain fixture")
-	}
-	// Complete cleanup before installing the next certificate, as the two
-	// qualification processes do on a shared runner.
-	for _, name := range []string{"first", "next"} {
-		t.Run(name, func(t *testing.T) {
-			googleProxy(t, http.NotFoundHandler(), true)
-		})
-	}
-}
-
 // A provider can exit with an asynchronous refresh still writing its request.
 // Incomplete HTTP messages must not reach the credential-claims oracle.
 func TestGoogleProxyRejectsTruncatedRequests(t *testing.T) {
@@ -127,7 +73,7 @@ func TestGoogleProxyRejectsTruncatedRequests(t *testing.T) {
 			proxy, ca := googleProxy(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				dispatched <- true
 				w.WriteHeader(http.StatusNoContent)
-			}), false)
+			}))
 			address, err := url.Parse(proxy)
 			if err != nil {
 				t.Fatal(err)

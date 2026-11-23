@@ -36,7 +36,7 @@ func TestNativePackagedRecovery(t *testing.T) {
 	gcs := &gcsFixture{objects: map[string][]byte{}, auth: "private-token-sentinel", t: t}
 	emulator := startEmulator(t, gcs)
 	gcs.storage = emulator.handler
-	proxy, ca := googleProxy(t, localGoogleHandler(gcs), true)
+	proxy, ca := googleProxy(t, localGoogleHandler(gcs))
 	temp := t.TempDir()
 	effect := filepath.Join(temp, "resource-effect")
 	failFlag := filepath.Join(temp, "fail-state-write")
