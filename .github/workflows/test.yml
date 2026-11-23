@@ -43,6 +43,12 @@ jobs:
             */go.sum
             */*/go.sum
 
+      - name: Check OpenTofu fixture Keychain setup and cleanup
+        if: runner.os == 'macOS'
+        env:
+          C2OPS_TEST_MACOS_FIXTURE_TRUST: "1"
+        run: go -C opentofu-up test -count=1 -timeout=4m -v -run '^TestMacOSFixtureTrustLifecycle$' .
+
       - name: Set up Python
         uses: actions/setup-python@v6
         with:

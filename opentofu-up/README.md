@@ -212,10 +212,11 @@ later consumer, deployment retry or private producer directory survives. The pat
 refusal demonstrates c2j sealing rejection, not every object-storage failure.
 CI runs the qualification on Linux
 AMD64/ARM64 and Apple Silicon macOS before the existing publication stages.
-On the disposable macOS runner, CI sets `C2OPS_TEST_MACOS_FIXTURE_TRUST=1`
-for this step. The released Google provider uses Keychain trust. Each proxy
-temporarily trusts its own TLS server certificate for the fixture hostnames
-using passwordless sudo, then removes its trust setting and keychain entry.
+The released macOS Google provider uses Keychain trust. On the disposable runner,
+CI sets `C2OPS_TEST_MACOS_FIXTURE_TRUST=1` and checks certificate setup and
+cleanup before the Nix build. During qualification, each proxy used by the real
+tools temporarily trusts its own TLS certificate for the fixture hostnames using
+passwordless sudo, then removes its trust setting and Keychain entry.
 
 Qualification has two independent components. The local command component uses
 pinned `fsouza/fake-gcs-server` in a separate test module, actual OpenTofu and the

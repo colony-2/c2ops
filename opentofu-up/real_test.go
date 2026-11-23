@@ -32,6 +32,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -346,6 +347,26 @@ func (f *gcsFixture) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, `{"kind":"storage#object","name":%q,"bucket":"fixture-bucket","generation":%q,"size":%q}`, name, strconv.Itoa(f.generation), strconv.Itoa(len(data)))
 }
 
+// A Keychain helper can retain sudo's output descriptors after sudo exits.
+// Give it a regular file so command completion depends only on the exit status.
+func runFixtureSecurity(cmd *exec.Cmd) error {
+	output, err := os.CreateTemp("", "opentofu-fixture-security-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(output.Name())
+	defer output.Close()
+	cmd.Stdout, cmd.Stderr = output, output
+	if err := cmd.Run(); err != nil {
+		diagnostic, readErr := io.ReadAll(io.NewSectionReader(output, 0, 8192))
+		if readErr != nil {
+			return fmt.Errorf("%w (reading diagnostic: %v)", err, readErr)
+		}
+		return fmt.Errorf("%w: %s", err, diagnostic)
+	}
+	return nil
+}
+
 // The released macOS provider uses Keychain trust. Install only this short-lived
 // server certificate; its private key stays in the test process.
 func trustFixtureLeaf(t *testing.T, path string, der []byte) {
@@ -355,8 +376,14 @@ func trustFixtureLeaf(t *testing.T, path string, der []byte) {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		cmd := exec.CommandContext(ctx, "/usr/bin/sudo", append([]string{"-n", "/usr/bin/security"}, args...)...)
-		if out, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("security %s: %w: %s", args[0], err, out)
+		// Give sudo a chance to forward termination to the privileged command.
+		cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
+		cmd.WaitDelay = time.Second
+		if err := runFixtureSecurity(cmd); err != nil {
+			if ctx.Err() != nil {
+				return fmt.Errorf("security %s: %w (%v)", args[0], ctx.Err(), err)
+			}
+			return fmt.Errorf("security %s: %w", args[0], err)
 		}
 		return nil
 	}
@@ -380,7 +407,7 @@ func trustFixtureLeaf(t *testing.T, path string, der []byte) {
 	}
 }
 
-func googleProxy(t *testing.T, h http.Handler) (string, string) {
+func googleProxy(t *testing.T, h http.Handler, useSystemTrust bool) (string, string) {
 	t.Helper()
 	key, e := rsa.GenerateKey(rand.Reader, 2048)
 	if e != nil {
@@ -402,7 +429,7 @@ func googleProxy(t *testing.T, h http.Handler) (string, string) {
 	if e = os.WriteFile(ca, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0600); e != nil {
 		t.Fatal(e)
 	}
-	if runtime.GOOS == "darwin" && os.Getenv("C2OPS_TEST_MACOS_FIXTURE_TRUST") == "1" {
+	if useSystemTrust && runtime.GOOS == "darwin" && os.Getenv("C2OPS_TEST_MACOS_FIXTURE_TRUST") == "1" {
 		trustFixtureLeaf(t, ca, der)
 	}
 	var handlers sync.WaitGroup
@@ -526,7 +553,7 @@ func TestRealOpenTofuGoogleBoundary(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			i, tofu, cli := realFixture(t)
 			gcs := &gcsFixture{objects: map[string][]byte{}, auth: "private-token-sentinel", t: t}
-			proxy, ca := googleProxy(t, gcs)
+			proxy, ca := googleProxy(t, gcs, true)
 			now := time.Now()
 			secret := validSecret(now)
 			if mode != "oauth_access_token" {
@@ -623,7 +650,7 @@ func TestRealStalePlanAndLockTimeout(t *testing.T) {
 			i.lock = time.Second
 			i.LockTimeout = "1s"
 			gcs := &gcsFixture{objects: map[string][]byte{}, auth: "private-token-sentinel", t: t}
-			proxy, ca := googleProxy(t, gcs)
+			proxy, ca := googleProxy(t, gcs, true)
 			reads := 0
 			calls := []string{}
 			d := dependencies{now: time.Now, outbox: t.TempDir(), secret: func(context.Context, string) ([]byte, error) { reads++; return validSecret(time.Now()), nil }}
