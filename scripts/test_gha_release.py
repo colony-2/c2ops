@@ -60,6 +60,7 @@ for name in ('gha', 'gha/workflow'):
                 self.assertEqual(schema['properties'][field], {'type': 'string'})
                 self.assertNotIn(field, schema.get('required', []))
 
+    @unittest.skipUnless(shutil.which('nix'), 'release metadata evaluation requires nix on PATH')
     def test_release_metadata_in_real_nix_derivations(self):
         with tempfile.TemporaryDirectory(prefix='gha-release-eval-') as directory:
             # Exercise the symlinked temporary-directory layout used on macOS
