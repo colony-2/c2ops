@@ -115,10 +115,10 @@ class Fixture:
         self.workspace, self.inbox, self.outbox = (self.root / n for n in ('workspace', 'inbox', 'outbox'))
         for p in (self.workspace, self.inbox, self.outbox):
             p.mkdir()
-        shutil.copytree(FIXTURES / 'npm_wrapper', self.workspace / 'npm/c2j')
-        for p in (self.workspace / 'npm/c2j').rglob('*'):
-            if p.is_file():
-                p.chmod(0o755 if p.stat().st_mode & 0o111 else 0o644)
+        wrapper = shutil.copytree(FIXTURES / 'npm_wrapper', self.workspace / 'npm/c2j')
+        # copytree preserves read-only Nix store modes, including on directories.
+        for p in (wrapper, *wrapper.rglob('*')):
+            p.chmod(0o755 if p.is_dir() or p.stat().st_mode & 0o111 else 0o644)
         (self.workspace / '.gitignore').write_text('ignored.txt\n')
         (self.workspace / '.gitattributes').write_text('README.md export-ignore\n')
         (self.workspace / 'README.md').write_text('Committed documentation\n')

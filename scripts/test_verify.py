@@ -178,10 +178,9 @@ class VerificationTests(unittest.TestCase):
             self.assertEqual(stdout.getvalue(), 'passed')
 
     def test_npm_task_retains_results_and_failure_blocks_aggregate(self):
-        # Execute the real task runner and unittest subprocess with a controlled
-        # suite. Only unrelated tool probes are stubbed; suite exits are real.
-        for failing in (False, True):
-            with self.subTest(failing=failing), tempfile.TemporaryDirectory() as directory:
+        # Exercise the real source-suite subprocess and inject the Nix build result.
+        for failure in (None, 'source', 'nix'):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory) / 'candidate'
                 for name in ('scripts', 'npm_publish', 'nix'):
                     (root / name).mkdir(parents=True)
@@ -197,7 +196,7 @@ class VerificationTests(unittest.TestCase):
                     '  self.assertEqual(Path(os.environ["C2OPS_NPM_SOURCE"]), '
                     'Path(__file__).resolve().parents[1] / "npm_publish")\n'
                     '  print("local fixture suite reached")\n'
-                    '  self.assertFalse(' + repr(failing) + ')\n')
+                    '  self.assertFalse(' + repr(failure == 'source') + ')\n')
                 out = Path(directory) / 'evidence'
                 out.mkdir()
                 self.fixtures(out)
@@ -205,8 +204,9 @@ class VerificationTests(unittest.TestCase):
                 def run(checks, argv, directory='.', input_text=None):
                     if 'unittest' in argv:
                         return original(checks, argv, directory, input_text)
-                    checks.commands.append({'argv': argv, 'returncode': 0})
-                    return True
+                    failed = failure == 'nix' and 'path:.#checks.aarch64-linux.npm-fixtures' in argv
+                    checks.commands.append({'argv': argv, 'returncode': int(failed)})
+                    return not failed
                 with patch.dict(os.environ, {'C2OPS_NPM_LIVE_REQUEST': '/must/not/publish.json',
                         'C2OPS_NPM_TEST_MODULE': '/must/not/test-another-operation.py',
                         'C2OPS_NPM_SOURCE': '/must/not/check-another-source'}), \
@@ -214,14 +214,17 @@ class VerificationTests(unittest.TestCase):
                      patch.object(verify.Checks, 'run', run), \
                      contextlib.redirect_stdout(io.StringIO()) as stdout:
                     verify.check('npm.publish', root, out)
-                expected = 'failed' if failing else 'passed'
+                expected = 'failed' if failure else 'passed'
                 self.assertEqual(stdout.getvalue(), expected)
                 receipt = json.loads((out / 'npm.publish.json').read_text())
                 self.assertEqual(receipt['task'], 'npm.publish')
                 self.assertEqual(receipt['status'], expected)
                 suites = [c for c in receipt['commands'] if 'unittest' in c['argv']]
                 self.assertEqual(len(suites), 1)
-                self.assertEqual(suites[0]['returncode'], 1 if failing else 0)
+                self.assertEqual(suites[0]['returncode'], int(failure == 'source'))
+                builds = [c for c in receipt['commands'] if 'path:.#checks.aarch64-linux.npm-fixtures' in c['argv']]
+                expected_builds = [] if failure == 'source' else [int(failure == 'nix')]
+                self.assertEqual([c['returncode'] for c in builds], expected_builds)
                 log = (out / 'npm.publish.log').read_bytes()
                 self.assertIn(b'local fixture suite reached', log)
                 self.assertEqual(receipt['log_sha256'], hashlib.sha256(log).hexdigest())
@@ -233,7 +236,7 @@ class VerificationTests(unittest.TestCase):
                 self.assertEqual(aggregate_stdout.getvalue(), expected)
                 aggregate = json.loads((out / 'aggregate/verification.json').read_text())
                 self.assertIn({'task': 'npm.publish', 'status': expected}, aggregate['tasks'])
-                if not failing:
+                if not failure:
                     for damage in ('changed log', 'missing receipt'):
                         if damage == 'changed log':
                             (out / 'npm.publish.log').write_bytes(log + b'tampered')

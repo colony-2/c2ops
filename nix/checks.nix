@@ -33,7 +33,10 @@ in {
   '';
   github-release-source = pkgs.runCommand "c2ops-github-release-source-contract" {
     nativeBuildInputs = [ pkgs.go ];
+    SSL_CERT_FILE = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
   } ''
+    # Catch a missing Darwin trust bundle on the Linux verification worker too.
+    test -s "$SSL_CERT_FILE" || { echo "Missing CA bundle: $SSL_CERT_FILE" >&2; exit 1; }
     cp -R ${../github_release} github_release
     chmod -R u+w github_release
     cd github_release

@@ -52,7 +52,8 @@ Makefiles:
 | Nested gha/integration SQLite/runtime/host-process fixtures | `gha_runtime` |
 | Codex, skill.run, CLI compatibility, test-fixtures and manifest contracts | `codex` (with-codex wrapper, entire module) |
 | rule_gate Go unit/process contracts | `rule_gate` |
-| GitHub release Go unit/process contracts | `github_release` |
+| GitHub release Go race suite and native Nix source check | `github_release` |
+| npm publication source fixtures and native Nix packaged fixture check | `npm_publish` |
 | Go release unit, package and real SDK/source contracts | `go_build` |
 | aider / litellm / pydantic packaged process suites | `aider`, `litellm`, `pydantic` |
 | jev / kimi Python unit/process contracts | `jev`, `kimi` |

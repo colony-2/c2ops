@@ -503,7 +503,14 @@ def install_check(request, tarball, assets, scratch, env):
     require(binary.read_bytes() == expected, 'installed executable differs from verified GitHub binary')
     shim = install / 'node_modules/.bin' / request['check']['bin']
     require(shim.is_symlink() and shim.resolve() == package / 'bin/cli.js', 'installed bin shim mismatch')
-    output = run([shim, *request['check']['args']], install, env, request['check'].get('timeout_seconds', 60))
+    require(os.access(shim, os.X_OK), 'installed bin shim is not executable')
+    command = [shim, *request['check']['args']]
+    # A Nix sandbox supplies Node on PATH but can omit the wrapper's /usr/bin/env.
+    if not Path('/usr/bin/env').exists():
+        with shim.open('rb') as script:
+            if script.readline(32) == b'#!/usr/bin/env node\n':
+                command.insert(0, 'node')
+    output = run(command, install, env, request['check'].get('timeout_seconds', 60))
     require(output == request['check']['stdout'].encode(), 'installed executable version check failed')
     return {'status': 'passed', 'goos': goos, 'goarch': goarch, 'check': request['check']}
 

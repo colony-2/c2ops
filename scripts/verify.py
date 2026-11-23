@@ -28,7 +28,7 @@ HELD = {
     'worker-image': 'scripts/check-codex-worker.py requires Docker daemon/image execution.',
     'public-actions': 'C2OPS_TEST_GHA_ACTIONS remains unset; real public Actions/service actions and remote CI held.',
     'publication': 'C2OPS_TEST_NIX_PUBLICATION remains unset; four real cache tests, Cachix record/verify/push/pin and promote-published held.',
-    'nix-build-checks': 'Codex, pydantic, go-build and OpenTofu qualification packages build locally; other operation checks retain cached realization.',
+    'nix-build-checks': 'The native npm and GitHub release fixture checks and the Codex, pydantic, go-build and OpenTofu qualification packages build locally. Other operation checks retain cached realization.',
     'release': 'Signing, publication and deployment require external infrastructure/credentials and are held even if available.',
 }
 _ACTIVE = None
@@ -131,8 +131,10 @@ def execute(name, checks, race):
         # Bind the fixtures to this candidate, never an ambient test-module override.
         checks.env['C2OPS_NPM_TEST_MODULE'] = str(checks.root / 'npm_publish/main.py')
         checks.env['C2OPS_NPM_SOURCE'] = str(checks.root / 'npm_publish')
-        checks.run(['uv', 'run', '--with', 'jsonschema==4.26.0', 'python', '-m', 'unittest',
-                    'discover', '-s', 'scripts', '-p', 'test_npm_publish*.py', '-v'])
+        if checks.run(['uv', 'run', '--with', 'jsonschema==4.26.0', 'python', '-m', 'unittest',
+                       'discover', '-s', 'scripts', '-p', 'test_npm_publish*.py', '-v']):
+            checks.run([*NIX, 'build', '--no-link', '--no-write-lock-file', '--max-jobs', '1',
+                        'path:.#checks.aarch64-linux.npm-fixtures'])
     elif name == 'gha':
         checks.go('gha', ['-race', './...'] if race else None)
     elif name in ('llm', 'llm2', 'gha-many', 'rule-gate', 'aider', 'litellm'):
@@ -141,7 +143,9 @@ def execute(name, checks, race):
         # Include authenticated-tree and isolated-index regression cases.
         checks.go('release_pack', ['-race', './...'])
     elif name == 'github-release':
-        checks.go('github_release', ['-race', './...'])
+        if checks.go('github_release', ['-race', './...']):
+            checks.run([*NIX, 'build', '--no-link', '--no-write-lock-file', '--max-jobs', '1',
+                        'path:.#checks.aarch64-linux.github-release-source'])
     elif name == 'pydantic':
         # Build and consume in this task: local paths are evidence, not distribution.
         system = {'arm64': 'aarch64'}.get(platform.machine(), platform.machine()) + '-linux'
