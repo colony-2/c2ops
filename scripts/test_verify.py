@@ -198,6 +198,8 @@ class VerificationTests(unittest.TestCase):
                 out = Path(directory) / 'evidence'
                 out.mkdir()
                 self.fixtures(out)
+                temp_alias = Path(directory) / 'temp-alias'
+                temp_alias.symlink_to(directory, target_is_directory=True)
                 original = verify.Checks.run
                 def run(checks, argv, directory='.', input_text=None):
                     if 'unittest' in argv:
@@ -208,6 +210,7 @@ class VerificationTests(unittest.TestCase):
                 with patch.dict(os.environ, {'C2OPS_NPM_LIVE_REQUEST': '/must/not/publish.json',
                         'C2OPS_NPM_TEST_MODULE': '/must/not/test-another-operation.py',
                         'C2OPS_NPM_SOURCE': '/must/not/check-another-source'}), \
+                     patch.object(tempfile, 'tempdir', str(temp_alias)), \
                      patch.object(verify, 'supported_platform', return_value=True), \
                      patch.object(verify.Checks, 'run', run), \
                      contextlib.redirect_stdout(io.StringIO()) as stdout:
@@ -647,10 +650,14 @@ class VerificationTests(unittest.TestCase):
             driver = """import importlib.util,os,pathlib,sys
 s=importlib.util.spec_from_file_location('v',sys.argv[1]);v=importlib.util.module_from_spec(s);s.loader.exec_module(v)
 import signal
+from unittest.mock import patch
 signal.signal(signal.SIGTERM,v.stop)
-with open(sys.argv[2]+'.log','wb') as log:
+with patch.object(os,'killpg',wraps=os.killpg) as killpg, open(sys.argv[2]+'.log','wb') as log:
  c=v.Checks(pathlib.Path('.'),dict(os.environ),log)
- c.run([sys.executable,'-c','import os,pathlib,time;pathlib.Path('+repr(sys.argv[2])+').write_text(str(os.getpid()));time.sleep(60)'])
+ try:
+  c.run([sys.executable,'-c','import os,pathlib,time;pathlib.Path('+repr(sys.argv[2])+').write_text(str(os.getpid()));time.sleep(60)'])
+ finally:
+  killpg.assert_called_once()
 """
             proc = subprocess.Popen([sys.executable, '-c', driver, str(Path(verify.__file__)), str(pidfile)])
             import time
@@ -662,13 +669,9 @@ with open(sys.argv[2]+'.log','wb') as log:
                 child = int(pidfile.read_text())
                 proc.terminate()
                 self.assertEqual(proc.wait(timeout=5), 128 + signal.SIGTERM)
-                # A killed child may briefly remain a zombie until init reaps it.
-                stat = Path('/proc') / str(child) / 'stat'
-                try:
-                    state = stat.read_text().split()[2]
-                except FileNotFoundError:
-                    state = None  # Reaped between termination and inspection.
-                self.assertIn(state, (None, 'Z'))
+                # The verifier reaps its direct child before returning the signal status.
+                with self.assertRaises(ProcessLookupError):
+                    os.kill(child, 0)
             finally:
                 if proc.poll() is None:
                     proc.kill()
@@ -731,7 +734,7 @@ class LiveVerificationTests(unittest.TestCase):
     def check_live(self, root, value, driver_stdout=None, returncode=0):
         env = {'VERIFY_OPENTOFU_PROFILE': value, 'VERIFY_CANDIDATE': 'candidate', 'VERIFY_BASE': 'base'}
         with patch.dict(os.environ, env), patch.object(verify.platform, 'platform', return_value='fixture'), patch.object(verify.subprocess, 'Popen') as popen, contextlib.redirect_stdout(io.StringIO()) as stdout:
-            process = popen.return_value
+            process = popen.return_value.__enter__.return_value
             process.communicate.return_value = (driver_stdout or b'', b'never-export-private-credential')
             process.returncode = returncode
             process.pid = 123456789

@@ -225,17 +225,17 @@ class NpmPublicationTests(unittest.TestCase):
             self.assertEqual(f.publications, [])
 
     def test_C03_symlinked_tmpdir_uses_canonical_scratch(self):
-        with fixture() as f:
-            physical = f.root / 'physical-temp'
+        with tempfile.TemporaryDirectory() as directory:
+            physical = Path(directory) / 'physical-temp'
             physical.mkdir()
-            alias = f.root / 'temp-alias'
+            alias = Path(directory) / 'temp-alias'
             alias.symlink_to(physical, target_is_directory=True)
-            source = (f.workspace / 'npm/c2j/package.json').read_bytes()
-            with patch.dict(os.environ, {'TMPDIR': str(alias)}), patch.object(tempfile, 'tempdir', None):
+            with patch.dict(os.environ, {'TMPDIR': str(alias)}), patch.object(tempfile, 'tempdir', None), fixture() as f:
+                source = (f.workspace / 'npm/c2j/package.json').read_bytes()
                 result = f.execute()
-            self.assertEqual(result['output']['registry']['outcome'], 'published')
-            self.assertEqual(f.publications, [(f.outbox / result['output']['files'][0]['name']).read_bytes()])
-            self.assertEqual((f.workspace / 'npm/c2j/package.json').read_bytes(), source)
+                self.assertEqual(result['output']['registry']['outcome'], 'published')
+                self.assertEqual(f.publications, [(f.outbox / result['output']['files'][0]['name']).read_bytes()])
+                self.assertEqual((f.workspace / 'npm/c2j/package.json').read_bytes(), source)
             self.assertEqual(list(physical.iterdir()), [])
 
     def test_C03_symlinked_tmpdir_inside_bound_root_is_rejected(self):

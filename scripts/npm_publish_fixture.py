@@ -111,7 +111,7 @@ class Handler(BaseHTTPRequestHandler):
 class Fixture:
     def __init__(self):
         self.temp = tempfile.TemporaryDirectory(prefix='npm-fixture-')
-        self.root = Path(self.temp.name)
+        self.root = Path(self.temp.name).resolve(strict=True)
         self.workspace, self.inbox, self.outbox = (self.root / n for n in ('workspace', 'inbox', 'outbox'))
         for p in (self.workspace, self.inbox, self.outbox):
             p.mkdir()

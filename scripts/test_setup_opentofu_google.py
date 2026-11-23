@@ -58,19 +58,25 @@ def mint():
     return 200, json.dumps({'accessToken': PRIVATE, 'expireTime': (now() + dt.timedelta(hours=1)).isoformat()}).encode()
 
 
+@contextlib.contextmanager
+def private_workspace():
+    with tempfile.TemporaryDirectory() as directory:
+        yield Path(directory).resolve(strict=True)
+
+
 class SetupTests(unittest.TestCase):
     def test_s01_invalid_inputs_before_cloud_mutation(self):
         for extra in [('--project', 'invalid!'), ('--admin-provider', 'external'), ('--folder', 'f', '--organization', 'o'), ('--key-secret', 'opentofu_test_token'), ('--age-recipient', 'not-age'),
                       ('--token-secret', 'gitvend_base_token'), ('--key-secret', 'gitvend_base_token')]:
-            with tempfile.TemporaryDirectory() as tmp:
+            with private_workspace() as tmp:
                 cloud = Cloud()
                 with self.assertRaises(SafeError):
-                    setup.Setup(arguments(Path(tmp) / 'private', *extra), cloud)
+                    setup.Setup(arguments(tmp / 'private', *extra), cloud)
                 self.assertEqual(cloud.calls, [])
 
     def test_s02_s03_dedicated_resources_and_minimal_roles(self):
-        with tempfile.TemporaryDirectory() as tmp, patch.object(setup, 'http_json', return_value=mint()):
-            cloud = Cloud(); s = setup.Setup(arguments(Path(tmp) / 'private', '--folder', '123', '--billing-account', 'bill', '--location', 'EU'), cloud)
+        with private_workspace() as tmp, patch.object(setup, 'http_json', return_value=mint()):
+            cloud = Cloud(); s = setup.Setup(arguments(tmp / 'private', '--folder', '123', '--billing-account', 'bill', '--location', 'EU'), cloud)
             s.preflight(); s.setup()
             create = next(c for c in cloud.calls if c[:2] == ['projects', 'create'])
             self.assertIn('--folder=123', create)
@@ -87,30 +93,30 @@ class SetupTests(unittest.TestCase):
             self.assertEqual(private_read(s.dir / 'profile.json')['source_email'], s.source)
 
     def test_s02_unrelated_project_and_rerun_ownership(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        with private_workspace() as tmp:
             cloud = Cloud(); cloud.created = True
-            s = setup.Setup(arguments(Path(tmp) / 'private'), cloud)
+            s = setup.Setup(arguments(tmp / 'private'), cloud)
             with self.assertRaisesRegex(SafeError, 'project_not_owned'):
                 s.setup()
             self.assertFalse(any(c[:2] == ['projects', 'create'] for c in cloud.calls))
 
     def test_s04_policy_or_sentinel_cannot_be_assumed(self):
         for binding in [{'members': ['allUsers']}, {'members': ['group:unknown@example.invalid']}, {'condition': {'expression': 'unknown'}}]:
-            with tempfile.TemporaryDirectory() as tmp:
+            with private_workspace() as tmp:
                 cloud = Cloud(); cloud.policies = {'bindings': [binding]}
-                s = setup.Setup(arguments(Path(tmp) / 'private'), cloud)
+                s = setup.Setup(arguments(tmp / 'private'), cloud)
                 with self.assertRaisesRegex(SafeError, 'denial_policy_unresolved'):
                     s.validate_denial('negative')
-        with tempfile.TemporaryDirectory() as tmp:
+        with private_workspace() as tmp:
             cloud = Cloud(); cloud.fail = 'describe'
-            s = setup.Setup(arguments(Path(tmp) / 'private'), cloud)
+            s = setup.Setup(arguments(tmp / 'private'), cloud)
             with self.assertRaises(SafeError):
                 s.validate_denial('negative')
 
     def test_s05_issuance_refusal_leaves_cleanup_records_without_token(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        with private_workspace() as tmp:
             cloud = Cloud(); cloud.fail = 'keys'
-            s = setup.Setup(arguments(Path(tmp) / 'private'), cloud)
+            s = setup.Setup(arguments(tmp / 'private'), cloud)
             with self.assertRaises(SafeError):
                 s.setup()
             self.assertTrue(s.j['resources'])
@@ -118,18 +124,18 @@ class SetupTests(unittest.TestCase):
             self.assertFalse(s.j['completed'])
 
     def test_s06_private_modes_links_and_unowned_files(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / 'private'
+        with private_workspace() as tmp:
+            path = tmp / 'private'
             s = setup.Setup(arguments(path), Cloud())
             self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o700)
             self.assertEqual(stat.S_IMODE((path / 'ownership.json').stat().st_mode), 0o600)
-            link = path / 'token.json'; link.symlink_to(Path(tmp) / 'elsewhere')
+            link = path / 'token.json'; link.symlink_to(tmp / 'elsewhere')
             with self.assertRaises((SafeError, OSError)):
                 private_write(link, {'access_token': PRIVATE})
             with self.assertRaises(SafeError):
                 setup.Setup(arguments(path), Cloud())
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / 'private'; path.mkdir(mode=0o700); (path / 'unrelated').write_text('owned by someone else')
+        with private_workspace() as tmp:
+            path = tmp / 'private'; path.mkdir(mode=0o700); (path / 'unrelated').write_text('owned by someone else')
             with self.assertRaises(SafeError):
                 setup.Setup(arguments(path), Cloud())
 
@@ -142,8 +148,8 @@ class SetupTests(unittest.TestCase):
                     expiry(value, 600)
 
     def test_s08_s09_s10_s14_instructions_are_literal_and_never_register(self):
-        with tempfile.TemporaryDirectory() as tmp, patch.object(setup, 'http_json', return_value=mint()):
-            cloud = Cloud(); s = setup.Setup(arguments(Path(tmp) / "private ; $(false)", '--token-secret', 'custom_token', '--key-secret', 'custom_key'), cloud)
+        with private_workspace() as tmp, patch.object(setup, 'http_json', return_value=mint()):
+            cloud = Cloud(); s = setup.Setup(arguments(tmp / "private ; $(false)", '--token-secret', 'custom_token', '--key-secret', 'custom_key'), cloud)
             s.preflight(); s.setup()
             out = io.StringIO()
             with contextlib.redirect_stdout(out):
@@ -169,8 +175,8 @@ class SetupTests(unittest.TestCase):
             self.assertFalse(any(c[:3] == ['jobdb', 'secrets', 'set'] and '--help' not in c for c in cloud.calls))
 
     def test_s11_s13_partial_cleanup_attempts_all_owned_actions_and_reports_expiry(self):
-        with tempfile.TemporaryDirectory() as tmp, patch.object(setup, 'http_json', return_value=mint()):
-            cloud = Cloud(); s = setup.Setup(arguments(Path(tmp) / 'private'), cloud); s.setup()
+        with private_workspace() as tmp, patch.object(setup, 'http_json', return_value=mint()):
+            cloud = Cloud(); s = setup.Setup(arguments(tmp / 'private'), cloud); s.setup()
             before = list(s.j['resources']); cloud.fail = 'keys'; cloud.calls.clear()
             with contextlib.redirect_stdout(io.StringIO()) as out, self.assertRaisesRegex(SafeError, 'cleanup_incomplete'):
                 s.cleanup()
@@ -180,8 +186,8 @@ class SetupTests(unittest.TestCase):
             self.assertIn(s.j['token_expiry'], out.getvalue())
 
     def test_s12_s15_refresh_and_resume_do_not_duplicate_resources(self):
-        with tempfile.TemporaryDirectory() as tmp, patch.object(setup, 'http_json', return_value=mint()):
-            cloud = Cloud(); args = arguments(Path(tmp) / 'private'); s = setup.Setup(args, cloud); s.setup()
+        with private_workspace() as tmp, patch.object(setup, 'http_json', return_value=mint()):
+            cloud = Cloud(); args = arguments(tmp / 'private'); s = setup.Setup(args, cloud); s.setup()
             key = (s.dir / 'key.json').read_bytes(); resources = list(s.j['resources'])
             cloud.calls.clear(); s.refresh()
             self.assertEqual((s.dir / 'key.json').read_bytes(), key)

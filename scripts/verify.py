@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Native build-hook checks. Commands are fixed argv; caller text is metadata only."""
 import argparse
+from contextlib import contextmanager
 import hashlib
 import json
 import os
@@ -31,7 +32,6 @@ HELD = {
     'nix-build-checks': 'The native npm and GitHub release fixture checks and the Codex, pydantic, go-build and OpenTofu qualification packages build locally. Other operation checks retain cached realization.',
     'release': 'Signing, publication and deployment require external infrastructure/credentials and are held even if available.',
 }
-_ACTIVE = None
 GHA_RUNTIME_GROUPS = (
     '^Test(SubmittedWorkflow(Transfers.*|StandardArtifactActions)|SubmittedFullHistory.*)$',
     '^Test(SubmittedWorkflow(Runs.*|Dynamic.*|Failure.*|Filters.*|Duplicate.*|PR.*)|GHABackendC2J)$',
@@ -48,12 +48,20 @@ GHA_RUNTIME_PARTITIONS = (
 
 
 def stop(signum, frame):
-    if _ACTIVE is not None:
-        try:
-            os.killpg(_ACTIVE.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
     raise SystemExit(128 + signum)
+
+
+@contextmanager
+def child_group(argv, **kwargs):
+    with subprocess.Popen(argv, start_new_session=True, **kwargs) as process:
+        try:
+            yield process
+        finally:
+            # The command may have exited while descendants still use its scratch directory.
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
 
 
 class Checks:
@@ -62,33 +70,21 @@ class Checks:
         self.commands = []
 
     def run(self, argv, directory='.', input_text=None):
-        global _ACTIVE
         record = {'argv': [str(x) for x in argv], 'directory': directory}
         self.commands.append(record)
         self.log.write(('\n$ ' + json.dumps(record) + '\n').encode())
         self.log.flush()
         started = time.monotonic()
         try:
-            _ACTIVE = subprocess.Popen(record['argv'], cwd=self.root / directory,
-                env=self.env, stdin=subprocess.PIPE if input_text is not None else subprocess.DEVNULL,
-                stdout=self.log, stderr=subprocess.STDOUT, start_new_session=True)
-            _ACTIVE.communicate(None if input_text is None else input_text.encode(), timeout=self.timeout)
-            record['returncode'] = _ACTIVE.returncode
+            with child_group(record['argv'], cwd=self.root / directory,
+                    env=self.env, stdin=subprocess.PIPE if input_text is not None else subprocess.DEVNULL,
+                    stdout=self.log, stderr=subprocess.STDOUT) as process:
+                process.communicate(None if input_text is None else input_text.encode(), timeout=self.timeout)
+                record['returncode'] = process.returncode
         except subprocess.TimeoutExpired:
-            os.killpg(_ACTIVE.pid, signal.SIGKILL)
-            _ACTIVE.communicate()
             record.update(returncode=124, error='timeout; process group killed')
         except OSError as error:
             record.update(returncode=127, error=str(error))
-        finally:
-            # A test runner may exit after timing out only its immediate child.
-            # Stop remaining group members before deleting their scratch/cache.
-            if _ACTIVE is not None:
-                try:
-                    os.killpg(_ACTIVE.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
-            _ACTIVE = None
         record['seconds'] = round(time.monotonic() - started, 3)
         self.log.write(('\n' + json.dumps(record) + '\n').encode())
         self.log.flush()
@@ -312,7 +308,7 @@ def check(name, root, outbox, *, race=False):
             if not supported_platform():
                 raise RuntimeError('verification requires native Linux arm64')
             with tempfile.TemporaryDirectory(prefix='c2ops-verify-') as tmp:
-                temp = Path(tmp)
+                temp = Path(tmp).resolve(strict=True)
                 copy = temp / 'candidate'
                 # Copy source symlink contents to isolate the candidate, but do
                 # not traverse generated dependency caches or their stale links.
@@ -385,7 +381,6 @@ def live_receipt(data, *, candidate, base, digest):
 
 
 def check_credentials(root, outbox):
-    global _ACTIVE
     outbox.mkdir(parents=True, exist_ok=True)
     report = {'task': 'opentofu_credentials', 'component': 'opentofu_credentials', 'status': 'failed',
               'candidate': os.environ.get('VERIFY_CANDIDATE'), 'base': os.environ.get('VERIFY_BASE'),
@@ -405,10 +400,10 @@ def check_credentials(root, outbox):
                 public_path.write_text(json.dumps(public))
                 argv = ['uv', 'run', str(root / 'scripts/check-opentofu-google.py'), '--profile', str(public_path), '--out', str(outbox)]
                 # Never use Checks.run: it records combined private subprocess output.
-                _ACTIVE = subprocess.Popen(argv, env=dict(os.environ), stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
-                stdout, _ = _ACTIVE.communicate(timeout=900)
-                if _ACTIVE.returncode != 0 or len(stdout) > 1 << 20:
-                    raise ValueError('credential driver failed')
+                with child_group(argv, env=dict(os.environ), stdout=subprocess.PIPE, stderr=subprocess.PIPE) as process:
+                    stdout, _ = process.communicate(timeout=900)
+                    if process.returncode != 0 or len(stdout) > 1 << 20:
+                        raise ValueError('credential driver failed')
                 data = live_receipt(json.loads(stdout), candidate=report['candidate'], base=report['base'], digest=digest)
                 report['status'] = data['status']
                 # Failed driver details are deliberately not copied into public evidence.
@@ -419,14 +414,6 @@ def check_credentials(root, outbox):
     except Exception:
         # Provider, helper, SDK, parsing and child errors may contain credentials.
         report['status'] = 'failed'
-    finally:
-        if _ACTIVE is not None:
-            try:
-                os.killpg(_ACTIVE.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-            _ACTIVE.communicate()
-            _ACTIVE = None
     b = log.encode()
     (outbox / 'opentofu_credentials.log').write_bytes(b)
     report['log_sha256'] = hashlib.sha256(b).hexdigest()
