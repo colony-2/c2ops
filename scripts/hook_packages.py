@@ -35,6 +35,9 @@ def build(revision, system, roots, outbox=None):
     subprocess.run(['nix', 'build', '--max-jobs', '2', '--out-link', str(roots / 'root'), '--no-write-lock-file',
                     *[flake + '#' + name for name in sorted(packages)]], check=True)
     if outbox is None:
+        if system.endswith('-linux'):
+            subprocess.run(['python3', 'scripts/check-codex-worker.py', '--native'],
+                           env=dict(os.environ, C2OPS_TEST_FLAKE=flake), check=True)
         return
     outbox.mkdir(parents=True, exist_ok=True)
     outputs = [package['store_path'] for package in packages.values()]
@@ -84,15 +87,13 @@ def publish(revision, system, outbox):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('check', 'publish', 'check-manifests', 'flake-url'))
+    parser.add_argument('action', choices=('check', 'publish', 'check-manifests'))
     parser.add_argument('revision')
     parser.add_argument('system', nargs='?', choices=publication.SYSTEMS)
     args = parser.parse_args()
     os.environ['NIX_CONFIG'] = (os.environ.get('NIX_CONFIG', '') +
                                 '\nextra-experimental-features = nix-command flakes')
-    if args.action == 'flake-url':
-        print(checkout(args.revision))
-    elif args.action == 'check-manifests':
+    if args.action == 'check-manifests':
         flake = checkout(args.revision)
         for system in publication.SYSTEMS:
             manifest = Path(os.environ['INBOX']) / (system + '.json')

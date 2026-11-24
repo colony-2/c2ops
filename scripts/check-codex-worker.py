@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Check native Codex ops without ambient CLIs or package managers."""
 
+import argparse
 import json
 import os
 from pathlib import Path
@@ -17,7 +18,42 @@ def checked(*args, **kwargs):
     return subprocess.run(args, check=True, text=True, **kwargs)
 
 
+def probe(packages, expected_version, run, scratch, poison):
+    for name, package in packages.items():
+        store = package["store_path"]
+        manifest = package["manifest"]
+        for outcome in ("first", "repeated"):
+            # Invalid checkpoint deliberately stops after the real version
+            # probe, before credentials or a provider request are needed.
+            request = {
+                "prompt": "version probe",
+                "session": {}, "workdir_path": f"{scratch}/{name}/work",
+                "worktree_path": f"{scratch}/{name}/worktree",
+            }
+            if name == "skill-run":
+                request["skill"] = "version-probe"
+            result = run(
+                "env", f"PATH={poison}",
+                f"C2J_OBJECT_OUTBOX={scratch}/{name}/objects",
+                f"{store}/{manifest['command'][0]}",
+                *manifest["command"][1:], input=json.dumps(request),
+            )
+            phases = [json.loads(line.split(": ", 1)[1])
+                      for line in result.stderr.splitlines()
+                      if line.startswith('codex-op: {')]
+            if (result.returncode != 1
+                    or "restore session: invalid or unsupported session metadata" not in result.stderr
+                    or not any(phase.get("phase") == "version.ready"
+                               and phase.get("version") == expected_version
+                               for phase in phases)):
+                raise AssertionError(f"{name} ({outcome}) failed: {result.stderr}")
+            print(f"{name}: {outcome} invocation, native Codex {expected_version}, packaged version probe passed", flush=True)
+
+
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--native", action="store_true", help="Probe packages directly on the native worker")
+    args = parser.parse_args()
     packages = {}
     for name in ("codex", "skill-run"):
         coordinate = f"nix:github:colony-2/c2ops/published#{name}"
@@ -47,6 +83,13 @@ def main():
             launcher = poison / name
             launcher.write_text("#!/bin/sh\necho 'unexpected ambient CLI or package manager' >&2\nexit 127\n")
             launcher.chmod(0o755)
+        if args.native:
+            def run_native(*command, **kwargs):
+                return subprocess.run(command, env={"HOME": directory, "PATH": os.environ["PATH"]},
+                                      cwd=directory, text=True, capture_output=True, timeout=180, **kwargs)
+
+            probe(packages, cli["version"], run_native, directory, poison)
+            return
         # Transfer this checkout's built closures, not the published branch output.
         nix("copy", "--to", (bundle / "cache").as_uri(), *paths)
         # A newer reader may initialize extra cache metadata directories (e.g.
@@ -74,36 +117,7 @@ def main():
             if result.returncode:
                 raise RuntimeError(result.stderr)
 
-            for name, package in packages.items():
-                store = package["store_path"]
-                manifest = package["manifest"]
-                expected_version = cli["version"]
-                for outcome in ("first", "repeated"):
-                    # Invalid checkpoint deliberately stops after the real version
-                    # probe, before credentials or a provider request are needed.
-                    request = {
-                        "prompt": "version probe",
-                        "session": {}, "workdir_path": f"/tmp/{name}/work",
-                        "worktree_path": f"/tmp/{name}/worktree",
-                    }
-                    if name == "skill-run":
-                        request["skill"] = "version-probe"
-                    result = run(
-                        "env", "PATH=/fixture/poison",
-                        f"C2J_OBJECT_OUTBOX=/tmp/{name}/objects",
-                        f"{store}/{manifest['command'][0]}",
-                        *manifest["command"][1:], input=json.dumps(request),
-                    )
-                    phases = [json.loads(line.split(": ", 1)[1])
-                              for line in result.stderr.splitlines()
-                              if line.startswith('codex-op: {')]
-                    if (result.returncode != 1
-                            or "restore session: invalid or unsupported session metadata" not in result.stderr
-                            or not any(phase.get("phase") == "version.ready"
-                                       and phase.get("version") == expected_version
-                                       for phase in phases)):
-                        raise AssertionError(f"{name} ({outcome}) failed: {result.stderr}")
-                    print(f"{name}: {outcome} invocation, native Codex {expected_version}, packaged version probe passed", flush=True)
+            probe(packages, cli["version"], run, "/tmp", "/fixture/poison")
         finally:
             checked("docker", "rm", "-f", container, stdout=subprocess.DEVNULL)
 

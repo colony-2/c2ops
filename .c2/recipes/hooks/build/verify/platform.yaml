@@ -38,30 +38,6 @@ sequence:
     type: object
     required: [success]
     properties: {success: {enum: [true]}}
-- id: linux_worker
-  when: inputs.system.endsWith('-linux')
-  op: command_execution
-  const: true
-  execution_needs:
-    base: ${{ inputs.worker_base }}
-    capabilities: [docker, docker.workspace-mounts]
-    packages:
-    - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#python3
-    - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#nix
-    - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#docker-client
-  inputs:
-    env:
-      REVISION: ${{ inputs.candidate }}
-    run: |
-      set -eu
-      C2OPS_TEST_FLAKE=$(python3 scripts/hook_packages.py flake-url "$REVISION")
-      export C2OPS_TEST_FLAKE
-      nix --extra-experimental-features 'nix-command flakes' build --no-link "$C2OPS_TEST_FLAKE#codex" "$C2OPS_TEST_FLAKE#skill-run"
-      python3 scripts/check-codex-worker.py
-  expect_outputs:
-    type: object
-    required: [success]
-    properties: {success: {enum: [true]}}
 - id: tests
   include: ./native.yaml
   inputs:
