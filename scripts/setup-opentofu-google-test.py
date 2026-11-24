@@ -207,7 +207,7 @@ class Setup:
         print('Removal commands (run during cleanup):')
         for name in (self.a.token_secret, self.a.key_secret):
             print(shlex.join(['jobdb', 'secrets', 'remove', name, '--tenant', self.a.tenant, '--url', self.a.admin_url]))
-        print('Leaf .c2/recipes/hooks/build/verify.yaml node opentofu_credentials permission patch:')
+        print('Leaf .c2/recipes/hooks/build/verify/native.yaml node opentofu_credentials permission patch:')
         print(json.dumps({'perms': {'jobdb': {'secrets': {'resolve': ['gitvend_base_token', self.a.token_secret, self.a.key_secret]}}}}, indent=2))
         print('Preserve gitvend_base_token for private repository preparation; cleanup removes only the Google grants.')
         print('Administrative hook grants (review the candidate before trusting its code):')

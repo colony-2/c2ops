@@ -28,7 +28,7 @@ def credential_permission_cases(root, out):
     probe exercises the same named-secret authority needed before managed command
     startup. These fixture probes do not establish private-clone or Google success.
     """
-    hook = (root / '.c2/recipes/hooks/build/verify.yaml').read_text()
+    hook = (root / '.c2/recipes/hooks/build/verify/native.yaml').read_text()
     start = hook.index('- id: opentofu_credentials\n')
     end = hook.index('- id: report\n', start)
     original = hook[start:end]
@@ -169,6 +169,7 @@ def main():
                      for path in root.rglob('*') if path.is_file()
                      and '.git' not in path.relative_to(root).parts
                      and '__pycache__' not in path.parts}
+        files['.c2/recipes/hooks/build/verify.yaml'] = os.path.relpath(root / '.c2/recipes/hooks/build/verify/native.yaml', out)
         if case == 'tooling-missing-makefile':
             # Omit only from the runtime snapshot, never the managed candidate.
             del files['github_release/Makefile']
@@ -181,7 +182,7 @@ def main():
                 '. release.pack archive test (release_pack / release-pack): ' +
                 ('failed' if case == 'release-pack-failed' else 'passed') +
                 '. Inspect verification.md and release-pack.log/json for task evidence; exclusions are recorded.'},
-            {'type': 'cel_true', 'expr': f'size(outputs.artifact_refs) == {2 * len(verify.ALL_TASKS) + 2} && outputs.artifact_refs.all(k, outputs.artifact_refs[k].kind == "stored")'},
+            {'type': 'cel_true', 'expr': f'size(outputs.artifact_refs) == {2 * len(verify.ALL_TASKS) + 3} && outputs.artifact_refs.all(k, outputs.artifact_refs[k].kind == "stored")'},
             {'type': 'cel_true', 'expr': 'repositories.root.clean && repositories.root.new_commits == 0'},
         ]
         if case in ('tooling', 'tooling-missing-makefile'):

@@ -60,7 +60,7 @@ class ReleasePackagingTests(unittest.TestCase):
     def test_verify_task_and_failure_are_aggregated(self):
         self.assertIn('release-pack', verify.TASKS)
         import re
-        order = re.findall(r'^- id: ([a-z0-9_]+)$', (ROOT / '.c2/recipes/hooks/build/verify.yaml').read_text(), re.M)
+        order = re.findall(r'^- id: ([a-z0-9_]+)$', (ROOT / '.c2/recipes/hooks/build/verify/native.yaml').read_text(), re.M)
         self.assertEqual(['npm.publish' if name == 'npm_publish' else name if name == verify.LIVE_TASK else name.replace('_','-')
                           for name in order[:-1]], list(verify.ALL_TASKS))
         # Actual command failure must remain visible even when other tasks pass.
@@ -72,7 +72,7 @@ class ReleasePackagingTests(unittest.TestCase):
                 with patch.object(checks, 'go', return_value=False) as run:
                     verify.execute('release-pack', checks, race=False)
                     run.assert_called_once_with('release_pack', ['-race', './...'])
-            self.assertIn('release_pack', (ROOT / '.c2/recipes/hooks/build/verify.yaml').read_text())
+            self.assertIn('release_pack', (ROOT / '.c2/recipes/hooks/build/verify/native.yaml').read_text())
             # The aggregate checks every configured task, its stdout, evidence
             # and command status. A real failing command drives this fixture.
             import hashlib
@@ -100,7 +100,7 @@ class ReleasePackagingTests(unittest.TestCase):
             self.assertEqual(report['errors'], [])
 
     def test_hook_exports_task_artifacts_and_status(self):
-        hook = (ROOT / '.c2/recipes/hooks/build/verify.yaml').read_text()
+        hook = (ROOT / '.c2/recipes/hooks/build/verify/native.yaml').read_text()
         self.assertIn('check release-pack', hook)
         self.assertIn('release.pack archive test (release_pack / release-pack): ${{ sequence.release_pack.outputs.stdout }}.', hook)
         self.assertIn('Verification: ${{ sequence.report.outputs.stdout }}.', hook)

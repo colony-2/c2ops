@@ -44,19 +44,21 @@ def read_manifest(path, revision, system):
     return data
 
 
-def record(path, revision, system):
-    outputs = json.loads(run(
-        "nix", "eval", "--json", f".#packages.{system}", "--apply",
+def evaluate(system, flake):
+    return json.loads(run(
+        "nix", "eval", "--json", f"{flake}#packages.{system}", "--apply",
         "ps: builtins.mapAttrs (_: p: p.outPath) ps", capture_output=True,
     ).stdout)
+
+
+def record(path, revision, system, flake="."):
+    outputs = evaluate(system, flake)
     data = {"revision": revision, "system": system, "packages": {
         name: {"selector": f"nix:{PUBLIC_FLAKE}#{name}", "store_path": output}
         for name, output in outputs.items()
     }}
     Path(path).write_text(json.dumps(data, indent=2) + "\n")
-    read_manifest(path, revision, system)
-    with open(os.environ["GITHUB_OUTPUT"], "a") as output:
-        output.write("paths=" + " ".join(outputs.values()) + "\n")
+    return read_manifest(path, revision, system)
 
 
 def verify(data, store, cache):
@@ -79,11 +81,11 @@ def verify(data, store, cache):
     print(f"Verified every output and runtime closure for {data['revision']} ({data['system']})", flush=True)
 
 
-def pin(data, store, cache):
+def pin(data, store, cache, env=None):
     # Cachix pin submits a store path to its API without validating the local
     # store. Check every closure in the selected store before sending any pins.
     store = str(Path(store).resolve())
-    env = {**os.environ, "NIX_REMOTE": store}
+    env = {**(env if env is not None else os.environ), "NIX_REMOTE": store}
     paths = [p["store_path"] for p in data["packages"].values()]
     run("nix", "--extra-experimental-features", "nix-command flakes", "--store", store,
         "store", "verify", "--recursive", "--option", "substitute", "false",
@@ -105,7 +107,11 @@ def main():
     parser.add_argument("--cache", default="colony2")
     args = parser.parse_args()
     if args.action == "record":
-        record(args.manifest, args.revision, args.system)
+        data = record(args.manifest, args.revision, args.system)
+        if "GITHUB_OUTPUT" in os.environ:
+            paths = [p["store_path"] for p in data["packages"].values()]
+            with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+                output.write("paths=" + " ".join(paths) + "\n")
         return
     if not args.store or not re.fullmatch(r"[a-z0-9][a-z0-9-]*", args.cache):
         parser.error("verification and pinning require --store and a valid cache name")

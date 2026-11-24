@@ -1,5 +1,6 @@
 """Exercise the download gate with real Nix stores and a signed fixture cache."""
 
+import gzip
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import os
@@ -11,6 +12,7 @@ import threading
 import unittest
 from unittest.mock import patch
 
+from hook_packages import export_closure
 import publication
 
 
@@ -72,6 +74,18 @@ class NixPublicationTests(unittest.TestCase):
         self.verify_from(self.cache, store)
         for path in (self.root, self.dependency):
             self.assertTrue((store / path.lstrip("/")).is_file())
+
+    def test_child_archive_restores_the_runtime_closure(self):
+        archive = self.directory / "fixture.nar-export.gz"
+        paths = subprocess.check_output(["nix-store", "--query", "--requisites", self.root],
+                                        text=True).splitlines()
+        export_closure(paths, archive)
+        store = self.directory / "artifact-import"
+        with gzip.open(archive, "rb") as compressed:
+            subprocess.run(["nix-store", "--store", str(store), "--import"],
+                           input=compressed.read(), check=True, stdout=subprocess.DEVNULL)
+        for path in (self.root, self.dependency):
+            self.assertEqual((store / path.lstrip("/")).read_bytes(), Path(path).read_bytes())
 
     def test_missing_dependency_fails_even_when_present_in_builders_store(self):
         cache = self.directory / "incomplete"

@@ -1,0 +1,63 @@
+id: verify-platform
+inputs:
+  candidate: ${{ inputs.candidate }}
+  base: ${{ inputs.base }}
+  system: ${{ inputs.system }}
+  worker_base: ${{ inputs.worker_base }}
+  target_directory: ${{ inputs.target_directory }}
+  settings: ${{ inputs.settings }}
+sequence:
+- id: packages
+  op: command_execution
+  const: true
+  execution_needs:
+    base: ${{ inputs.worker_base }}
+    packages:
+    - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#python3
+    - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#nix
+    - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#gitMinimal
+  inputs:
+    env:
+      REVISION: ${{ inputs.candidate }}
+      SYSTEM: ${{ inputs.system }}
+    run: python3 scripts/hook_packages.py check "$REVISION" "$SYSTEM"
+  expect_outputs:
+    type: object
+    required: [success]
+    properties: {success: {enum: [true]}}
+- id: linux_worker
+  when: inputs.system.endsWith('-linux')
+  op: command_execution
+  const: true
+  execution_needs:
+    base: ${{ inputs.worker_base }}
+    capabilities: [docker, docker.workspace-mounts]
+    packages:
+    - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#python3
+    - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#nix
+    - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#docker-client
+  inputs:
+    env:
+      REVISION: ${{ inputs.candidate }}
+    run: |
+      set -eu
+      test "$(git rev-parse HEAD)" = "$REVISION"
+      C2OPS_TEST_FLAKE=$(python3 -c 'from pathlib import Path; print("git+" + Path.cwd().as_uri())')?rev=$REVISION
+      export C2OPS_TEST_FLAKE
+      nix --extra-experimental-features 'nix-command flakes' build --no-link "$C2OPS_TEST_FLAKE#codex" "$C2OPS_TEST_FLAKE#skill-run"
+      python3 scripts/check-codex-worker.py
+  expect_outputs:
+    type: object
+    required: [success]
+    properties: {success: {enum: [true]}}
+- id: tests
+  include: ./native.yaml
+  inputs:
+    worker_base: ${{ inputs.worker_base }}
+    target_directory: ${{ inputs.target_directory }}
+    settings: ${{ inputs.settings }}
+    candidate: ${{ inputs.candidate }}
+    base: ${{ inputs.base }}
+outputs:
+  status: ${{ sequence.tests.outputs.status }}
+  artifact_refs: ${{ sequence.tests.outputs.artifact_refs }}

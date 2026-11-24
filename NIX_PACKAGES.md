@@ -255,6 +255,45 @@ sequence:
       run: uvx --from ruff==0.11.2 ruff check .
 ```
 
+## Native publication hooks
+
+The verify hook runs the native suite and builds all op and CLI outputs on
+`macos*` (Apple silicon), `ubuntu*amd64` and `ubuntu*arm64`. Its artifacts
+contain test evidence. The Linux minimal-worker check needs Docker with workspace
+mounts. The tooling suite runs the real Nix publication fixtures and the GHA
+runtime suite enables its public-action tests. The publish hook starts three child jobs after a merge
+to main. Each child resolves its recipe and flake at the full merged Git SHA,
+checks its native system, runs the flake checks and builds the release outputs.
+The child saves `SYSTEM.json` and `SYSTEM.nar-export.gz` (a gzip-compressed
+`nix-store --export` of the complete runtime closures). It pushes those paths
+to `colony2`, verifies signed downloads into an empty store with builds disabled,
+and pins the outputs. The parent waits for all three children, checks the
+manifests against the merged flake, and fast-forwards `published` with the same
+race-safe promotion script used by Actions. The parent exposes the three archives
+and manifests in its hook results. A failed child prevents promotion.
+A retry can reuse uploaded paths and the same per-revision pins.
+
+The worker Git profile supplies `gitvend_base_token` for repository access.
+The promotion task needs Git access to push `refs/heads/published`. The child
+uses `cachix_colony2_publish_key` as the Cachix **auth token** for uploads and
+pins. Configure the public signing key with `cachix use colony2` on the worker
+bases as in Worker setup. For the new publish hook, grant job submission and
+the two named secrets on the c2ops cell. The existing verify hook keeps its
+cell Git grant. For example, to trust the c2ops candidate hook on the lab tenant:
+
+```sh
+c2j hooks perms add .c2/recipes/hooks/build/publish.yaml \
+  --cell c2ops --jobdb https://db.lab.c2.run/c2 --submit-jobs \
+  --secret gitvend_base_token --secret cachix_colony2_publish_key --trust-candidate-code
+```
+
+To exercise the promotion gate with fixture children, run
+`c2j test run --file scripts/fixtures/publish-gate.test.yaml`.
+
+Managed builds route changes under `.c2/recipes/hooks/build/publish.yaml` and
+`.c2/recipes/hooks/build/publish/` as a publisher-only contribution. Land shared
+helpers and verification changes first when using that route.
+
 ## CI and publishing
 
 [The existing test workflow](./.github/workflows/test.yml) builds packages and
@@ -529,15 +568,9 @@ from either process (or the scanner suite) to fail qualification.
 
 ### OpenTofu publication confirmation
 
-Confirm publication with the operator after the job containing the managed merge
-completes. Candidate acceptance precedes merge; release evidence belongs to the
-subsequent native Actions run. There is no automatic publish hook or new
-observation credential to provision for this recovery.
-
-Use the job's actual merged commit and inspect its existing `main` run of
-`.github/workflows/test.yml`. Do not substitute a candidate parent revision or
-a temporary-branch run, and inspect the automatic run before any redispatch.
-Ask the operator to provide the matching run and package records and confirm:
+Use the full merged commit, the three native child job results and the publish
+hook's promotion result. For a GitHub Actions release, inspect the matching
+`main` run and its package records. Confirm the following:
 
 1. Native test and verification jobs succeeded on `x86_64-linux`,
    `aarch64-linux` and `aarch64-darwin`, with real-provider qualification on both Linux runners.

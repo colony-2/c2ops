@@ -99,7 +99,7 @@ class VerificationTests(unittest.TestCase):
 
     def test_codex_failure_stops_before_unprepared_candidate_use(self):
         root = Path(verify.__file__).resolve().parents[1]
-        hook = (root / ".c2/recipes/hooks/build/verify.yaml").read_text()
+        hook = (root / ".c2/recipes/hooks/build/verify/native.yaml").read_text()
         task = hook.split("- id: codex\n", 1)[1].split("\n- id:", 1)[0]
         self.assertIn('GOWORK: "off"', task)
         for failed_stage in ('reader', 'package', 'suite'):
@@ -145,7 +145,7 @@ class VerificationTests(unittest.TestCase):
 
     def test_npm_hook_has_const_task_and_exports_evidence(self):
         root = Path(verify.__file__).resolve().parents[1]
-        hook = (root / '.c2/recipes/hooks/build/verify.yaml').read_text()
+        hook = (root / '.c2/recipes/hooks/build/verify/native.yaml').read_text()
         task = hook.split('- id: npm_publish\n', 1)[1].split('\n- id:', 1)[0]
         for text in ('const: true', 'op: command_execution', 'check npm.publish'):
             self.assertIn(text, task)
@@ -204,7 +204,7 @@ class VerificationTests(unittest.TestCase):
                 def run(checks, argv, directory='.', input_text=None):
                     if 'unittest' in argv:
                         return original(checks, argv, directory, input_text)
-                    failed = failure == 'nix' and 'path:.#checks.aarch64-linux.npm-fixtures' in argv
+                    failed = failure == 'nix' and f'path:.#checks.{verify.native_system()}.npm-fixtures' in argv
                     checks.commands.append({'argv': argv, 'returncode': int(failed)})
                     return not failed
                 with patch.dict(os.environ, {'C2OPS_NPM_LIVE_REQUEST': '/must/not/publish.json',
@@ -223,7 +223,7 @@ class VerificationTests(unittest.TestCase):
                 suites = [c for c in receipt['commands'] if 'unittest' in c['argv']]
                 self.assertEqual(len(suites), 1)
                 self.assertEqual(suites[0]['returncode'], int(failure == 'source'))
-                builds = [c for c in receipt['commands'] if 'path:.#checks.aarch64-linux.npm-fixtures' in c['argv']]
+                builds = [c for c in receipt['commands'] if f'path:.#checks.{verify.native_system()}.npm-fixtures' in c['argv']]
                 expected_builds = [] if failure == 'source' else [int(failure == 'nix')]
                 self.assertEqual([c['returncode'] for c in builds], expected_builds)
                 log = (out / 'npm.publish.log').read_bytes()
@@ -306,7 +306,7 @@ class VerificationTests(unittest.TestCase):
                     builds = [c for c in report['commands'] if 'build' in c['argv']]
                     self.assertEqual(len(builds), 1)
                     self.assertIn('--max-jobs', builds[0]['argv'])
-                    self.assertIn('0', builds[0]['argv'])
+                    self.assertIn('.#gha.buildCompiler', builds[0]['argv'])
                     suites = [c for c in report['commands'] if c['argv'][:2] == ['go', 'test']]
                     if available:
                         self.assertEqual(report['tools']['go'], str(pinned_go))
@@ -409,7 +409,7 @@ class VerificationTests(unittest.TestCase):
     def test_github_release_dispatch_and_hook_evidence(self):
         # A failed real suite must remain failed in the shared runner.
         source = Path(verify.__file__).resolve().parents[1]
-        hook = (source / '.c2/recipes/hooks/build/verify.yaml').read_text()
+        hook = (source / '.c2/recipes/hooks/build/verify/native.yaml').read_text()
         self.assertIn('github-release', verify.TASKS)
         for text in ('check github-release', "sequence.github_release.artifacts['github-release.json']",
                      'VERIFY_STATUS_GITHUB_RELEASE: ${{ sequence.github_release.outputs.stdout }}',
@@ -609,7 +609,7 @@ class VerificationTests(unittest.TestCase):
 
     def test_go_build_suites_are_mandatory_and_aggregated(self):
         source = Path(verify.__file__).resolve().parents[1]
-        hook = (source / '.c2/recipes/hooks/build/verify.yaml').read_text()
+        hook = (source / '.c2/recipes/hooks/build/verify/native.yaml').read_text()
         for binding in ('check go-build', 'VERIFY_STATUS_GO_BUILD', "sequence.go_build.artifacts['go-build.log']", "sequence.go_build.artifacts['go-build.json']"):
             self.assertIn(binding, hook)
         for failing in ('none', 'unit', 'real'):

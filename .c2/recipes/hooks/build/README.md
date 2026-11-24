@@ -6,6 +6,12 @@ names a component directory. Request and directory strings are data; they do
 not select executable commands. It accepts the caller's settings artifact
 without binding or reading it, so absent and null settings need no artifact.
 
+The matrix in `verify.yaml` runs the same checks on `macos*`, `ubuntu*amd64`
+and `ubuntu*arm64`. Each worker checks its native system, prefetches the
+pinned private act source with its cell Git profile, runs the flake checks and builds
+every release output at the exact candidate SHA. The hook exports per-system
+reports and task logs. Package archives are produced only after merge.
+
 Each named const operation independently declares its pinned tools. It copies
 candidate files (including untracked inputs, excluding `.git`) into a temporary
 directory and isolates generated outputs and caches there. No global Git or Go
@@ -16,7 +22,7 @@ credentials. Nix process tests select the scratch candidate through
 GHA source and embedded runtime tests belong here in c2ops. Consumers use the
 delivered operations; they do not duplicate these suites. The candidate hook
 checks this branch before merge and reports failure to the build caller.
-The `gha` and `gha_runtime` commands in `verify.yaml` explicitly pass `--race`.
+The `gha` and `gha_runtime` commands in `verify/native.yaml` explicitly pass `--race`.
 Both GHA suites then run with `-race` using the candidate's pinned GHA compiler.
 The runtime task separates artifact/history workflows, other submitted workflows,
 the matching-worker matrix, Act, instances, and diagnostic/identity fixtures into
@@ -66,35 +72,8 @@ sandboxing. In that same task it runs the deterministic suite against source
 and the installed payload/launcher and records output and closure identities.
 Local store paths establish local verification, not portable delivery.
 
-`nix_process` retains cache-only realization for the other operation process
-checks. Publication, immutable selectors and clean-worker ordinary resolution
-remain post-merge obligations (P02/P03).
-
-Prepare missing candidate inputs through the existing source-build route before
-retrying a cache-only failure. In the source builder, prepare the pinned private
-GHA input and the inputs reported missing by this repair's native hook:
-
-```sh
-python3 scripts/prefetch-act.py
-nix build --max-jobs 1 --cores 2 --no-link \
-  .#gha.buildCompiler .#gha .#gha-workflow \
-  .#github-release .#release-pack .#npm-publish .#go-build
-```
-
-Codex's manifest fixture exercises every
-Go operation, so preparing only `codex` and `skill-run` does not satisfy it.
-Use the candidate checkout, retaining the pinned compiler and normal sandboxing;
-do not substitute the published branch or waive the dependent tests. These local
-store paths must be available to the verification worker; a source build does
-not establish cache publication or availability on another worker.
-
-Held coverage: other platform matrix entries; Docker-based minimal Codex worker
-image tests; opt-in public GHA/service actions and remote CI; the four real Nix
-cache-publication tests gated by `C2OPS_TEST_NIX_PUBLICATION`; package publication,
-cache download certification and pinning; branch promotion, signing, release,
-and deployment. These are held even if credentials or Docker are available.
-Mocked publication-planning/tooling tests and local GHA runtime tests remain
-included. Existing Actions workflows and suites are unchanged.
+The post-merge hook, its artifacts, the worker requirements and the JobDB grants
+are documented under [native publication](../../../../NIX_PACKAGES.md#native-publication-hooks).
 
 For bounded caller/artifact regression checks, run
 `python3 scripts/verify_hook_harness.py --out /tmp/c2ops-hook-tests`.
@@ -154,12 +133,6 @@ failed tooling and aggregate results. Both exported-artifact readers pass,
 and both seeded repositories remain clean with zero new commits. Other tasks
 are fixtures, so these results establish tooling/report wiring only.
 
-A native hook pass still covers Linux arm64 only. Go on macOS ignores
-`SSL_CERT_FILE` by default; the GitHub release client now loads an explicit
-bundle there. The helper's Linux tests exercise that branch, but native macOS
-installed tests and the existing three-platform CI matrix remain required to
-validate the platform-specific repair.
-
 The `opentofu` task builds the unchanged production package/process contract,
 prepares the test helper pinned to c2j `b399a9afb40d`, and runs the real OpenTofu
 and Google SDK fixtures plus installed/native recovery, replay, secret ceilings
@@ -168,21 +141,6 @@ and cancellation. It retains its own log/receipt and is required by aggregation.
 executes this task with the candidate's declared tools and real aggregation;
 other tasks are fixtures. GHA's current partitions and eight-minute limits stay
 unchanged. Live Google qualification remains separately gated.
-
-Publication is confirmed by a person after the job containing the managed merge
-has completed. There is no automatic publish hook or additional observation
-credential requirement. Pre-merge review assesses the candidate and its local
-checks; it cannot require evidence from the release that merge will trigger.
-The existing main-branch Actions workflow remains the release path.
-
-After job completion, ask the operator to confirm the actual merged revision's
-three native test and verification jobs, signed empty-store substitution,
-retained closures and promotion disposition. Then prepare and invoke the
-full-commit `opentofu-up` selector. See the
-[publication confirmation steps](../../../../NIX_PACKAGES.md#opentofu-publication-confirmation).
-A merge or skipped publish report does not establish publication. Live Google
-qualification remains separate and requires its own disposable target and
-credential delegation.
 
 The qualifier runs `TestNativePackagedRecovery` and its complement in separate
 processes, each retaining the eight-minute Go test limit. The isolated native

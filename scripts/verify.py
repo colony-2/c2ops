@@ -12,6 +12,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import tarfile
 import tempfile
 import time
 
@@ -25,11 +26,7 @@ NIX = ['nix', '--extra-experimental-features', 'nix-command flakes']
 HELD = {
     'google-live': 'Basic named-secret, principal, storage and explicit-denial checks require the operator test setup and exact credential delegation; local fixtures cannot establish live qualification.',
     'npm-live': 'Fixture checks run in the dedicated npm.publish task; live N08 requires confirmed package revisions and authorized disposable destinations.',
-    'platforms': 'Only native Linux arm64; x86_64-linux and aarch64-darwin matrix held.',
-    'worker-image': 'scripts/check-codex-worker.py requires Docker daemon/image execution.',
-    'public-actions': 'C2OPS_TEST_GHA_ACTIONS remains unset; real public Actions/service actions and remote CI held.',
-    'publication': 'C2OPS_TEST_NIX_PUBLICATION remains unset; four real cache tests, Cachix record/verify/push/pin and promote-published held.',
-    'nix-build-checks': 'The native npm and GitHub release fixture checks and the Codex, pydantic, go-build and OpenTofu qualification packages build locally. Other operation checks retain cached realization.',
+    'publication': 'The separate publish hook uploads, verifies signed downloads, pins and promotes after merge.',
     'release': 'Signing, publication and deployment require external infrastructure/credentials and are held even if available.',
 }
 GHA_RUNTIME_GROUPS = (
@@ -97,11 +94,10 @@ class Checks:
         compiler = self.metadata('.#gha', 'p: p.buildCompiler.outPath')
         if compiler is None:
             return False
-        # Verification workers consume prepared tools; never compile a missing
-        # compiler or fall back to the older general-purpose worker Go.
+        # Each task can land on a fresh worker. Realize the pinned compiler there.
         if not self.run([*NIX, 'build', '--no-link', '--no-write-lock-file',
-                         '--max-jobs', '0', '--builders', '', compiler]):
-            self.log.write(b'GHA compiler unavailable; source builders must prepare nix build .#gha.buildCompiler before verification.\n')
+                         '--max-jobs', '1', '.#gha.buildCompiler']):
+            self.log.write(b'Could not realize the candidate GHA compiler.\n')
             return False
         self.env['PATH'] = compiler + '/bin' + os.pathsep + self.env.get('PATH', '')
         return True
@@ -122,6 +118,7 @@ def execute(name, checks, race):
         checks.run(['uv', 'run', 'scripts/check-manifest-schemas.py'])
         checks.run(['uv', 'run', 'go_build/check_examples.py'])
     elif name == 'tooling':
+        checks.env['C2OPS_TEST_NIX_PUBLICATION'] = '1'
         checks.run(['make', 'test-tools'])
     elif name == 'npm.publish':
         # Bind the fixtures to this candidate, never an ambient test-module override.
@@ -130,7 +127,7 @@ def execute(name, checks, race):
         if checks.run(['uv', 'run', '--with', 'jsonschema==4.26.0', 'python', '-m', 'unittest',
                        'discover', '-s', 'scripts', '-p', 'test_npm_publish*.py', '-v']):
             checks.run([*NIX, 'build', '--no-link', '--no-write-lock-file', '--max-jobs', '1',
-                        'path:.#checks.aarch64-linux.npm-fixtures'])
+                        f'path:.#checks.{native_system()}.npm-fixtures'])
     elif name == 'gha':
         checks.go('gha', ['-race', './...'] if race else None)
     elif name in ('llm', 'llm2', 'gha-many', 'rule-gate', 'aider', 'litellm'):
@@ -141,10 +138,10 @@ def execute(name, checks, race):
     elif name == 'github-release':
         if checks.go('github_release', ['-race', './...']):
             checks.run([*NIX, 'build', '--no-link', '--no-write-lock-file', '--max-jobs', '1',
-                        'path:.#checks.aarch64-linux.github-release-source'])
+                        f'path:.#checks.{native_system()}.github-release-source'])
     elif name == 'pydantic':
         # Build and consume in this task: local paths are evidence, not distribution.
-        system = {'arm64': 'aarch64'}.get(platform.machine(), platform.machine()) + '-linux'
+        system = native_system()
         selector = '.#packages.' + system + '.pydantic'
         contract = '.#checks.' + system + '.pydantic'
         if not checks.run([*NIX, 'build', '--no-link', '--no-write-lock-file',
@@ -180,7 +177,7 @@ def execute(name, checks, race):
             return
         manifest = checks.root.parent / 'go-build-manifest.json'
         manifest.write_text(json.dumps(data['manifest']))
-        system = {'arm64': 'aarch64', 'aarch64': 'aarch64', 'x86_64': 'x86_64'}[platform.machine()] + '-linux'
+        system = native_system()
         checks.run(['python3', 'scripts/check-package.py', data['path'], str(manifest),
                     'nix:github:colony-2/c2ops/published#go-build',
                     '--compiled-executable', data['compiled'], '--system', system])
@@ -190,6 +187,7 @@ def execute(name, checks, race):
         # prerequisites in the exported log, rather than only a suite summary.
         checks.go('go_build', ['-v', '-run', '^TestReal', './...'])
     elif name == 'gha-runtime':
+        checks.env['C2OPS_TEST_GHA_ACTIONS'] = '1'
         # TestMain builds separate operation executables. Instrument those too,
         # rather than only the test driver that submits their jobs.
         if race:
@@ -246,21 +244,22 @@ def execute(name, checks, race):
         # qualifier's dependency-overridden installed/native fixture package.
         if not checks.run([*NIX, 'build', '--no-link', '--no-write-lock-file',
                            '--max-jobs', '2', '--print-out-paths',
-                           'path:.#opentofu-up', 'path:.#checks.aarch64-linux.opentofu-up']):
+                           'path:.#opentofu-up', f'path:.#checks.{native_system()}.opentofu-up']):
             return
         checks.run(['python3', 'scripts/check-opentofu.py'])
     elif name == 'nix-metadata':
-        checks.run([*NIX, 'flake', 'check', '--no-build', '--no-write-lock-file', '--system', 'aarch64-linux'])
+        checks.run([*NIX, 'flake', 'check', '--no-build', '--no-write-lock-file', '--system', native_system()])
     elif name == 'nix-process':
-        # Same installed process checks as nix/checks.nix, without building
-        # runCommand check derivations (unavailable under worker no-build policy).
+        # Operation workspaces need not share the build task's store.
+        if not checks.run(['python3', 'scripts/prefetch-act.py']):
+            return
         catalog = json.loads((checks.root / 'nix/ops.json').read_text())
         pydantic = checks.metadata('github:NixOS/nixpkgs/' + json.loads((checks.root / 'flake.lock').read_text())['nodes']['nixpkgs']['locked']['rev'] + '#python3Packages.pydantic', 'p: p.outPath')
         for op in catalog:
             data = checks.metadata('.#' + op, 'p: { path = p.outPath; manifest = p.c2j; compiled = p.compiledExecutable; python = if p.pythonEnv == null then null else p.pythonEnv.outPath; }')
             if data is None:
                 continue
-            if not checks.run([*NIX, 'build', '--no-link', '--no-write-lock-file', '--max-jobs', '0', '--builders', '', data['path']]):
+            if not checks.run([*NIX, 'build', '--no-link', '--no-write-lock-file', '--max-jobs', '1', '.#' + op]):
                 checks.log.write((op + ': dependent process checks not run; realization failed\n').encode())
                 continue
             manifest = checks.root.parent / (op + '-manifest.json')
@@ -268,7 +267,7 @@ def execute(name, checks, race):
             argv = ['python3', 'scripts/check-package.py', data['path'], str(manifest),
                     'nix:github:colony-2/c2ops/published#' + op]
             if data['compiled']:
-                argv += ['--compiled-executable', data['compiled'], '--system', 'aarch64-linux']
+                argv += ['--compiled-executable', data['compiled'], '--system', native_system()]
             checks.run(argv)
             if op == 'github-release':
                 checks.run(['env', 'C2OPS_GITHUB_INSTALLED_BINARY=' + data['path'] + '/bin/github-release',
@@ -279,7 +278,7 @@ def execute(name, checks, race):
                             catalog[op]['path'] + '/main.py', pydantic, op])
         for cli in ('codex-cli', 'aider-cli'):
             data = checks.metadata('.#' + cli, 'p: p.outPath')
-            if data and checks.run([*NIX, 'build', '--no-link', '--max-jobs', '0', '--builders', '', data]):
+            if data and checks.run([*NIX, 'build', '--no-link', '--max-jobs', '1', '.#' + cli]):
                 env_home = checks.env.get('HOME')
                 with tempfile.TemporaryDirectory(prefix='c2ops-cli-') as home:
                     checks.env['HOME'] = home
@@ -290,8 +289,13 @@ def execute(name, checks, race):
                     checks.env['HOME'] = env_home
 
 
+def native_system():
+    arch = {'arm64': 'aarch64'}.get(platform.machine(), platform.machine())
+    return f'{arch}-{sys.platform}'
+
+
 def supported_platform():
-    return sys.platform == 'linux' and platform.machine() in ('aarch64', 'arm64')
+    return native_system() in ('aarch64-linux', 'x86_64-linux', 'aarch64-darwin')
 
 
 def check(name, root, outbox, *, race=False):
@@ -306,7 +310,7 @@ def check(name, root, outbox, *, race=False):
             if name in ('gha', 'gha-runtime') and not race:
                 raise RuntimeError('GHA verification requires --race in the hook command')
             if not supported_platform():
-                raise RuntimeError('verification requires native Linux arm64')
+                raise RuntimeError('unsupported verification worker')
             with tempfile.TemporaryDirectory(prefix='c2ops-verify-') as tmp:
                 temp = Path(tmp).resolve(strict=True)
                 copy = temp / 'candidate'
@@ -334,7 +338,7 @@ def check(name, root, outbox, *, race=False):
                     raise RuntimeError('the pinned GHA compiler could not be prepared; GHA tests did not run')
                 for tool, args in {'go':['version'], 'python3':['--version'], 'nix':['--version'],
                                    'uv':['--version'], 'node':['--version'], 'pnpm':['--version'],
-                                   'gcc':['-dumpfullversion'], 'git':['--version'], 'make':['--version']}.items():
+                                   'gcc':['--version'], 'git':['--version'], 'make':['--version']}.items():
                     report['tools'][tool] = shutil.which(tool, path=checks.env.get('PATH'))
                     checks.run([tool, *args])
                 execute(name, checks, race)
@@ -462,6 +466,12 @@ def aggregate(inbox, outbox, statuses=None):
     lines += ['', '## Held coverage', ''] + ['- ' + k + ': ' + v for k, v in HELD.items()]
     lines += ['', '## Evidence errors', ''] + errors
     (outbox / 'verification.md').write_text('\n'.join(lines) + '\n')
+    with tarfile.open(outbox / 'evidence.tar.gz', 'w:gz') as archive:
+        for task in ALL_TASKS:
+            for suffix in ('.log', '.json'):
+                path = inbox / (task + suffix)
+                if path.is_file():
+                    archive.add(path, arcname=path.name)
     print(status, end='')
 
 

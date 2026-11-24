@@ -1,442 +1,50 @@
-# Native Linux arm64 only. Settings/documents are deliberately not artifact-bound.
-# Missing candidate packages/compiler need source preparation as documented in
-# README.md; cache-only checks must retain their failure instead of skipping.
-id: c2ops-native-verify
+id: c2ops-verify
 inputs:
-  target_directory: ${{ inputs.target_directory }}
   candidate: ${{ inputs.candidate }}
   base: ${{ inputs.base }}
   settings: ${{ inputs.?settings.orValue(null) }}
+  target_directory: ${{ inputs.target_directory }}
 sequence:
-- id: manifests
-  op: command_execution
-  const: true
-  execution_needs:
-    packages: &id001
-    - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#python3
-    - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#go_1_26
-    - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#gitMinimal
-    - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#gnumake
-    - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#uv
-    - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#nodejs_24
-    # npm fixture checks use the unchanged product installer, including tar/gzip.
-    - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#gnutar
-    - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#gzip
-    - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#pnpm
-    - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#gcc
-    - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#nix
-    - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#bash
-    - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#coreutils
-    - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#jq
+- id: mac
+  include: ./verify/platform.yaml
   inputs:
-    env:
-      VERIFY_ROOT: ${{ context.environment.op.worktree_path }}
-      VERIFY_OUTBOX: ${{ context.environment.op.outbox }}
-      VERIFY_TARGET: ${{ inputs.target_directory }}
-      VERIFY_CANDIDATE: ${{ inputs.candidate }}
-      VERIFY_BASE: ${{ inputs.base }}
-    run: python3 "$VERIFY_ROOT/scripts/verify.py" check manifests
-- id: tooling
-  # Includes real */op.yaml Make entrypoints, independent of OP_DIRS. Direct
-  # source suites below cannot detect missing operation Makefiles on their own.
-  op: command_execution
-  const: true
-  execution_needs:
-    packages: *id001
+    system: aarch64-darwin
+    worker_base: 'macos*'
+    candidate: ${{ inputs.candidate }}
+    base: ${{ inputs.base }}
+    settings: ${{ inputs.settings }}
+    target_directory: ${{ inputs.target_directory }}
+- id: amd
+  include: ./verify/platform.yaml
   inputs:
-    env:
-      VERIFY_ROOT: ${{ context.environment.op.worktree_path }}
-      VERIFY_OUTBOX: ${{ context.environment.op.outbox }}
-      VERIFY_TARGET: ${{ inputs.target_directory }}
-      VERIFY_CANDIDATE: ${{ inputs.candidate }}
-      VERIFY_BASE: ${{ inputs.base }}
-    run: python3 "$VERIFY_ROOT/scripts/verify.py" check tooling
-- id: npm_publish
-  # Dedicated npm.publish fixture task. Live N08 stays gated: the runner removes
-  # C2OPS_NPM_LIVE_REQUEST and binds fixtures to this candidate's operation.
-  op: command_execution
-  const: true
-  execution_needs:
-    packages: *id001
+    system: x86_64-linux
+    worker_base: 'ubuntu*amd64'
+    candidate: ${{ inputs.candidate }}
+    base: ${{ inputs.base }}
+    settings: ${{ inputs.settings }}
+    target_directory: ${{ inputs.target_directory }}
+- id: arm
+  include: ./verify/platform.yaml
   inputs:
-    env:
-      VERIFY_ROOT: ${{ context.environment.op.worktree_path }}
-      VERIFY_OUTBOX: ${{ context.environment.op.outbox }}
-      VERIFY_TARGET: ${{ inputs.target_directory }}
-      VERIFY_CANDIDATE: ${{ inputs.candidate }}
-      VERIFY_BASE: ${{ inputs.base }}
-    run: python3 "$VERIFY_ROOT/scripts/verify.py" check npm.publish
-- id: llm
-  op: command_execution
-  const: true
-  execution_needs:
-    packages: *id001
-  inputs:
-    env:
-      VERIFY_ROOT: ${{ context.environment.op.worktree_path }}
-      VERIFY_OUTBOX: ${{ context.environment.op.outbox }}
-      VERIFY_TARGET: ${{ inputs.target_directory }}
-      VERIFY_CANDIDATE: ${{ inputs.candidate }}
-      VERIFY_BASE: ${{ inputs.base }}
-    run: python3 "$VERIFY_ROOT/scripts/verify.py" check llm
-- id: llm2
-  op: command_execution
-  const: true
-  execution_needs:
-    packages: *id001
-  inputs:
-    env:
-      VERIFY_ROOT: ${{ context.environment.op.worktree_path }}
-      VERIFY_OUTBOX: ${{ context.environment.op.outbox }}
-      VERIFY_TARGET: ${{ inputs.target_directory }}
-      VERIFY_CANDIDATE: ${{ inputs.candidate }}
-      VERIFY_BASE: ${{ inputs.base }}
-    run: python3 "$VERIFY_ROOT/scripts/verify.py" check llm2
-- id: gha
-  op: command_execution
-  const: true
-  execution_needs:
-    packages: *id001
-  inputs:
-    env:
-      VERIFY_ROOT: ${{ context.environment.op.worktree_path }}
-      VERIFY_OUTBOX: ${{ context.environment.op.outbox }}
-      VERIFY_TARGET: ${{ inputs.target_directory }}
-      VERIFY_CANDIDATE: ${{ inputs.candidate }}
-      VERIFY_BASE: ${{ inputs.base }}
-    run: python3 "$VERIFY_ROOT/scripts/verify.py" check gha --race
-- id: gha_many
-  op: command_execution
-  const: true
-  execution_needs:
-    packages: *id001
-  inputs:
-    env:
-      VERIFY_ROOT: ${{ context.environment.op.worktree_path }}
-      VERIFY_OUTBOX: ${{ context.environment.op.outbox }}
-      VERIFY_TARGET: ${{ inputs.target_directory }}
-      VERIFY_CANDIDATE: ${{ inputs.candidate }}
-      VERIFY_BASE: ${{ inputs.base }}
-    run: python3 "$VERIFY_ROOT/scripts/verify.py" check gha-many
-- id: gha_runtime
-  # Runner partitions general, child, diagnostic, workflow and matching contracts;
-  # every test runs once with race helpers and unchanged per-process limits.
-  op: command_execution
-  const: true
-  execution_needs:
-    packages: *id001
-  inputs:
-    env:
-      VERIFY_ROOT: ${{ context.environment.op.worktree_path }}
-      VERIFY_OUTBOX: ${{ context.environment.op.outbox }}
-      VERIFY_TARGET: ${{ inputs.target_directory }}
-      VERIFY_CANDIDATE: ${{ inputs.candidate }}
-      VERIFY_BASE: ${{ inputs.base }}
-    run: python3 "$VERIFY_ROOT/scripts/verify.py" check gha-runtime --race
-# Checks direct-reference handoff/text/manifest contracts before packaging, then
-# runs all CLI and source/Nix fixtures using the pinned c2j staging implementation.
-- id: codex
-  op: command_execution
-  const: true
-  execution_needs:
-    packages: *id001
-  inputs:
-    env:
-      GOWORK: "off"
-      VERIFY_ROOT: ${{ context.environment.op.worktree_path }}
-      VERIFY_OUTBOX: ${{ context.environment.op.outbox }}
-      VERIFY_TARGET: ${{ inputs.target_directory }}
-      VERIFY_CANDIDATE: ${{ inputs.candidate }}
-      VERIFY_BASE: ${{ inputs.base }}
-    run: python3 "$VERIFY_ROOT/scripts/verify.py" check codex
-- id: rule_gate
-  op: command_execution
-  const: true
-  execution_needs:
-    packages: *id001
-  inputs:
-    env:
-      VERIFY_ROOT: ${{ context.environment.op.worktree_path }}
-      VERIFY_OUTBOX: ${{ context.environment.op.outbox }}
-      VERIFY_TARGET: ${{ inputs.target_directory }}
-      VERIFY_CANDIDATE: ${{ inputs.candidate }}
-      VERIFY_BASE: ${{ inputs.base }}
-    run: python3 "$VERIFY_ROOT/scripts/verify.py" check rule-gate
-- id: release_pack
-  op: command_execution
-  const: true
-  execution_needs:
-    packages: *id001
-  inputs:
-    env:
-      VERIFY_ROOT: ${{ context.environment.op.worktree_path }}
-      VERIFY_OUTBOX: ${{ context.environment.op.outbox }}
-      VERIFY_TARGET: ${{ inputs.target_directory }}
-      VERIFY_CANDIDATE: ${{ inputs.candidate }}
-      VERIFY_BASE: ${{ inputs.base }}
-    run: python3 "$VERIFY_ROOT/scripts/verify.py" check release-pack
-- id: github_release
-  op: command_execution
-  const: true
-  execution_needs:
-    packages: *id001
-  inputs:
-    env:
-      VERIFY_ROOT: ${{ context.environment.op.worktree_path }}
-      VERIFY_OUTBOX: ${{ context.environment.op.outbox }}
-      VERIFY_TARGET: ${{ inputs.target_directory }}
-      VERIFY_CANDIDATE: ${{ inputs.candidate }}
-      VERIFY_BASE: ${{ inputs.base }}
-    run: python3 "$VERIFY_ROOT/scripts/verify.py" check github-release
-- id: aider
-  op: command_execution
-  const: true
-  execution_needs:
-    packages: *id001
-  inputs:
-    env:
-      VERIFY_ROOT: ${{ context.environment.op.worktree_path }}
-      VERIFY_OUTBOX: ${{ context.environment.op.outbox }}
-      VERIFY_TARGET: ${{ inputs.target_directory }}
-      VERIFY_CANDIDATE: ${{ inputs.candidate }}
-      VERIFY_BASE: ${{ inputs.base }}
-    run: python3 "$VERIFY_ROOT/scripts/verify.py" check aider
-- id: litellm
-  op: command_execution
-  const: true
-  execution_needs:
-    packages: *id001
-  inputs:
-    env:
-      VERIFY_ROOT: ${{ context.environment.op.worktree_path }}
-      VERIFY_OUTBOX: ${{ context.environment.op.outbox }}
-      VERIFY_TARGET: ${{ inputs.target_directory }}
-      VERIFY_CANDIDATE: ${{ inputs.candidate }}
-      VERIFY_BASE: ${{ inputs.base }}
-    run: python3 "$VERIFY_ROOT/scripts/verify.py" check litellm
-# Builds locally and consumes installed bytes in this same task.
-- id: pydantic
-  op: command_execution
-  const: true
-  execution_needs:
-    packages: *id001
-  inputs:
-    env:
-      VERIFY_ROOT: ${{ context.environment.op.worktree_path }}
-      VERIFY_OUTBOX: ${{ context.environment.op.outbox }}
-      VERIFY_TARGET: ${{ inputs.target_directory }}
-      VERIFY_CANDIDATE: ${{ inputs.candidate }}
-      VERIFY_BASE: ${{ inputs.base }}
-    run: python3 "$VERIFY_ROOT/scripts/verify.py" check pydantic
-- id: jev
-  op: command_execution
-  const: true
-  execution_needs:
-    packages: *id001
-  inputs:
-    env:
-      VERIFY_ROOT: ${{ context.environment.op.worktree_path }}
-      VERIFY_OUTBOX: ${{ context.environment.op.outbox }}
-      VERIFY_TARGET: ${{ inputs.target_directory }}
-      VERIFY_CANDIDATE: ${{ inputs.candidate }}
-      VERIFY_BASE: ${{ inputs.base }}
-    run: python3 "$VERIFY_ROOT/scripts/verify.py" check jev
-- id: kimi
-  # Prepare the real Go tool helper before the CLI fixture's invocation deadline.
-  op: command_execution
-  const: true
-  execution_needs:
-    packages: *id001
-  inputs:
-    env:
-      VERIFY_ROOT: ${{ context.environment.op.worktree_path }}
-      VERIFY_OUTBOX: ${{ context.environment.op.outbox }}
-      VERIFY_TARGET: ${{ inputs.target_directory }}
-      VERIFY_CANDIDATE: ${{ inputs.candidate }}
-      VERIFY_BASE: ${{ inputs.base }}
-    run: python3 "$VERIFY_ROOT/scripts/verify.py" check kimi
-- id: go_build
-  op: command_execution
-  const: true
-  execution_needs:
-    packages: *id001
-  inputs:
-    env:
-      VERIFY_ROOT: ${{ context.environment.op.worktree_path }}
-      VERIFY_OUTBOX: ${{ context.environment.op.outbox }}
-      VERIFY_TARGET: ${{ inputs.target_directory }}
-      VERIFY_CANDIDATE: ${{ inputs.candidate }}
-      VERIFY_BASE: ${{ inputs.base }}
-    run: python3 "$VERIFY_ROOT/scripts/verify.py" check go-build
-- id: opentofu
-  op: command_execution
-  const: true
-  execution_needs:
-    packages: *id001
-  inputs:
-    env:
-      VERIFY_ROOT: ${{ context.environment.op.worktree_path }}
-      VERIFY_OUTBOX: ${{ context.environment.op.outbox }}
-      VERIFY_TARGET: ${{ inputs.target_directory }}
-      VERIFY_CANDIDATE: ${{ inputs.candidate }}
-      VERIFY_BASE: ${{ inputs.base }}
-    run: python3 "$VERIFY_ROOT/scripts/verify.py" check opentofu
-- id: nix_metadata
-  op: command_execution
-  const: true
-  execution_needs:
-    packages: *id001
-  inputs:
-    env:
-      VERIFY_ROOT: ${{ context.environment.op.worktree_path }}
-      VERIFY_OUTBOX: ${{ context.environment.op.outbox }}
-      VERIFY_TARGET: ${{ inputs.target_directory }}
-      VERIFY_CANDIDATE: ${{ inputs.candidate }}
-      VERIFY_BASE: ${{ inputs.base }}
-    run: python3 "$VERIFY_ROOT/scripts/verify.py" check nix-metadata
-# Includes mandatory installed github-release success/failure checks over local TLS,
-# from immutable package cwd with empty PATH; failures stay in nix-process evidence.
-- id: nix_process
-  op: command_execution
-  const: true
-  execution_needs:
-    packages: *id001
-  inputs:
-    env:
-      VERIFY_ROOT: ${{ context.environment.op.worktree_path }}
-      VERIFY_OUTBOX: ${{ context.environment.op.outbox }}
-      VERIFY_TARGET: ${{ inputs.target_directory }}
-      VERIFY_CANDIDATE: ${{ inputs.candidate }}
-      VERIFY_BASE: ${{ inputs.base }}
-    run: python3 "$VERIFY_ROOT/scripts/verify.py" check nix-process
-- id: opentofu_credentials
-  # Keep the existing Git credential for private workspace preparation.
-  # Operator adds literal Google names AND every enclosing caller/ceiling.
-  op: command_execution
-  const: false
-  perms:
-    jobdb:
-      secrets:
-        resolve: [gitvend_base_token]
-  execution_needs:
-    packages: *id001
-  inputs:
-    env:
-      VERIFY_ROOT: ${{ context.environment.op.worktree_path }}
-      VERIFY_OUTBOX: ${{ context.environment.op.outbox }}
-      VERIFY_TARGET: ${{ inputs.target_directory }}
-      VERIFY_CANDIDATE: ${{ inputs.candidate }}
-      VERIFY_BASE: ${{ inputs.base }}
-      VERIFY_OPENTOFU_PROFILE: ${{ json_stringify(inputs.?settings.value.variables.opentofu_google.orValue(null)) }}
-    run: python3 "$VERIFY_ROOT/scripts/verify.py" check opentofu_credentials
-- id: report
-  op: command_execution
-  const: true
-  execution_needs:
-    packages:
-    - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#python3
-  artifacts:
-    manifests.log: ${{ sequence.manifests.artifacts['manifests.log'] }}
-    manifests.json: ${{ sequence.manifests.artifacts['manifests.json'] }}
-    tooling.log: ${{ sequence.tooling.artifacts['tooling.log'] }}
-    tooling.json: ${{ sequence.tooling.artifacts['tooling.json'] }}
-    npm.publish.log: ${{ sequence.npm_publish.artifacts['npm.publish.log'] }}
-    npm.publish.json: ${{ sequence.npm_publish.artifacts['npm.publish.json'] }}
-    llm.log: ${{ sequence.llm.artifacts['llm.log'] }}
-    llm.json: ${{ sequence.llm.artifacts['llm.json'] }}
-    llm2.log: ${{ sequence.llm2.artifacts['llm2.log'] }}
-    llm2.json: ${{ sequence.llm2.artifacts['llm2.json'] }}
-    gha.log: ${{ sequence.gha.artifacts['gha.log'] }}
-    gha.json: ${{ sequence.gha.artifacts['gha.json'] }}
-    gha-many.log: ${{ sequence.gha_many.artifacts['gha-many.log'] }}
-    gha-many.json: ${{ sequence.gha_many.artifacts['gha-many.json'] }}
-    gha-runtime.log: ${{ sequence.gha_runtime.artifacts['gha-runtime.log'] }}
-    gha-runtime.json: ${{ sequence.gha_runtime.artifacts['gha-runtime.json'] }}
-    codex.log: ${{ sequence.codex.artifacts['codex.log'] }}
-    codex.json: ${{ sequence.codex.artifacts['codex.json'] }}
-    rule-gate.log: ${{ sequence.rule_gate.artifacts['rule-gate.log'] }}
-    rule-gate.json: ${{ sequence.rule_gate.artifacts['rule-gate.json'] }}
-    github-release.log: ${{ sequence.github_release.artifacts['github-release.log'] }}
-    github-release.json: ${{ sequence.github_release.artifacts['github-release.json'] }}
-    release-pack.log: ${{ sequence.release_pack.artifacts['release-pack.log'] }}
-    release-pack.json: ${{ sequence.release_pack.artifacts['release-pack.json'] }}
-    aider.log: ${{ sequence.aider.artifacts['aider.log'] }}
-    aider.json: ${{ sequence.aider.artifacts['aider.json'] }}
-    litellm.log: ${{ sequence.litellm.artifacts['litellm.log'] }}
-    litellm.json: ${{ sequence.litellm.artifacts['litellm.json'] }}
-    pydantic.log: ${{ sequence.pydantic.artifacts['pydantic.log'] }}
-    pydantic.json: ${{ sequence.pydantic.artifacts['pydantic.json'] }}
-    jev.log: ${{ sequence.jev.artifacts['jev.log'] }}
-    jev.json: ${{ sequence.jev.artifacts['jev.json'] }}
-    kimi.log: ${{ sequence.kimi.artifacts['kimi.log'] }}
-    kimi.json: ${{ sequence.kimi.artifacts['kimi.json'] }}
-    go-build.log: ${{ sequence.go_build.artifacts['go-build.log'] }}
-    go-build.json: ${{ sequence.go_build.artifacts['go-build.json'] }}
-    opentofu.log: ${{ sequence.opentofu.artifacts['opentofu.log'] }}
-    opentofu.json: ${{ sequence.opentofu.artifacts['opentofu.json'] }}
-    opentofu_credentials.log: ${{ sequence.opentofu_credentials.artifacts['opentofu_credentials.log'] }}
-    opentofu_credentials.json: ${{ sequence.opentofu_credentials.artifacts['opentofu_credentials.json'] }}
-    nix-metadata.log: ${{ sequence.nix_metadata.artifacts['nix-metadata.log'] }}
-    nix-metadata.json: ${{ sequence.nix_metadata.artifacts['nix-metadata.json'] }}
-    nix-process.log: ${{ sequence.nix_process.artifacts['nix-process.log'] }}
-    nix-process.json: ${{ sequence.nix_process.artifacts['nix-process.json'] }}
-  inputs:
-    env:
-      VERIFY_ROOT: ${{ context.environment.op.worktree_path }}
-      VERIFY_INBOX: ${{ context.environment.op.inbox }}
-      VERIFY_OUTBOX: ${{ context.environment.op.outbox }}
-      VERIFY_STATUS_MANIFESTS: ${{ sequence.manifests.outputs.stdout }}
-      VERIFY_STATUS_TOOLING: ${{ sequence.tooling.outputs.stdout }}
-      VERIFY_STATUS_NPM_PUBLISH: ${{ sequence.npm_publish.outputs.stdout }}
-      VERIFY_STATUS_LLM: ${{ sequence.llm.outputs.stdout }}
-      VERIFY_STATUS_LLM2: ${{ sequence.llm2.outputs.stdout }}
-      VERIFY_STATUS_GHA: ${{ sequence.gha.outputs.stdout }}
-      VERIFY_STATUS_GHA_MANY: ${{ sequence.gha_many.outputs.stdout }}
-      VERIFY_STATUS_GHA_RUNTIME: ${{ sequence.gha_runtime.outputs.stdout }}
-      VERIFY_STATUS_CODEX: ${{ sequence.codex.outputs.stdout }}
-      VERIFY_STATUS_RULE_GATE: ${{ sequence.rule_gate.outputs.stdout }}
-      VERIFY_STATUS_GITHUB_RELEASE: ${{ sequence.github_release.outputs.stdout }}
-      VERIFY_STATUS_RELEASE_PACK: ${{ sequence.release_pack.outputs.stdout }}
-      VERIFY_STATUS_AIDER: ${{ sequence.aider.outputs.stdout }}
-      VERIFY_STATUS_LITELLM: ${{ sequence.litellm.outputs.stdout }}
-      VERIFY_STATUS_PYDANTIC: ${{ sequence.pydantic.outputs.stdout }}
-      VERIFY_STATUS_JEV: ${{ sequence.jev.outputs.stdout }}
-      VERIFY_STATUS_KIMI: ${{ sequence.kimi.outputs.stdout }}
-      VERIFY_STATUS_GO_BUILD: ${{ sequence.go_build.outputs.stdout }}
-      VERIFY_STATUS_OPENTOFU: ${{ sequence.opentofu.outputs.stdout }}
-      VERIFY_STATUS_OPENTOFU_CREDENTIALS: ${{ sequence.opentofu_credentials.outputs.stdout }}
-      VERIFY_CANDIDATE: ${{ inputs.candidate }}
-      VERIFY_BASE: ${{ inputs.base }}
-      VERIFY_OPENTOFU_PROFILE: ${{ json_stringify(inputs.?settings.value.variables.opentofu_google.orValue(null)) }}
-      VERIFY_STATUS_NIX_METADATA: ${{ sequence.nix_metadata.outputs.stdout }}
-      VERIFY_STATUS_NIX_PROCESS: ${{ sequence.nix_process.outputs.stdout }}
-    run: python3 "$VERIFY_ROOT/scripts/verify.py" aggregate
+    system: aarch64-linux
+    worker_base: 'ubuntu*arm64'
+    candidate: ${{ inputs.candidate }}
+    base: ${{ inputs.base }}
+    settings: ${{ inputs.settings }}
+    target_directory: ${{ inputs.target_directory }}
 outputs:
   api_version: c2.build-hook/v1
-  status: ${{ sequence.report.outputs.stdout }}
+  status: "${{ [sequence.mac, sequence.amd, sequence.arm].all(p, p.outputs.status == 'passed') ? 'passed' : 'failed' }}"
   summary: >-
-    Verification: ${{ sequence.report.outputs.stdout }}.
-    release.pack archive test (release_pack / release-pack): ${{ sequence.release_pack.outputs.stdout }}.
-    Inspect verification.md and release-pack.log/json for task evidence; exclusions are recorded.
-  artifact_refs: '${{ {''manifests.log'': sequence.manifests.artifacts[''manifests.log''], ''manifests.json'': sequence.manifests.artifacts[''manifests.json''],
-    ''tooling.log'': sequence.tooling.artifacts[''tooling.log''], ''tooling.json'': sequence.tooling.artifacts[''tooling.json''],
-    ''npm.publish.log'': sequence.npm_publish.artifacts[''npm.publish.log''], ''npm.publish.json'': sequence.npm_publish.artifacts[''npm.publish.json''],
-    ''llm.log'': sequence.llm.artifacts[''llm.log''], ''llm.json'': sequence.llm.artifacts[''llm.json''], ''llm2.log'': sequence.llm2.artifacts[''llm2.log''],
-    ''llm2.json'': sequence.llm2.artifacts[''llm2.json''], ''gha.log'': sequence.gha.artifacts[''gha.log''], ''gha.json'':
-    sequence.gha.artifacts[''gha.json''], ''gha-many.log'': sequence.gha_many.artifacts[''gha-many.log''], ''gha-many.json'':
-    sequence.gha_many.artifacts[''gha-many.json''], ''gha-runtime.log'': sequence.gha_runtime.artifacts[''gha-runtime.log''],
-    ''gha-runtime.json'': sequence.gha_runtime.artifacts[''gha-runtime.json''], ''codex.log'': sequence.codex.artifacts[''codex.log''],
-    ''codex.json'': sequence.codex.artifacts[''codex.json''], ''rule-gate.log'': sequence.rule_gate.artifacts[''rule-gate.log''],
-    ''rule-gate.json'': sequence.rule_gate.artifacts[''rule-gate.json''], ''github-release.log'': sequence.github_release.artifacts[''github-release.log''], ''github-release.json'': sequence.github_release.artifacts[''github-release.json''], ''aider.log'': sequence.aider.artifacts[''aider.log''],
-    ''aider.json'': sequence.aider.artifacts[''aider.json''], ''litellm.log'': sequence.litellm.artifacts[''litellm.log''],
-    ''litellm.json'': sequence.litellm.artifacts[''litellm.json''], ''pydantic.log'': sequence.pydantic.artifacts[''pydantic.log''],
-    ''pydantic.json'': sequence.pydantic.artifacts[''pydantic.json''], ''jev.log'': sequence.jev.artifacts[''jev.log''], ''jev.json'':
-    sequence.jev.artifacts[''jev.json''], ''kimi.log'': sequence.kimi.artifacts[''kimi.log''], ''kimi.json'': sequence.kimi.artifacts[''kimi.json''],
-    ''go-build.log'': sequence.go_build.artifacts[''go-build.log''], ''go-build.json'': sequence.go_build.artifacts[''go-build.json''],
-    ''opentofu.log'': sequence.opentofu.artifacts[''opentofu.log''], ''opentofu.json'': sequence.opentofu.artifacts[''opentofu.json''],
-    ''opentofu_credentials.log'': sequence.opentofu_credentials.artifacts[''opentofu_credentials.log''], ''opentofu_credentials.json'': sequence.opentofu_credentials.artifacts[''opentofu_credentials.json''],
-    ''nix-metadata.log'': sequence.nix_metadata.artifacts[''nix-metadata.log''], ''nix-metadata.json'': sequence.nix_metadata.artifacts[''nix-metadata.json''],
-    ''nix-process.log'': sequence.nix_process.artifacts[''nix-process.log''], ''nix-process.json'': sequence.nix_process.artifacts[''nix-process.json''],
-    ''release-pack.log'': sequence.release_pack.artifacts[''release-pack.log''], ''release-pack.json'': sequence.release_pack.artifacts[''release-pack.json''],
-    ''verification.md'': sequence.report.artifacts[''verification.md''], ''verification.json'': sequence.report.artifacts[''verification.json'']}
-    }}'
+    Native verification completed. Apple silicon ${{ sequence.mac.outputs.status }},
+    Linux amd64 ${{ sequence.amd.outputs.status }}, Linux arm64 ${{ sequence.arm.outputs.status }}.
+  artifact_refs:
+    aarch64-darwin/verification.md: ${{ sequence.mac.outputs.artifact_refs['verification.md'] }}
+    aarch64-darwin/verification.json: ${{ sequence.mac.outputs.artifact_refs['verification.json'] }}
+    aarch64-darwin/evidence.tar.gz: ${{ sequence.mac.outputs.artifact_refs['evidence.tar.gz'] }}
+    x86_64-linux/verification.md: ${{ sequence.amd.outputs.artifact_refs['verification.md'] }}
+    x86_64-linux/verification.json: ${{ sequence.amd.outputs.artifact_refs['verification.json'] }}
+    x86_64-linux/evidence.tar.gz: ${{ sequence.amd.outputs.artifact_refs['evidence.tar.gz'] }}
+    aarch64-linux/verification.md: ${{ sequence.arm.outputs.artifact_refs['verification.md'] }}
+    aarch64-linux/verification.json: ${{ sequence.arm.outputs.artifact_refs['verification.json'] }}
+    aarch64-linux/evidence.tar.gz: ${{ sequence.arm.outputs.artifact_refs['evidence.tar.gz'] }}

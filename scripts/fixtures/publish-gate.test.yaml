@@ -1,0 +1,70 @@
+recipe: ../../.c2/recipes/hooks/build/publish.yaml
+cases:
+- id: all-three-children
+  type: integration_case
+  inputs: &inputs
+    api_version: c2.build-hook/v1
+    request: publish fixture
+    target_directory: .
+    candidate: &sha aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    base: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+    merged_hash: *sha
+    target_branch: refs/heads/main
+  mocks:
+    ops:
+    - &source
+      match: {op: command_execution}
+      behavior: {mode: return, outputs: {success: true}}
+    - &launch
+      match: {op: recipes.run}
+      behavior: {mode: return, outputs: {job_ids: [mac, amd, arm]}}
+    - &child
+      match: {op: recipe.await_result}
+      behavior:
+        mode: return
+        outputs:
+          outputs:
+            manifest: {kind: value, format: json, name: manifest.json, value: {}}
+            closure: {kind: value, format: text, name: closure, value: fixture}
+    - *child
+    - *child
+    - match: {op: command_execution}
+      behavior: {mode: return, outputs: {success: true, stdout: promoted}}
+  assertions:
+  - {type: output_equals, path: status, value: passed}
+  - {type: output_equals, path: summary, value: promoted}
+  - type: cel_true
+    expr: >-
+      calls.exists(c, c.op == 'recipes.run' &&
+        c.inputs.recipes.map(r,r.inputs.system) == ['aarch64-darwin','x86_64-linux','aarch64-linux'] &&
+        c.inputs.recipes.all(r, r.git.base_hash == c.inputs.git_ref &&
+          r.inputs.revision == c.inputs.git_ref && r.name.endsWith('@' + c.inputs.git_ref)))
+      && size(outputs.artifact_refs) == 6
+- id: failed-macos
+  type: integration_case
+  inputs: *inputs
+  runtime: &failure {expect_error: child failed}
+  mocks:
+    ops:
+    - *source
+    - *launch
+    - &failed
+      match: {op: recipe.await_result}
+      behavior: {mode: fail, error: {message: child failed}}
+  assertions: &no-promotion
+  - type: cel_true
+    expr: '!calls.exists(c, c.node_path.endsWith("/promote"))'
+- id: failed-linux-amd64
+  type: integration_case
+  inputs: *inputs
+  runtime: *failure
+  mocks:
+    ops: [*source, *launch, *child, *failed]
+  assertions: *no-promotion
+- id: failed-linux-arm64
+  type: integration_case
+  inputs: *inputs
+  runtime: *failure
+  mocks:
+    ops: [*source, *launch, *child, *child, *failed]
+  assertions: *no-promotion
