@@ -1,0 +1,38 @@
+id: build-publish-packages
+input_schema:
+  revision: {type: string, required: true}
+  system: {type: string, required: true}
+inputs:
+  revision: ${{ inputs.revision }}
+  system: ${{ inputs.system }}
+vars:
+  bases: {aarch64-darwin: 'macos*', x86_64-linux: 'ubuntu*amd64', aarch64-linux: 'ubuntu*arm64'}
+sequence:
+- id: build
+  op: command_execution
+  const: false
+  perms:
+    jobdb:
+      secrets: {resolve: [gitvend_base_token, cachix_colony2_publish_key]}
+  execution_needs:
+    base: ${{ vars.bases[inputs.system] }}
+    packages:
+    - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#python3
+    - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#nix
+    - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#gitMinimal
+    - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#cachix
+  inputs:
+    env:
+      REVISION: ${{ inputs.revision }}
+      SYSTEM: ${{ inputs.system }}
+      OUTBOX: ${{ context.environment.op.outbox }}
+    run: python3 scripts/hook_packages.py publish "$REVISION" "$SYSTEM"
+  expect_outputs:
+    type: object
+    required: [success]
+    properties: {success: {enum: [true]}}
+outputs:
+  revision: ${{ inputs.revision }}
+  system: ${{ inputs.system }}
+  manifest: ${{ sequence.build.artifacts[inputs.system + '.json'] }}
+  closure: ${{ sequence.build.artifacts[inputs.system + '.nar-export.gz'] }}

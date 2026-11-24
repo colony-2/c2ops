@@ -1,0 +1,107 @@
+id: publish-c2ops
+input_schema:
+  api_version: {type: string, required: true}
+  request: {type: string, required: true}
+  target_directory: {type: string, required: true}
+  candidate: {type: string, required: true}
+  base: {type: string, required: true}
+  documents: {type: artifact_map, default_value: {}}
+  settings: {type: artifact}
+  merged_hash: {type: string, required: true}
+  target_branch: {type: string, required: true}
+inputs:
+  candidate: ${{ inputs.candidate }}
+  revision: ${{ inputs.merged_hash }}
+  branch: ${{ inputs.target_branch }}
+sequence:
+- id: check_source
+  op: command_execution
+  const: true
+  inputs:
+    env:
+      CANDIDATE: ${{ inputs.candidate }}
+      REVISION: ${{ inputs.revision }}
+      BRANCH: ${{ inputs.branch }}
+    run: |
+      set -eu
+      test "$BRANCH" = refs/heads/main || test "$BRANCH" = main
+      test "$REVISION" = "$CANDIDATE"
+      test "$(git rev-parse HEAD)" = "$REVISION"
+  expect_outputs: &success
+    type: object
+    required: [success]
+    properties: {success: {enum: [true]}}
+- id: launch
+  op: recipes.run
+  perms:
+    jobdb:
+      jobs: {submit: true}
+      secrets: {resolve: [gitvend_base_token, cachix_colony2_publish_key]}
+  inputs:
+    wait: {'on': job, condition: success}
+    git_ref: ${{ inputs.revision }}
+    recipes:
+    - title: Build c2ops packages for aarch64-darwin
+      name: &child ${{ 'git+' + context.git.repo + '//.c2/recipes/hooks/build/publish/build.yaml@' + inputs.revision }}
+      git: &source {base_ref: refs/heads/main, base_hash: '${{ inputs.revision }}'}
+      inputs: {revision: '${{ inputs.revision }}', system: aarch64-darwin}
+    - title: Build c2ops packages for x86_64-linux
+      name: *child
+      git: *source
+      inputs: {revision: '${{ inputs.revision }}', system: x86_64-linux}
+    - title: Build c2ops packages for aarch64-linux
+      name: *child
+      git: *source
+      inputs: {revision: '${{ inputs.revision }}', system: aarch64-linux}
+- id: mac
+  op: recipe.await_result
+  inputs:
+    target: {job: '${{ sequence.launch.outputs.job_ids[0] }}'}
+    wait: {'on': job, condition: success}
+- id: amd
+  op: recipe.await_result
+  inputs:
+    target: {job: '${{ sequence.launch.outputs.job_ids[1] }}'}
+    wait: {'on': job, condition: success}
+- id: arm
+  op: recipe.await_result
+  inputs:
+    target: {job: '${{ sequence.launch.outputs.job_ids[2] }}'}
+    wait: {'on': job, condition: success}
+- id: promote
+  op: command_execution
+  const: false
+  execution_needs:
+    packages:
+    - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#gitMinimal
+    - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#python3
+    - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#nix
+  artifacts:
+    aarch64-darwin.json: ${{ sequence.mac.outputs.outputs.manifest }}
+    x86_64-linux.json: ${{ sequence.amd.outputs.outputs.manifest }}
+    aarch64-linux.json: ${{ sequence.arm.outputs.outputs.manifest }}
+  inputs:
+    env:
+      REVISION: ${{ inputs.revision }}
+      INBOX: ${{ context.environment.op.inbox }}
+      ROOT: ${{ context.environment.op.worktree_path }}
+    run: |
+      set -eu
+      python3 scripts/hook_packages.py check-manifests "$REVISION"
+      repo=$(mktemp -d)
+      trap 'rm -rf "$repo"' EXIT
+      git clone --bare --single-branch --branch main https://github.com/colony-2/c2ops.git "$repo"
+      cd "$repo"
+      python3 "$ROOT/scripts/promote-published.py" "$REVISION"
+  expect_outputs: *success
+outputs:
+  api_version: c2.build-hook/v1
+  status: passed
+  summary: ${{ sequence.promote.outputs.stdout }}
+  artifact_refs:
+    aarch64-darwin.json: ${{ sequence.mac.outputs.outputs.manifest }}
+    x86_64-linux.json: ${{ sequence.amd.outputs.outputs.manifest }}
+    aarch64-linux.json: ${{ sequence.arm.outputs.outputs.manifest }}
+    aarch64-darwin.nar-export.gz: ${{ sequence.mac.outputs.outputs.closure }}
+    x86_64-linux.nar-export.gz: ${{ sequence.amd.outputs.outputs.closure }}
+    aarch64-linux.nar-export.gz: ${{ sequence.arm.outputs.outputs.closure }}
