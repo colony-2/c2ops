@@ -19,7 +19,7 @@ def checkout(revision):
     head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
     if head != revision:
         raise ValueError(f'worker checkout {head} differs from requested {revision}')
-    return 'git+' + Path.cwd().resolve().as_uri() + '?rev=' + revision
+    return 'git+' + Path.cwd().resolve().as_uri() + '?ref=HEAD&shallow=1&rev=' + revision
 
 
 def build(revision, system, roots, outbox=None):
@@ -84,13 +84,15 @@ def publish(revision, system, outbox):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('check', 'publish', 'check-manifests'))
+    parser.add_argument('action', choices=('check', 'publish', 'check-manifests', 'flake-url'))
     parser.add_argument('revision')
     parser.add_argument('system', nargs='?', choices=publication.SYSTEMS)
     args = parser.parse_args()
     os.environ['NIX_CONFIG'] = (os.environ.get('NIX_CONFIG', '') +
                                 '\nextra-experimental-features = nix-command flakes')
-    if args.action == 'check-manifests':
+    if args.action == 'flake-url':
+        print(checkout(args.revision))
+    elif args.action == 'check-manifests':
         flake = checkout(args.revision)
         for system in publication.SYSTEMS:
             manifest = Path(os.environ['INBOX']) / (system + '.json')

@@ -41,8 +41,7 @@ sequence:
       REVISION: ${{ inputs.candidate }}
     run: |
       set -eu
-      test "$(git rev-parse HEAD)" = "$REVISION"
-      C2OPS_TEST_FLAKE=$(python3 -c 'from pathlib import Path; print("git+" + Path.cwd().as_uri())')?rev=$REVISION
+      C2OPS_TEST_FLAKE=$(python3 scripts/hook_packages.py flake-url "$REVISION")
       export C2OPS_TEST_FLAKE
       nix --extra-experimental-features 'nix-command flakes' build --no-link "$C2OPS_TEST_FLAKE#codex" "$C2OPS_TEST_FLAKE#skill-run"
       python3 scripts/check-codex-worker.py
