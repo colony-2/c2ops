@@ -71,7 +71,7 @@ func TestRealB24DownloadedModuleAssembly(t *testing.T) {
 			sdk := fixtureSDK(t, "1.26.1")
 			c := exec.Command(sdk+"/bin/go", "mod", "download", "example.com/dep")
 			c.Dir = r.Worktree
-			c.Env = envWith(cleanEnv(), map[string]string{"GOMODCACHE": t.TempDir(), "GOROOT": sdk + "/share/go", "GOTOOLCHAIN": "local", "GOENV": "off", "GOWORK": "off"})
+			c.Env = envWith(cleanEnv(), map[string]string{"GOMODCACHE": t.TempDir(), "GOFLAGS": "-modcacherw", "GOROOT": sdk + "/share/go", "GOTOOLCHAIN": "local", "GOENV": "off", "GOWORK": "off"})
 			if b, e := c.CombinedOutput(); e != nil {
 				t.Fatalf("fixture dependency preparation failed: %v %s", e, b)
 			}

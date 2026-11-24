@@ -142,7 +142,7 @@ func ambientControl(t *testing.T, r Request, exact string, extraFlags ...string)
 	args := append([]string{"build", "-mod=readonly", "-buildvcs=false", "-o", dest}, extraFlags...)
 	c := exec.Command(filepath.Join(sdk, "bin/go"), append(args, ".")...)
 	c.Dir = r.Worktree
-	c.Env = envWith(cleanEnv(), map[string]string{"GOROOT": sdk + "/share/go", "GOTOOLCHAIN": "local", "GOENV": "off", "GOWORK": "off", "CGO_ENABLED": "0", "GOMODCACHE": t.TempDir()})
+	c.Env = envWith(cleanEnv(), map[string]string{"GOROOT": sdk + "/share/go", "GOTOOLCHAIN": "local", "GOENV": "off", "GOWORK": "off", "CGO_ENABLED": "0", "GOMODCACHE": t.TempDir(), "GOFLAGS": "-modcacherw"})
 	if b, e := c.CombinedOutput(); e != nil {
 		t.Fatalf("healthy control build failed: %v %s", e, b)
 	}
