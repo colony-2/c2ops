@@ -23,18 +23,26 @@ sequence:
     type: object
     required: [success]
     properties: {success: {enum: [true]}}
+# Each result belongs to its child. Collect it in an empty workspace so its
+# snapshot artifact cannot collide with the managed candidate snapshot.
 - id: mac
   op: recipe.await_result
+  const: true
+  workspace: {cell: '${{ context.workflow.cell }}', initial: empty}
   inputs:
     target: {job: "${{ json_parse(sequence.launch.outputs.stdout)['aarch64-darwin'] }}"}
     wait: {'on': job, condition: success}
 - id: amd
   op: recipe.await_result
+  const: true
+  workspace: {cell: '${{ context.workflow.cell }}', initial: empty}
   inputs:
     target: {job: "${{ json_parse(sequence.launch.outputs.stdout)['x86_64-linux'] }}"}
     wait: {'on': job, condition: success}
 - id: arm
   op: recipe.await_result
+  const: true
+  workspace: {cell: '${{ context.workflow.cell }}', initial: empty}
   inputs:
     target: {job: "${{ json_parse(sequence.launch.outputs.stdout)['aarch64-linux'] }}"}
     wait: {'on': job, condition: success}

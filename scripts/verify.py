@@ -212,11 +212,16 @@ def execute(name, checks, race):
                                    '-skip', '^TestArtifactTextNativeSessionAndRepairs$',
                                    './pkg/codex', './internal/extensioncmd', './test-fixtures']):
             return
-        # Exercise this checkout, including its manifests, in recipe fixtures.
-        # with-codex/op_test only realize prepared packages; build them here.
-        if not checks.run([*NIX, 'build', '--no-link', '--no-write-lock-file',
-                           '--max-jobs', '1', '--cores', '2',
-                           '.#codex', '.#skill-run', '.#codex-cli']):
+        # TestGoManifestsRunPrebuiltOps uses a cache-only preparer for every Go op.
+        # This task can run on a different worker from the release package build.
+        if not checks.run(['python3', 'scripts/prefetch-act.py']):
+            return
+        catalog = json.loads((checks.root / 'nix/ops.json').read_text())
+        flake = checks.env['C2OPS_TEST_FLAKE']
+        packages = [flake + '#' + name for name, op in catalog.items() if op['kind'] == 'go']
+        if not checks.run([*NIX, 'build', '--no-write-lock-file',
+                           '--out-link', str(checks.root.parent / 'codex-fixture-package'),
+                           '--max-jobs', '1', '--cores', '2', *packages, flake + '#codex-cli']):
             return
         checks.run(['python3', '../scripts/with-codex.py', '--', 'go', 'test', '-mod=readonly',
                     '-count=1', '-timeout=8m', './...'], 'codex')

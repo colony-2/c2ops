@@ -102,17 +102,28 @@ class VerificationTests(unittest.TestCase):
         hook = (root / ".c2/recipes/hooks/build/verify/native.yaml").read_text()
         task = hook.split("- id: codex\n", 1)[1].split("\n- id:", 1)[0]
         self.assertIn('GOWORK: "off"', task)
-        for failed_stage in ('reader', 'package', 'suite'):
+        for failed_stage in ('reader', 'prefetch', 'package', 'suite'):
             with self.subTest(failed_stage=failed_stage), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 (root / 'codex').mkdir()
+                (root / 'nix').mkdir()
+                catalog = {'codex': {'kind': 'go'}, 'gha': {'kind': 'go'},
+                           'gha-workflow': {'kind': 'go'}, 'aider': {'kind': 'python'}}
+                (root / 'nix/ops.json').write_text(json.dumps(catalog))
                 tools = root / 'tools'
                 tools.mkdir()
                 # Real failing subprocesses exercise Checks' failure recording.
-                for name, stage in (('go', 'reader'), ('nix', 'package'), ('python3', 'suite')):
+                for name, stage in (('go', 'reader'), ('nix', 'package'), ('python3', 'python')):
                     program = tools / name
-                    program.write_text('#!' + sys.executable + '\nimport os\nassert os.environ["GOWORK"] == "off"\nassert "C2J_CURRENT_JOB_ID" not in os.environ\nassert "C2J_JOBDB" not in os.environ\nraise SystemExit(' +
-                                       ('9' if stage == failed_stage else '0') + ')\n')
+                    program.write_text(
+                        '#!' + sys.executable + '\nimport os, sys\n'
+                        'assert os.environ["GOWORK"] == "off"\n'
+                        'assert "C2J_CURRENT_JOB_ID" not in os.environ\n'
+                        'assert "C2J_JOBDB" not in os.environ\n'
+                        f'stage = {stage!r}\n'
+                        'if stage == "python":\n'
+                        '    stage = "prefetch" if sys.argv[1].endswith("prefetch-act.py") else "suite"\n'
+                        f'raise SystemExit(9 if stage == {failed_stage!r} else 0)\n')
                     program.chmod(0o755)
                 env = {**os.environ, 'PATH':str(tools)+os.pathsep+os.environ['PATH'],
                        'C2OPS_TEST_FLAKE':'path:' + str(root), 'GOWORK':'/ambient/go.work',
@@ -120,7 +131,7 @@ class VerificationTests(unittest.TestCase):
                 with (root / 'codex.log').open('wb') as log:
                     checks = verify.Checks(root, env, log)
                     verify.execute('codex', checks, race=False)
-                expected_count = {'reader':1, 'package':2, 'suite':3}[failed_stage]
+                expected_count = {'reader':1, 'prefetch':2, 'package':3, 'suite':4}[failed_stage]
                 self.assertEqual(len(checks.commands), expected_count)
                 self.assertEqual(checks.commands[-1]['returncode'], 9)
                 self.assertIn('./internal/extensioncmd', checks.commands[0]['argv'])
@@ -135,13 +146,15 @@ class VerificationTests(unittest.TestCase):
                                  'native session tests need the CLI prepared for the full suite')
                 self.assertNotRegex('TestArtifactInputRecipeReferences', selection,
                                     'recipe fixtures must wait until the candidate is built')
-                if expected_count >= 2:
-                    self.assertEqual(checks.commands[1]['argv'][-3:], ['.#codex', '.#skill-run', '.#codex-cli'])
-                if expected_count == 3:
-                    self.assertEqual(checks.commands[2]['directory'], 'codex')
-                    self.assertEqual(checks.commands[2]['argv'][-1], './...')
-                    self.assertNotIn('-run', checks.commands[2]['argv'])
-                    self.assertNotIn('-skip', checks.commands[2]['argv'])
+                if expected_count >= 3:
+                    prefix = env['C2OPS_TEST_FLAKE'] + '#'
+                    self.assertEqual([arg for arg in checks.commands[2]['argv'] if arg.startswith(prefix)],
+                                     [prefix + op for op in ('codex', 'gha', 'gha-workflow', 'codex-cli')])
+                if expected_count == 4:
+                    self.assertEqual(checks.commands[3]['directory'], 'codex')
+                    self.assertEqual(checks.commands[3]['argv'][-1], './...')
+                    self.assertNotIn('-run', checks.commands[3]['argv'])
+                    self.assertNotIn('-skip', checks.commands[3]['argv'])
 
     def test_npm_hook_has_const_task_and_exports_evidence(self):
         root = Path(verify.__file__).resolve().parents[1]
