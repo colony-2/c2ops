@@ -1,8 +1,8 @@
 # Embedded GHA integration harness
 
-Run `make -C gha test-fast` from the repository root. The existing `make test`
-target also runs this suite in both native Linux CI jobs (ARM64 and AMD64).
-Dependencies are Go 1.26.10 or newer, Git, Bash, coreutils and Node; Go may need
+Run `make -C gha test-integration` from the repository root. The GHA `test` and
+`test-fast` targets also run this suite. CI exercises it on Linux and macOS.
+Dependencies are Python 3, Go 1.26.10 or newer, Git, Bash, coreutils and Node; Go may need
 the repository's existing private-module credentials on the first download. No Docker daemon,
 Nix build, GitHub API or model credentials are needed.
 
@@ -55,12 +55,10 @@ is shared by direct and embedded probes. Building these helpers requires Go
 1.26.10 or newer and an authorized private Git route; Nix source builds also
 require the [prefetch step](../../NIX_PACKAGES.md#private-gha-build-input).
 
-The native verification hook partitions artifact/history workflows, other
-submitted workflows, matching workers, Act, instances, diagnostics/identity and
-all remaining tests into seven complementary `-skip` and `-run` processes.
-All use `-race` and the existing eight-minute process timeout. Any failure fails
-the runtime receipt; every test runs exactly once, and the complement retains
-new tests. Each harness retains its own deadline.
+Make and the native verification hook use the same seven test groups. Each test
+runs once, and a catch-all group includes new tests. Make prints each test name
+and allows ten minutes per group. The verification hook runs each group with
+`-race` and an eight-minute deadline. Both report failure if any group fails.
 
 The separate module keeps c2j/JobDB test dependencies out of the GHA executable's
 Nix closure. Tests added here should use public op coordinates and replace only
@@ -79,7 +77,7 @@ failed/skipped/reporting jobs, push filtering, duplicate broker submissions,
 restart replay, and unpublished source commits. The v4 protocol test deletes
 worker directories before downloading the accepted artifact from JobDB.
 
-CI sets `C2OPS_TEST_GHA_ACTIONS=1` in both native Linux jobs. This additionally
+CI sets `C2OPS_TEST_GHA_ACTIONS=1` on all three platforms. This additionally
 fetches the pinned public upload/download actions and executes their real Node
 bundles through the same distributed path. Run it locally with
 `C2OPS_TEST_GHA_ACTIONS=1 make -C gha test-fast`. The default fast suite retains

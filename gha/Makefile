@@ -13,7 +13,7 @@ test:
 	$(MAKE) test-integration
 
 test-integration:
-	cd integration && go test -count=1 ./...
+	python3 ../scripts/run-gha-integration.py
 
 # No Nix, Docker daemon, external actions or service credentials are required.
 test-fast:
