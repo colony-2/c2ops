@@ -5,6 +5,7 @@ input_schema:
   system: {type: string, required: true}
   worker_base: {type: string, required: true}
   target_directory: {type: string, required: true}
+  package_job: {type: string}
   settings: {type: artifact}
   prompt: {type: string}
   title: {type: string}
@@ -19,25 +20,15 @@ inputs:
   worker_base: ${{ inputs.worker_base }}
   target_directory: ${{ inputs.target_directory }}
   settings: ${{ inputs.?settings.orValue(null) }}
+  package_job: ${{ inputs.?package_job.orValue('') }}
 sequence:
 - id: packages
-  op: command_execution
-  const: true
-  execution_needs:
-    base: ${{ inputs.worker_base }}
-    packages:
-    - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#python3
-    - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#nix
-    - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#gitMinimal
+  when: inputs.package_job == ''
+  include: ./packages.yaml
   inputs:
-    env:
-      REVISION: ${{ inputs.candidate }}
-      SYSTEM: ${{ inputs.system }}
-    run: python3 scripts/hook_packages.py check "$REVISION" "$SYSTEM"
-  expect_outputs:
-    type: object
-    required: [success]
-    properties: {success: {enum: [true]}}
+    system: ${{ inputs.system }}
+    candidate: ${{ inputs.candidate }}
+    worker_base: ${{ inputs.worker_base }}
 - id: tests
   include: ./native.yaml
   inputs:
@@ -46,6 +37,19 @@ sequence:
     settings: ${{ inputs.settings }}
     candidate: ${{ inputs.candidate }}
     base: ${{ inputs.base }}
+- id: await_packages
+  when: inputs.package_job != ''
+  op: recipe.await_result
+  const: true
+  workspace: {cell: '${{ context.workflow.cell }}', initial: empty}
+  inputs:
+    target: {job: '${{ inputs.package_job }}'}
+    wait: {'on': job, condition: success}
+  expect_outputs:
+    type: object
+    required: [outputs]
+    properties:
+      outputs: {type: object, required: [success], properties: {success: {enum: [true]}}}
 outputs:
   status: ${{ sequence.tests.outputs.status }}
   artifact_refs: ${{ sequence.tests.outputs.artifact_refs }}

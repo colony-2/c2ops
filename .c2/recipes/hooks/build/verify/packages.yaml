@@ -1,0 +1,36 @@
+id: verify-native-packages
+input_schema:
+  candidate: {type: string, required: true}
+  system: {type: string, required: true}
+  worker_base: {type: string, required: true}
+  prompt: {type: string}
+  title: {type: string}
+  type: {type: string}
+perms:
+  jobdb:
+    secrets: {resolve: [gitvend_base_token]}
+inputs:
+  candidate: ${{ inputs.candidate }}
+  system: ${{ inputs.system }}
+  worker_base: ${{ inputs.worker_base }}
+sequence:
+- id: packages
+  op: command_execution
+  const: true
+  execution_needs:
+    base: ${{ inputs.worker_base }}
+    packages:
+    - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#python3
+    - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#nix
+    - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#gitMinimal
+  inputs:
+    env:
+      REVISION: ${{ inputs.candidate }}
+      SYSTEM: ${{ inputs.system }}
+    run: python3 scripts/hook_packages.py check "$REVISION" "$SYSTEM"
+  expect_outputs:
+    type: object
+    required: [success]
+    properties: {success: {enum: [true]}}
+outputs:
+  success: ${{ sequence.packages.outputs.success }}
