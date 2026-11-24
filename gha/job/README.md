@@ -116,6 +116,8 @@ are local and temporary; use the durable object references in the op result.
 Run `make -C gha test-fast` for the container-free tests. See the
 [harness README](../integration/README.md) for coverage. The [immutable private act dependency](../../nix/act-source.json) fixes the demonstrated
 PTY race, drains failure/cancellation output, and cleans the command process group
-on Linux/macOS. Run `go test -race -count=1 ./internal/jobexec` from gha. Descendants
+on Linux/macOS. macOS host jobs use act's pipe transport because its pseudo-terminal
+can hang during Node discovery. Steps receive EOF on stdin and write their combined
+stdout and stderr to the job log. Run `go test -race -count=1 ./internal/jobexec` from gha. Descendants
 that escape that group still need the provisioner's boundary; native placement
 and outer isolation qualification remain pending.

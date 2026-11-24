@@ -22,6 +22,7 @@ require (
 	github.com/bmatcuk/doublestar/v4 v4.8.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cloudflare/circl v1.6.3 // indirect
+	github.com/colony-2/c2ops/gha/upstream/pty v1.1.24 // indirect
 	github.com/containerd/errdefs v1.0.0 // indirect
 	github.com/containerd/errdefs/pkg v0.3.0 // indirect
 	github.com/containerd/log v0.1.0 // indirect
@@ -97,3 +98,9 @@ require (
 )
 
 replace github.com/nektos/act => github.com/colony-2/act v0.0.0-20261112151448-250741efce52
+
+// act's host executor supports a pipe fallback. Use it on Darwin and delegate
+// other platforms to the same upstream PTY implementation as the pinned act.
+replace github.com/creack/pty => ./internal/actpty
+
+replace github.com/colony-2/c2ops/gha/upstream/pty => github.com/creack/pty v1.1.24

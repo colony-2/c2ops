@@ -48,9 +48,6 @@ func (w *completionLog) String() string {
 
 // The executor itself is instrumented when this package is tested with -race.
 func TestExecutorDrain(t *testing.T) {
-	if runtime.GOOS == "darwin" {
-		t.Skip("temporarily disabled pending act's macOS host PTY polling fix")
-	}
 	for _, exit := range []int{0, 7} {
 		for repeat := 0; repeat < 5; repeat++ {
 			t.Run(fmt.Sprintf("exit%d-%d", exit, repeat), func(t *testing.T) {

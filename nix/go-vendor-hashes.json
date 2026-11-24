@@ -2,7 +2,7 @@
   "llm": "sha256-0ewrH57V5DKc1hB6mbXLPp1ROoW8kAa5yWrQBi+U3WU=",
   "llm2": "sha256-0ewrH57V5DKc1hB6mbXLPp1ROoW8kAa5yWrQBi+U3WU=",
   "codex": "sha256-WVM0kSiL9adfuhLsumrwWiwkuT/lRUmwsqCDAP+oWpw=",
-  "gha": "sha256-6FCm+ZLz5/RkgGQgv5pJaSJ+JvwNITbtSZSZVYiFw4I=",
+  "gha": "sha256-AlPs/mFQ4cei1mild2UT2hDa3fmtC3TVytteQ5eKr40=",
   "gha-many": "sha256-9pk0i2cOpNKLVn2wPXcA+SRr5nBiz/GHSA4NokmZgT8=",
   "rule_gate": "sha256-Pw0nUpZRG0QMDOvXvWfihcnQQtSC0pogIdBnFM41098=",
   "github_release": null,
