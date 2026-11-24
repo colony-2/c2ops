@@ -68,7 +68,7 @@ func TestRealB24DownloadedModuleAssembly(t *testing.T) {
 			t.Setenv("GOSUMDB", "off") // Disposable local proxy; checksums are committed below.
 			t.Setenv("GOPRIVATE", "")
 			t.Setenv("GONOPROXY", "none")
-			sdk := sdkStorePath(sdkPins["1.26.1"].paths[hostSystem()])
+			sdk := fixtureSDK(t, "1.26.1")
 			c := exec.Command(sdk+"/bin/go", "mod", "download", "example.com/dep")
 			c.Dir = r.Worktree
 			c.Env = envWith(cleanEnv(), map[string]string{"GOMODCACHE": t.TempDir(), "GOROOT": sdk + "/share/go", "GOTOOLCHAIN": "local", "GOENV": "off", "GOWORK": "off"})

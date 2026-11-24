@@ -123,9 +123,21 @@ func binaryOutput(t *testing.T, r Request) string {
 	}
 	return string(b)
 }
+
+// A control can run before the operation has realized its pinned SDK.
+func fixtureSDK(t *testing.T, exact string) string {
+	t.Helper()
+	store := sdkStorePath(sdkPins[exact].paths[hostSystem()])
+	args := sdkInstallArgs(store, filepath.Join(t.TempDir(), "sdk"), realLauncher, false)
+	if err := exec.CommandContext(t.Context(), "nix", args...).Run(); err != nil {
+		t.Fatalf("prepare pinned Go %s fixture SDK: %v", exact, err)
+	}
+	return store
+}
+
 func ambientControl(t *testing.T, r Request, exact string, extraFlags ...string) string {
 	t.Helper()
-	sdk := sdkStorePath(sdkPins[exact].paths[hostSystem()])
+	sdk := fixtureSDK(t, exact)
 	dest := filepath.Join(t.TempDir(), "control")
 	args := append([]string{"build", "-mod=readonly", "-buildvcs=false", "-o", dest}, extraFlags...)
 	c := exec.Command(filepath.Join(sdk, "bin/go"), append(args, ".")...)
@@ -369,7 +381,7 @@ func TestRealB24EscapingAndContainedModules(t *testing.T) {
 						t.Fatal("bad replacement control")
 					}
 				} else {
-					sdk := sdkStorePath(sdkPins["1.26.1"].paths[hostSystem()])
+					sdk := fixtureSDK(t, "1.26.1")
 					dest := filepath.Join(t.TempDir(), "control")
 					c := exec.Command(sdk+"/bin/go", "build", "-mod=readonly", "-o", dest, ".")
 					c.Dir = r.Worktree
