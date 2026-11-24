@@ -16,9 +16,9 @@ import tarfile
 import tempfile
 import time
 
-TASKS = ('manifests', 'tooling', 'npm.publish', 'llm', 'llm2', 'gha', 'gha-many',
-         'gha-runtime', 'codex', 'rule-gate', 'release-pack', 'github-release', 'aider', 'litellm', 'pydantic',
-         'jev', 'kimi', 'go-build', 'opentofu', 'nix-metadata', 'nix-process')
+TASKS = ('manifests', 'opentofu', 'tooling', 'npm.publish', 'llm', 'llm2', 'gha', 'gha-many',
+         'gha-runtime', 'rule-gate', 'release-pack', 'github-release', 'aider', 'litellm', 'pydantic',
+         'jev', 'kimi', 'go-build', 'codex', 'nix-metadata', 'nix-process')
 LIVE_TASK = 'opentofu_credentials'
 ALL_TASKS = (*TASKS, LIVE_TASK)
 OPENTOFU_C2J = 'v0.0.0-20261120233037-b399a9afb40d'

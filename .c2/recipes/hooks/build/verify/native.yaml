@@ -36,6 +36,21 @@ sequence:
       VERIFY_CANDIDATE: ${{ inputs.candidate }}
       VERIFY_BASE: ${{ inputs.base }}
     run: python3 "$VERIFY_ROOT/scripts/verify.py" check manifests
+# Run the large, temporary Go build before later checks populate the Nix store.
+- id: opentofu
+  op: command_execution
+  const: true
+  execution_needs:
+    base: ${{ inputs.worker_base }}
+    packages: *id001
+  inputs:
+    env:
+      VERIFY_ROOT: ${{ context.environment.op.worktree_path }}
+      VERIFY_OUTBOX: ${{ context.environment.op.outbox }}
+      VERIFY_TARGET: ${{ inputs.target_directory }}
+      VERIFY_CANDIDATE: ${{ inputs.candidate }}
+      VERIFY_BASE: ${{ inputs.base }}
+    run: python3 "$VERIFY_ROOT/scripts/verify.py" check opentofu
 - id: tooling
   # Includes real */op.yaml Make entrypoints, independent of OP_DIRS. Direct
   # source suites below cannot detect missing operation Makefiles on their own.
@@ -142,21 +157,6 @@ sequence:
     run: python3 "$VERIFY_ROOT/scripts/verify.py" check gha-runtime --race
 # Checks direct-reference handoff/text/manifest contracts before packaging, then
 # runs all CLI and source/Nix fixtures using the pinned c2j staging implementation.
-- id: codex
-  op: command_execution
-  const: true
-  execution_needs:
-    base: ${{ inputs.worker_base }}
-    packages: *id001
-  inputs:
-    env:
-      GOWORK: "off"
-      VERIFY_ROOT: ${{ context.environment.op.worktree_path }}
-      VERIFY_OUTBOX: ${{ context.environment.op.outbox }}
-      VERIFY_TARGET: ${{ inputs.target_directory }}
-      VERIFY_CANDIDATE: ${{ inputs.candidate }}
-      VERIFY_BASE: ${{ inputs.base }}
-    run: python3 "$VERIFY_ROOT/scripts/verify.py" check codex
 - id: rule_gate
   op: command_execution
   const: true
@@ -285,7 +285,7 @@ sequence:
       VERIFY_CANDIDATE: ${{ inputs.candidate }}
       VERIFY_BASE: ${{ inputs.base }}
     run: python3 "$VERIFY_ROOT/scripts/verify.py" check go-build
-- id: opentofu
+- id: codex
   op: command_execution
   const: true
   execution_needs:
@@ -293,12 +293,13 @@ sequence:
     packages: *id001
   inputs:
     env:
+      GOWORK: "off"
       VERIFY_ROOT: ${{ context.environment.op.worktree_path }}
       VERIFY_OUTBOX: ${{ context.environment.op.outbox }}
       VERIFY_TARGET: ${{ inputs.target_directory }}
       VERIFY_CANDIDATE: ${{ inputs.candidate }}
       VERIFY_BASE: ${{ inputs.base }}
-    run: python3 "$VERIFY_ROOT/scripts/verify.py" check opentofu
+    run: python3 "$VERIFY_ROOT/scripts/verify.py" check codex
 - id: nix_metadata
   op: command_execution
   const: true

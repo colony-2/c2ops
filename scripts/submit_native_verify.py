@@ -42,8 +42,8 @@ def main():
     for system, worker_base in PLATFORMS.items():
         child = dict(common, system=system, worker_base=worker_base)
         title = f'Verify c2ops {common["candidate"][:12]} on {system}'
-        if system == 'aarch64-darwin':
-            # The full release build and Go test caches exceed one macOS worker's disk.
+        if system in ('aarch64-darwin', 'aarch64-linux'):
+            # The release build and Go test caches exceed the arm64 workers' disks.
             package = {key: child[key] for key in ('candidate', 'system', 'worker_base')}
             child['package_job'] = submit('packages', package, title + ' (packages)')
         jobs[system] = submit('platform', child, title)
