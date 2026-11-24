@@ -5,46 +5,52 @@ inputs:
   settings: ${{ inputs.?settings.orValue(null) }}
   target_directory: ${{ inputs.target_directory }}
 sequence:
+- id: launch
+  op: command_execution
+  perms:
+    jobdb:
+      jobs: {submit: true}
+      secrets: {resolve: [gitvend_base_token]}
+  execution_needs:
+    packages:
+    - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#python3
+  inputs:
+    env:
+      VERIFY_PARENT: ${{ context.workflow.job_id }}
+      VERIFY_INPUTS: ${{ json_stringify(inputs) }}
+    run: python3 scripts/submit_native_verify.py
+  expect_outputs:
+    type: object
+    required: [success]
+    properties: {success: {enum: [true]}}
 - id: mac
-  include: ./verify/platform.yaml
+  op: recipe.await_result
   inputs:
-    system: aarch64-darwin
-    worker_base: 'macos*'
-    candidate: ${{ inputs.candidate }}
-    base: ${{ inputs.base }}
-    settings: ${{ inputs.settings }}
-    target_directory: ${{ inputs.target_directory }}
+    target: {job: "${{ json_parse(sequence.launch.outputs.stdout)['aarch64-darwin'] }}"}
+    wait: {'on': job, condition: success}
 - id: amd
-  include: ./verify/platform.yaml
+  op: recipe.await_result
   inputs:
-    system: x86_64-linux
-    worker_base: 'ubuntu*amd64'
-    candidate: ${{ inputs.candidate }}
-    base: ${{ inputs.base }}
-    settings: ${{ inputs.settings }}
-    target_directory: ${{ inputs.target_directory }}
+    target: {job: "${{ json_parse(sequence.launch.outputs.stdout)['x86_64-linux'] }}"}
+    wait: {'on': job, condition: success}
 - id: arm
-  include: ./verify/platform.yaml
+  op: recipe.await_result
   inputs:
-    system: aarch64-linux
-    worker_base: 'ubuntu*arm64'
-    candidate: ${{ inputs.candidate }}
-    base: ${{ inputs.base }}
-    settings: ${{ inputs.settings }}
-    target_directory: ${{ inputs.target_directory }}
+    target: {job: "${{ json_parse(sequence.launch.outputs.stdout)['aarch64-linux'] }}"}
+    wait: {'on': job, condition: success}
 outputs:
   api_version: c2.build-hook/v1
-  status: "${{ [sequence.mac, sequence.amd, sequence.arm].all(p, p.outputs.status == 'passed') ? 'passed' : 'failed' }}"
+  status: "${{ [sequence.mac, sequence.amd, sequence.arm].all(p, p.outputs.outputs.status == 'passed') ? 'passed' : 'failed' }}"
   summary: >-
-    Native verification completed. Apple silicon ${{ sequence.mac.outputs.status }},
-    Linux amd64 ${{ sequence.amd.outputs.status }}, Linux arm64 ${{ sequence.arm.outputs.status }}.
+    Native verification completed. Apple silicon ${{ sequence.mac.outputs.outputs.status }},
+    Linux amd64 ${{ sequence.amd.outputs.outputs.status }}, Linux arm64 ${{ sequence.arm.outputs.outputs.status }}.
   artifact_refs:
-    aarch64-darwin/verification.md: ${{ sequence.mac.outputs.artifact_refs['verification.md'] }}
-    aarch64-darwin/verification.json: ${{ sequence.mac.outputs.artifact_refs['verification.json'] }}
-    aarch64-darwin/evidence.tar.gz: ${{ sequence.mac.outputs.artifact_refs['evidence.tar.gz'] }}
-    x86_64-linux/verification.md: ${{ sequence.amd.outputs.artifact_refs['verification.md'] }}
-    x86_64-linux/verification.json: ${{ sequence.amd.outputs.artifact_refs['verification.json'] }}
-    x86_64-linux/evidence.tar.gz: ${{ sequence.amd.outputs.artifact_refs['evidence.tar.gz'] }}
-    aarch64-linux/verification.md: ${{ sequence.arm.outputs.artifact_refs['verification.md'] }}
-    aarch64-linux/verification.json: ${{ sequence.arm.outputs.artifact_refs['verification.json'] }}
-    aarch64-linux/evidence.tar.gz: ${{ sequence.arm.outputs.artifact_refs['evidence.tar.gz'] }}
+    aarch64-darwin/verification.md: ${{ sequence.mac.outputs.outputs.artifact_refs['verification.md'] }}
+    aarch64-darwin/verification.json: ${{ sequence.mac.outputs.outputs.artifact_refs['verification.json'] }}
+    aarch64-darwin/evidence.tar.gz: ${{ sequence.mac.outputs.outputs.artifact_refs['evidence.tar.gz'] }}
+    x86_64-linux/verification.md: ${{ sequence.amd.outputs.outputs.artifact_refs['verification.md'] }}
+    x86_64-linux/verification.json: ${{ sequence.amd.outputs.outputs.artifact_refs['verification.json'] }}
+    x86_64-linux/evidence.tar.gz: ${{ sequence.amd.outputs.outputs.artifact_refs['evidence.tar.gz'] }}
+    aarch64-linux/verification.md: ${{ sequence.arm.outputs.outputs.artifact_refs['verification.md'] }}
+    aarch64-linux/verification.json: ${{ sequence.arm.outputs.outputs.artifact_refs['verification.json'] }}
+    aarch64-linux/evidence.tar.gz: ${{ sequence.arm.outputs.outputs.artifact_refs['evidence.tar.gz'] }}

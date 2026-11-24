@@ -1,11 +1,24 @@
 id: verify-platform
+input_schema:
+  candidate: {type: string, required: true}
+  base: {type: string, required: true}
+  system: {type: string, required: true}
+  worker_base: {type: string, required: true}
+  target_directory: {type: string, required: true}
+  settings: {type: artifact}
+  prompt: {type: string}
+  title: {type: string}
+  type: {type: string}
+perms:
+  jobdb:
+    secrets: {resolve: [gitvend_base_token]}
 inputs:
   candidate: ${{ inputs.candidate }}
   base: ${{ inputs.base }}
   system: ${{ inputs.system }}
   worker_base: ${{ inputs.worker_base }}
   target_directory: ${{ inputs.target_directory }}
-  settings: ${{ inputs.settings }}
+  settings: ${{ inputs.?settings.orValue(null) }}
 sequence:
 - id: packages
   op: command_execution
