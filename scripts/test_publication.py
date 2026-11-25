@@ -1,10 +1,12 @@
 import copy
+import io
 import json
 from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
 
+from hook_packages import missing_uploads
 from publication import PUBLIC_FLAKE, package_names, pin, read_manifest, verify
 
 
@@ -71,3 +73,19 @@ class PublicationTests(unittest.TestCase):
                 pin(self.data, "/tmp/verified-store", "colony2")
             self.assertEqual(run.call_count, 2)
             self.assertEqual(run.call_args.args[0], "cachix")
+
+    def test_uploads_exclude_paths_available_from_upstream(self):
+        upstream = "/nix/store/" + "0" * 32 + "-dependency"
+        release = "/nix/store/" + "1" * 32 + "-release"
+        closure = upstream + "\n" + release + "\n"
+        for candidate, info in [(release, None), (upstream, {"narHash": "sha256-upstream"})]:
+            path_hash = Path(candidate).name.split("-", 1)[0]
+            response = io.BytesIO(json.dumps([path_hash]).encode())
+            queries = [closure, json.dumps({candidate: info})]
+            with self.subTest(candidate=candidate), patch("hook_packages.urlopen", return_value=response), \
+                    patch("hook_packages.subprocess.check_output", side_effect=queries):
+                if info is None:
+                    self.assertEqual(missing_uploads([release], "fixture"), [release])
+                else:
+                    with self.assertRaisesRegex(ValueError, "cache.nixos.org"):
+                        missing_uploads([release], "fixture")

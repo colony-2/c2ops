@@ -18,12 +18,13 @@ deterministic policy checks. The operation catalog and usage examples live in
   and `rule_gate` deterministic recipe policy checks.
 - Maintain operation manifests, input/output schemas, process wrappers,
   diagnostics, and compatibility tests for these integrations.
-- Build and publish the Nix runtime packages for `x86_64-linux` and
-  `aarch64-linux`, including compiled Go executables, Python environments, and
-  required CLI wrappers. Packaging and release conventions are documented in
-  [NIX_PACKAGES.md](NIX_PACKAGES.md) and implemented in
-  [flake.nix](flake.nix), [nix/packages.nix](nix/packages.nix), and
-  [the CI workflow](.github/workflows/test.yml).
+- Build and publish the Nix runtime packages for `x86_64-linux`,
+  `aarch64-linux`, and `aarch64-darwin`, including compiled Go executables,
+  Python environments, and required CLI wrappers. Packaging and release
+  conventions are documented in [NIX_PACKAGES.md](NIX_PACKAGES.md) and implemented in
+  [flake.nix](flake.nix), [nix/packages.nix](nix/packages.nix), and the
+  [verify](.c2/recipes/hooks/build/verify.yaml) and
+  [publish](.c2/recipes/hooks/build/publish.yaml) hooks.
 
 The LLM adapter abstractions described in [AGENTS.md](AGENTS.md) are part of
 this responsibility: for example, [llm2/pkg/adapters](llm2/pkg/adapters)

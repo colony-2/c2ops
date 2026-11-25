@@ -109,6 +109,9 @@ for name in ('gha', 'gha/workflow'):
             second_rev = commit()
             # The build/check steps resolve an ordinary checkout path as Git.
             second = packages(str(root))
+            workflow = ROOT / '.github/workflows/test.yml'
+            if not workflow.is_file():
+                workflow = workflow.with_suffix('.yml.disabled')
             selectors = json.loads(run('uv', 'run', '--with', 'pyyaml==6.0.3',
                                        'python', '-c', '''
 import json, sys, yaml
@@ -116,7 +119,7 @@ workflow = yaml.safe_load(open(sys.argv[1]))
 print(json.dumps({step['name']: step['env']['C2OPS_TEST_FLAKE']
                   for step in workflow['jobs']['test']['steps']
                   if 'C2OPS_TEST_FLAKE' in step.get('env', {})}))
-''', str(ROOT / '.github/workflows/test.yml')))
+''', str(workflow)))
             self.assertTrue(selectors, 'CI must test the checkout packages')
             for step, selector in selectors.items():
                 selected = selector.replace('${{ github.workspace }}', str(root))

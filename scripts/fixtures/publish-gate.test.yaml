@@ -25,7 +25,6 @@ cases:
         outputs:
           outputs:
             manifest: {kind: value, format: json, name: manifest.json, value: {}}
-            closure: {kind: value, format: text, name: closure, value: fixture}
     - *child
     - *child
     - match: {op: command_execution}
@@ -39,7 +38,8 @@ cases:
         c.inputs.recipes.map(r,r.inputs.system) == ['aarch64-darwin','x86_64-linux','aarch64-linux'] &&
         c.inputs.recipes.all(r, r.git.base_hash == c.inputs.git_ref &&
           r.inputs.revision == c.inputs.git_ref && r.name.endsWith('@' + c.inputs.git_ref)))
-      && size(outputs.artifact_refs) == 6
+      && size(outputs.artifact_refs) == 3
+      && ['aarch64-darwin.json','x86_64-linux.json','aarch64-linux.json'].all(k, k in outputs.artifact_refs)
 - id: failed-macos
   type: integration_case
   inputs: *inputs

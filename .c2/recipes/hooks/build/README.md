@@ -10,7 +10,8 @@ The matrix in `verify.yaml` runs the same checks on `macos*`, `ubuntu*amd64`
 and `ubuntu*arm64`. Each worker checks its native system, prefetches the
 pinned private act source with its cell Git profile, runs the flake checks and builds
 every release output at the exact candidate SHA. The hook exports per-system
-reports and task logs. Package archives are produced only after merge.
+reports and task logs. After merge, publish returns the package manifests and
+retains the release outputs in Cachix.
 
 Each named const operation independently declares its pinned tools. It copies
 candidate files (including untracked inputs, excluding `.git`) into a temporary
@@ -46,8 +47,8 @@ they cannot produce a passing report. Cancellation terminates the active
 process group. A command has a 15-minute wall timeout and Go test binaries have
 an eight-minute timeout. Package preparation is managed by c2j.
 
-The task mapping follows `.github/workflows/test.yml` and all operation
-Makefiles:
+The task mapping follows the archived `.github/workflows/test.yml.disabled`
+workflow and the operation Makefiles.
 
 | Workflow/check behavior | Hook task |
 | --- | --- |

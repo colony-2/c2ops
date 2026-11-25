@@ -4,6 +4,7 @@ let
 in {
   npm-fixtures = pkgs.runCommand "c2ops-npm-fixtures" {
     nativeBuildInputs = [ (pkgs.python3.withPackages (p: [ p.jsonschema ])) pkgs.gitMinimal pkgs.nodejs_24 pkgs.gnutar pkgs.gzip ];
+    PYTHONDONTWRITEBYTECODE = "1";
     C2OPS_NPM_TEST_MODULE = "${packages.npm-publish}/libexec/main.py";
     C2OPS_NPM_SOURCE = "${../npm_publish}";
   } ''
@@ -93,7 +94,7 @@ in {
       ${package.pythonEnv}/bin/python ${../scripts/check-python-runtime.py} ${../. + "/${name}/main.py"} ${pkgs.python3Packages.pydantic} ${name}
     ''}
     ${lib.optionalString (name == "pydantic") ''
-      PYTHONPATH=${pkgs.python3Packages.pyyaml}/${pkgs.python3.sitePackages} \
+      PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=${pkgs.python3Packages.pyyaml}/${pkgs.python3.sitePackages} \
         ${package.pythonEnv}/bin/python ${../pydantic}/test_binding.py \
         --module ${package}/libexec/main.py --launcher ${package}/bin/pydantic
     ''}

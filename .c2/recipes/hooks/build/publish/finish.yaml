@@ -1,0 +1,74 @@
+id: finish-c2ops-publication
+input_schema:
+  prompt: {type: string}
+  title: {type: string}
+  type: {type: string}
+  revision: {type: string, required: true}
+  mac: {type: string, required: true}
+  amd: {type: string, required: true}
+  arm: {type: string, required: true}
+perms:
+  jobdb:
+    secrets: {resolve: [gitvend_base_token, gitvend_cell_token]}
+inputs:
+  revision: ${{ inputs.revision }}
+  mac: ${{ inputs.mac }}
+  amd: ${{ inputs.amd }}
+  arm: ${{ inputs.arm }}
+sequence:
+- id: mac
+  op: recipe.await_result
+  inputs:
+    target: {job: '${{ inputs.mac }}'}
+    wait: {'on': job, condition: success}
+- id: amd
+  op: recipe.await_result
+  inputs:
+    target: {job: '${{ inputs.amd }}'}
+    wait: {'on': job, condition: success}
+- id: arm
+  op: recipe.await_result
+  inputs:
+    target: {job: '${{ inputs.arm }}'}
+    wait: {'on': job, condition: success}
+- id: promote
+  op: command_execution
+  git_profile: '${{ context.config[?"git-profile-rw"].orValue("write") }}'
+  perms:
+    jobdb:
+      secrets: {resolve: [gitvend_base_token, gitvend_cell_token]}
+  const: false
+  execution_needs:
+    packages:
+    - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#gitMinimal
+    - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#python3
+    - nix:github:NixOS/nixpkgs/e7439b6b14ad3cc35d05608ebca9bce01a25f5f8#nix
+  artifacts:
+    aarch64-darwin.json: ${{ sequence.mac.outputs.outputs.manifest }}
+    x86_64-linux.json: ${{ sequence.amd.outputs.outputs.manifest }}
+    aarch64-linux.json: ${{ sequence.arm.outputs.outputs.manifest }}
+  inputs:
+    env:
+      REVISION: ${{ inputs.revision }}
+      INBOX: ${{ context.environment.op.inbox }}
+      ROOT: ${{ context.environment.op.worktree_path }}
+    run: |
+      set -eu
+      python3 scripts/hook_packages.py check-manifests "$REVISION"
+      repo=$(mktemp -d)
+      trap 'rm -rf "$repo"' EXIT
+      git clone --bare --single-branch --branch main https://github.com/colony-2/c2ops.git "$repo"
+      cd "$repo"
+      python3 "$ROOT/scripts/promote-published.py" "$REVISION"
+  expect_outputs:
+    type: object
+    required: [success]
+    properties: {success: {enum: [true]}}
+outputs:
+  api_version: c2.build-hook/v1
+  status: passed
+  summary: ${{ sequence.promote.outputs.stdout }}
+  artifact_refs:
+    aarch64-darwin.json: ${{ sequence.mac.outputs.outputs.manifest }}
+    x86_64-linux.json: ${{ sequence.amd.outputs.outputs.manifest }}
+    aarch64-linux.json: ${{ sequence.arm.outputs.outputs.manifest }}

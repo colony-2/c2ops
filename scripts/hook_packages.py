@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
 """Check a native candidate, or retain and publish its merged package closures."""
 import argparse
-import gzip
+import json
 import os
 from pathlib import Path
 import re
 import shutil
 import subprocess
 import tempfile
+from urllib.request import Request, urlopen
 
 import publication
 from verify import native_system
+
+COLONY2_PUBLIC_KEY = 'colony2.cachix.org-1:KFMHSiaf14yDf8qopSAgsFj9gs783OlFuE7Hs2AU4Hc='
 
 
 def checkout(revision):
@@ -22,7 +25,7 @@ def checkout(revision):
     return 'git+' + Path.cwd().resolve().as_uri() + '?ref=HEAD&shallow=1&rev=' + revision
 
 
-def build(revision, system, roots, outbox=None):
+def build(revision, system, roots, *, publishing=False):
     flake = checkout(revision)
     if native_system() != system:
         raise ValueError(f'{system} requires a native worker, got {native_system()}')
@@ -31,37 +34,56 @@ def build(revision, system, roots, outbox=None):
     manifest = roots / (system + '.json')
     data = publication.record(manifest, revision, system, flake)
     packages = data['packages']
-    # GC roots protect every output and dependency through streaming export.
-    subprocess.run(['nix', 'build', '--max-jobs', '2', '--out-link', str(roots / 'root'), '--no-write-lock-file',
-                    *[flake + '#' + name for name in sorted(packages)]], check=True)
-    if outbox is None:
+    # Keep every output and dependency alive through verification and publication.
+    build_args = ['--max-jobs', '2', '--out-link', str(roots / 'root'), '--no-write-lock-file',
+                  *[flake + '#' + name for name in sorted(packages)]]
+    subprocess.run(['nix', 'build', *build_args], check=True)
+    outputs = [package['store_path'] for package in packages.values()]
+    if not publishing:
         if system.endswith('-linux'):
             subprocess.run(['python3', 'scripts/check-codex-worker.py', '--native'],
                            env=dict(os.environ, C2OPS_TEST_FLAKE=flake), check=True)
+        verify_native_outputs(outputs)
         return
-    outbox.mkdir(parents=True, exist_ok=True)
-    outputs = [package['store_path'] for package in packages.values()]
-    paths = subprocess.check_output(['nix-store', '--query', '--requisites', *outputs],
-                                    text=True).splitlines()
-    export_closure(paths, outbox / (system + '.nar-export.gz'))
-    shutil.copyfile(manifest, outbox / manifest.name)
+    try:
+        verify_native_outputs(outputs)
+    except subprocess.CalledProcessError as error:
+        # Nix uses exit code 1 for a content mismatch. Earlier checks could
+        # leave bytecode in installed packages on writable worker stores.
+        if error.returncode != 1:
+            raise
+        subprocess.run(['nix', 'build', '--repair', *build_args], check=True)
+        verify_native_outputs(outputs)
     return data
 
 
-def export_closure(paths, archive):
-    # Expose the final name only after writing the complete stream.
-    with tempfile.NamedTemporaryFile(dir=archive.parent, delete=False) as staged:
-        try:
-            with gzip.GzipFile(fileobj=staged, mode='wb', compresslevel=1, mtime=0) as compressed:
-                with subprocess.Popen(['nix-store', '--export', *paths], stdout=subprocess.PIPE) as process:
-                    shutil.copyfileobj(process.stdout, compressed, length=1024*1024)
-                    process.stdout.close()
-                    if process.wait() != 0:
-                        raise RuntimeError('Nix closure export failed')
-            staged.flush()
-            os.replace(staged.name, archive)
-        finally:
-            Path(staged.name).unlink(missing_ok=True)
+def verify_native_outputs(outputs, *, store=None):
+    # Local outputs have not been signed yet. Hash every file in their runtime
+    # closures after the last probe, while the build roots are still alive.
+    selected = ['--store', str(store)] if store is not None else []
+    subprocess.run(['nix', '--extra-experimental-features', 'nix-command', *selected,
+                    'store', 'verify', '--recursive', '--no-trust', '--', *outputs], check=True)
+
+
+def missing_uploads(roots, token):
+    paths = subprocess.check_output(['nix-store', '--query', '--requisites', *roots], text=True).splitlines()
+    by_hash = {Path(path).name.split('-', 1)[0]: path for path in paths}
+    # Use the same missing-path query as cachix push. Refuse an upload if the
+    # destination ever stops recognising cache.nixos.org as an upstream.
+    request = Request('https://cachix.org/api/v1/cache/colony2/narinfo',
+                      data=json.dumps(list(by_hash)).encode(),
+                      headers={'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json',
+                               'User-Agent': 'c2ops-publish/1.0'})
+    with urlopen(request, timeout=90) as response:
+        missing = [by_hash[key] for key in json.load(response)]
+    if missing:
+        upstream = json.loads(subprocess.check_output([
+            'nix', 'path-info', '--store', 'https://cache.nixos.org', '--json',
+            '--option', 'narinfo-cache-negative-ttl', '0', '--', *missing]))
+        if set(upstream) != set(missing) or any(info is not None for info in upstream.values()):
+            raise ValueError('Cachix requested paths that could not be confirmed absent from cache.nixos.org')
+    print(f'Cache requested {len(missing)} of {len(paths)} runtime paths', flush=True)
+    return missing
 
 
 def publish(revision, system, outbox):
@@ -72,17 +94,25 @@ def publish(revision, system, outbox):
                     'refs/heads/main'], check=True)
     subprocess.run(['git', 'merge-base', '--is-ancestor', revision, 'FETCH_HEAD'], check=True)
     with tempfile.TemporaryDirectory() as tmp:
-        data = build(revision, system, Path(tmp), outbox)
-        paths = [p['store_path'] for p in data['packages'].values()]
+        roots = Path(tmp)
+        data = build(revision, system, roots, publishing=True)
+        # Push op roots. Cachix skips paths already in colony2 or its upstreams.
+        # The CLI helpers are runtime references of the corresponding ops.
+        paths = [p['store_path'] for name, p in data['packages'].items()
+                 if name not in ('aider-cli', 'codex-cli')]
         token = subprocess.check_output(['c2j', 'secret', 'get', 'cachix_colony2_publish_key',
                                          '--format', 'raw'], text=True).strip()
         if not token:
             raise ValueError('empty Cachix publish credential')
         env = dict(os.environ, CACHIX_AUTH_TOKEN=token)
-        subprocess.run(['cachix', 'push', 'colony2', *paths], env=env, check=True)
+        missing = missing_uploads(paths, token)
+        if missing:
+            subprocess.run(['cachix', 'push', 'colony2', *missing], env=env, check=True)
         store = Path(tmp) / 'verified'
         publication.verify(data, store, 'colony2')
         publication.pin(data, store, 'colony2', env=env)
+        outbox.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(roots / (system + '.json'), outbox / (system + '.json'))
 
 
 if __name__ == '__main__':
@@ -106,4 +136,5 @@ if __name__ == '__main__':
         with tempfile.TemporaryDirectory() as tmp:
             build(args.revision, args.system, Path(tmp))
     else:
+        os.environ['NIX_CONFIG'] += '\nextra-trusted-public-keys = ' + COLONY2_PUBLIC_KEY
         publish(args.revision, args.system, Path(os.environ['OUTBOX']))

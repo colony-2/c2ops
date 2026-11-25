@@ -259,33 +259,49 @@ sequence:
 
 The verify hook runs the native suite and builds all op and CLI outputs on
 `macos*` (Apple silicon), `ubuntu*amd64` and `ubuntu*arm64`. Its artifacts
-contain test evidence. The Linux minimal-worker check needs Docker with workspace
-mounts. The tooling suite runs the real Nix publication fixtures and the GHA
+contain test evidence. The packaged Codex probe runs directly on the Linux workers.
+The native package check compares each runtime closure with the hashes registered
+by Nix. The tooling suite runs the real Nix publication fixtures and the GHA
 runtime suite enables its public-action tests. The publish hook starts three child jobs after a merge
 to main. Each child resolves its recipe and flake at the full merged Git SHA,
 checks its native system, runs the flake checks and builds the release outputs.
-The child saves `SYSTEM.json` and `SYSTEM.nar-export.gz` (a gzip-compressed
-`nix-store --export` of the complete runtime closures). It pushes those paths
-to `colony2`, verifies signed downloads into an empty store with builds disabled,
-and pins the outputs. The parent waits for all three children, checks the
+Each child pushes its op roots directly to `colony2`. Cachix uploads the paths
+missing from both the destination and its upstream caches, including
+`cache.nixos.org`. The child verifies signed downloads into an empty store with
+builds disabled, pins the op roots, and returns a small `SYSTEM.json` manifest
+to JobDB. The parent waits for all three children, checks the
 manifests against the merged flake, and fast-forwards `published` with the same
-race-safe promotion script used by Actions. The parent exposes the three archives
-and manifests in its hook results. A failed child prevents promotion.
+race-safe promotion script used by Actions. Its results include the three manifests.
+A failed child prevents promotion.
 A retry can reuse uploaded paths and the same per-revision pins.
 
 The worker Git profile supplies `gitvend_base_token` for repository access.
 The promotion task needs Git access to push `refs/heads/published`. The child
 uses `cachix_colony2_publish_key` as the Cachix **auth token** for uploads and
-pins. Configure the public signing key with `cachix use colony2` on the worker
-bases as in Worker setup. For the new publish hook, grant job submission and
-the two named secrets on the c2ops cell. The existing verify hook keeps its
+pins. The native publisher trusts the pinned public signing key for `colony2`
+in its own Nix processes. For the publish hook, grant job submission and
+the named Git and Cachix secrets on the c2ops cell. The existing verify hook keeps its
 cell Git grant. For example, to trust the c2ops candidate hook on the lab tenant:
 
 ```sh
 c2j hooks perms add .c2/recipes/hooks/build/publish.yaml \
   --cell c2ops --jobdb https://db.lab.c2.run/c2 --submit-jobs \
-  --secret gitvend_base_token --secret cachix_colony2_publish_key --trust-candidate-code
+  --secret gitvend_base_token --secret gitvend_cell_token \
+  --secret cachix_colony2_publish_key --trust-candidate-code
 ```
+
+To publish a verified commit already on upstream `main`, run the launcher with
+the full SHA and its successful three-base verify job ID:
+
+```sh
+scripts/publish.py "$REVISION" --verify-job "$VERIFY_JOB" --jobdb http://db.lab.c2.run:9047/c2
+```
+
+The launcher checks the candidate in each verification archive. It submits the
+native publish jobs in parallel using the publisher code in the current checkout.
+Each worker builds packages from the specified commit. The last job ID printed
+is the promotion job. The launcher waits for its verdict. You can also inspect it with
+`c2j job result "$PROMOTION_JOB" --field /status --output -` on the same JobDB.
 
 To exercise the promotion gate with fixture children, run
 `c2j test run --file scripts/fixtures/publish-gate.test.yaml`.
@@ -294,10 +310,12 @@ Managed builds route changes under `.c2/recipes/hooks/build/publish.yaml` and
 `.c2/recipes/hooks/build/publish/` as a publisher-only contribution. Land shared
 helpers and verification changes first when using that route.
 
-## CI and publishing
+## Archived GitHub Actions workflow
 
-[The existing test workflow](./.github/workflows/test.yml) builds packages and
-runs integration and unit tests on native GitHub Actions runners for Linux AMD64,
+JobDB handles verification and publication. To re-enable the
+[GitHub Actions workflow](./.github/workflows/test.yml.disabled), rename it to
+`test.yml`. When enabled, it builds packages and runs integration and unit tests
+on native GitHub Actions runners for Linux AMD64,
 Linux ARM64, and Apple Silicon macOS (`macos-15`). Integration tests override the
 public coordinates with the current checkout; they cannot accidentally test the
 published branch instead. It uses

@@ -1,7 +1,13 @@
 id: build-publish-packages
 input_schema:
+  prompt: {type: string}
+  title: {type: string}
+  type: {type: string}
   revision: {type: string, required: true}
   system: {type: string, required: true}
+perms:
+  jobdb:
+    secrets: {resolve: [gitvend_base_token, cachix_colony2_publish_key]}
 inputs:
   revision: ${{ inputs.revision }}
   system: ${{ inputs.system }}
@@ -35,4 +41,3 @@ outputs:
   revision: ${{ inputs.revision }}
   system: ${{ inputs.system }}
   manifest: ${{ sequence.build.artifacts[inputs.system + '.json'] }}
-  closure: ${{ sequence.build.artifacts[inputs.system + '.nar-export.gz'] }}
