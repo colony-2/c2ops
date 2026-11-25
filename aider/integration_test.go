@@ -40,6 +40,8 @@ type openAIServer struct {
 }
 
 func TestAiderOpIntegration(t *testing.T) {
+	// A fresh CLI profile can offer to open release notes in a desktop browser.
+	t.Setenv("AIDER_SHOW_RELEASE_NOTES", "false")
 	server := newOpenAIServer(t, func(req openAIRequest, _ int) (int, any) {
 		latest := latestUserContent(req.Body)
 		content := "prompt:" + latest
