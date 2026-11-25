@@ -73,6 +73,10 @@ class VerificationTests(unittest.TestCase):
                 (root / 'kimi').mkdir()
                 tools = root / 'tools'
                 tools.mkdir()
+                nix = tools / 'nix'
+                nix.write_text('#!' + sys.executable + '\nimport os,sys\n'
+                               'assert sys.argv[-1] == os.environ["C2OPS_TEST_FLAKE"] + "#kimi"\n')
+                nix.chmod(0o755)
                 go = tools / 'go'
                 go.write_text('#!' + sys.executable + '\nimport os,sys\n'
                               'assert os.environ["GOWORK"] == "off"\n'
@@ -85,17 +89,18 @@ class VerificationTests(unittest.TestCase):
                 uv.chmod(0o755)
                 with (root / 'checks.log').open('wb') as log:
                     checks = verify.Checks(root, {**os.environ, 'GOWORK':'/ambient/go.work',
-                        'PNPM_CONFIG_ALLOW_BUILDS':'{"legacy":false}',
+                        'C2OPS_TEST_FLAKE':'path:' + str(root), 'PNPM_CONFIG_ALLOW_BUILDS':'{"legacy":false}',
                         'PATH':str(tools)+os.pathsep+os.environ['PATH']}, log)
                     verify.execute('kimi', checks, race=False)
-                self.assertEqual(len(checks.commands), 1 if build_fails else 2)
-                build = checks.commands[0]
+                self.assertEqual(len(checks.commands), 2 if build_fails else 3)
+                self.assertEqual(checks.commands[0]['returncode'], 0)
+                build = checks.commands[1]
                 self.assertEqual(build['directory'], 'codex')
                 self.assertEqual(build['argv'][-1], '../scripts/with-tools.go')
                 self.assertEqual(build['returncode'], 9 if build_fails else 0)
                 if not build_fails:
-                    self.assertEqual(checks.commands[1]['directory'], 'kimi')
-                    self.assertIn('test_main.py', checks.commands[1]['argv'])
+                    self.assertEqual(checks.commands[2]['directory'], 'kimi')
+                    self.assertIn('test_main.py', checks.commands[2]['argv'])
 
     def test_codex_failure_stops_before_unprepared_candidate_use(self):
         root = Path(verify.__file__).resolve().parents[1]

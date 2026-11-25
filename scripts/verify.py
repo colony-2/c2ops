@@ -113,6 +113,13 @@ class Checks:
 
 
 def execute(name, checks, race):
+    # CLI fixtures use a cache-only preparer and can run on a fresh worker.
+    if name in ('rule-gate', 'aider', 'litellm', 'jev', 'kimi'):
+        package = 'rule_gate' if name == 'rule-gate' else name
+        if not checks.run([*NIX, 'build', '--no-write-lock-file', '--max-jobs', '1',
+                           '--out-link', str(checks.root.parent / 'cli-fixture-package'),
+                           checks.env['C2OPS_TEST_FLAKE'] + '#' + package]):
+            return
     if name == 'manifests':
         checks.run(['make', 'check-manifests'])
         checks.run(['uv', 'run', 'scripts/check-manifest-schemas.py'])
@@ -130,15 +137,8 @@ def execute(name, checks, race):
                         f'path:.#checks.{native_system()}.npm-fixtures'])
     elif name == 'gha':
         checks.go('gha', ['-race', './...'] if race else None)
-    elif name in ('llm', 'llm2', 'gha-many'):
-        checks.go(name)
-    elif name in ('rule-gate', 'aider', 'litellm'):
-        # The CLI fixtures resolve a previously built native package from the store.
-        package = 'rule_gate' if name == 'rule-gate' else name
-        if checks.run([*NIX, 'build', '--no-write-lock-file', '--max-jobs', '1',
-                       '--out-link', str(checks.root.parent / 'cli-fixture-package'),
-                       checks.env['C2OPS_TEST_FLAKE'] + '#' + package]):
-            checks.go(package)
+    elif name in ('llm', 'llm2', 'gha-many', 'rule-gate', 'aider', 'litellm'):
+        checks.go('rule_gate' if name == 'rule-gate' else name)
     elif name == 'release-pack':
         # Include authenticated-tree and isolated-index regression cases.
         checks.go('release_pack', ['-race', './...'])
